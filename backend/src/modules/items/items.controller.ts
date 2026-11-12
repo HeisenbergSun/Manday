@@ -38,7 +38,8 @@ export class BoardsItemsController {
     const { rows: columns } = await this.pg.query(
       `SELECT id, type, name, settings, position FROM board_columns
        WHERE board_id = $1 ORDER BY position`, [boardId]);
-    return { items, columns };
+    const groups = await this.items.listGroups(boardId);
+    return { items, columns, groups };
   }
 }
 

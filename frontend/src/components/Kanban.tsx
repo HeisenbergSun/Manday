@@ -17,8 +17,11 @@ function Card({ itemId }: { itemId: string }) {
   );
 }
 
-function Column({ group }: { group: { id: string; name: string } }) {
-  const items = useItems((s) => Object.values(s.items).filter((i) => i.values.group === group.id));
+function Column({ group, isDefault }: { group: { id: string; name: string }; isDefault?: boolean }) {
+  // 条目分组字段是 item.group_id（不是 values.group）；无分组时兜底到"全部条目"列
+  const items = useItems((s) => Object.values(s.items).filter(
+    (i: any) => (isDefault ? true : i.group_id === group.id),
+  ));
   const { setNodeRef, isOver } = useDroppable({ id: group.id });
   return (
     <div ref={setNodeRef} style={{
@@ -45,7 +48,7 @@ export function Kanban({ groups }: { groups: { id: string; name: string }[] }) {
   return (
     <DndContext onDragEnd={onDragEnd}>
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', padding: 14, overflowX: 'auto' }}>
-        {groups.map((g) => <Column key={g.id} group={g} />)}
+        {groups.map((g) => <Column key={g.id} group={g} isDefault={g.id === 'default'} />)}
       </div>
     </DndContext>
   );

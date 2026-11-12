@@ -2,6 +2,7 @@
  * 通知铃铛 + 全局搜索（Cmd+K 面板雏形）
  */
 import { useEffect, useState, useRef } from 'react';
+import { api } from '../api';
 
 export function NotificationBell() {
   const [count, setCount] = useState(0);
@@ -10,8 +11,11 @@ export function NotificationBell() {
 
   useEffect(() => {
     const load = async () => {
-      const r = await fetch('/api/notifications/unread').then((r) => r.json());
-      setCount(r.count); setItems(r.items);
+      try {
+        const r: any = await api.unread();
+        setCount(Number(r?.count) || 0);
+        setItems(Array.isArray(r?.items) ? r.items : []);
+      } catch { /* 接口未就绪/未登录时不打扰用户 */ }
     };
     load();
     const t = setInterval(load, 60_000);        // 未读轮询兜底；实时推送走 WS
@@ -64,8 +68,10 @@ export function CommandPalette() {
     clearTimeout(timer.current);
     if (!q) { setResults([]); return; }
     timer.current = setTimeout(async () => {
-      const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`).then((r) => r.json());
-      setResults(r);
+      try {
+        const r: any = await api.search(q);
+        setResults(Array.isArray(r) ? r : Array.isArray(r?.items) ? r.items : []);
+      } catch { setResults([]); }
     }, 200);   // 200ms debounce
   }, [q]);
 

@@ -18,12 +18,22 @@ export class ItemsService {
     if (!can(userRole, 'read')) throw new Error('FORBIDDEN');
     const { rows } = await this.pg.query(
       `SELECT i.id, i.group_id, i.name, i.position, i.version,
-              jsonb_object_agg(iv.column_id, iv.value) AS values
+              jsonb_object_agg(iv.column_id, iv.value #>> '{}') AS values
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
        WHERE i.board_id = $1 AND i.deleted_at IS NULL
        GROUP BY i.id
        ORDER BY i.position`,
+      [boardId],
+    );
+    // jsonb_object_agg 全为 NULL（无任何列值）时返回 null，统一成空对象，避免前端 Object.values 崩
+    return rows.map((r) => ({ ...r, values: r.values ?? {} }));
+  }
+
+  /** Board 分组（看板视图的列） */
+  async listGroups(boardId: string) {
+    const { rows } = await this.pg.query(
+      `SELECT id, name, position, color FROM board_groups WHERE board_id = $1 ORDER BY position`,
       [boardId],
     );
     return rows;

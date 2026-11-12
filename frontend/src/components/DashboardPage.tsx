@@ -2,25 +2,43 @@
  * Dashboard 页 — Battery 进度 / 数字汇总 / 状态分布（对接后端预置组件）
  */
 import { useEffect, useState } from 'react';
+import { api } from '../api';
 
 const COLORS = ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d3dd7', '#00d1d1'];
 
 export function DashboardPage({ boardIds }: { boardIds: string[] }) {
   const [battery, setBattery] = useState<any[]>([]);
   const [dist, setDist] = useState<any[]>([]);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const key = boardIds.join(',');
 
   useEffect(() => {
-    if (!boardIds.length) return;
-    fetch('/api/dashboards/battery', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ boardIds }) }).then((r) => r.json()).then(setBattery);
-    fetch('/api/dashboards/status-dist', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ boardIds }) }).then((r) => r.json()).then(setDist);
-  }, [boardIds.join()]);
+    if (!boardIds.length) { setBattery([]); setDist([]); return; }
+    let alive = true;
+    setLoading(true); setErr('');
+    Promise.all([api.dashboardBattery(boardIds), api.dashboardStatusDist(boardIds)])
+      .then(([b, d]) => {
+        if (!alive) return;
+        // 兜底：非数组响应一律当空数组，避免 .map/.reduce 直接炸白屏
+        setBattery(Array.isArray(b) ? b : []);
+        setDist(Array.isArray(d) ? d : []);
+      })
+      .catch((e) => { if (alive) { setErr((e as Error).message); setBattery([]); setDist([]); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [key]);
 
-  const total = dist.reduce((s, d) => s + d.cnt, 0);
+  const total = dist.reduce((s, d) => s + (Number(d?.cnt) || 0), 0);
 
   return (
     <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 16 }}>
+      {err && (
+        <div style={{ gridColumn: '1/-1', background: '#fff1f0', color: '#e2445c', borderRadius: 10,
+          padding: '10px 14px', fontSize: 12 }}>加载失败：{err}</div>
+      )}
+      {loading && <div style={{ gridColumn: '1/-1', color: '#7a7f8c', fontSize: 12 }}>加载中…</div>}
       {/* Battery 进度条 */}
       <div style={{ background: '#fff', borderRadius: 12, padding: 18, border: '1px solid #e6e8ef' }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>📊 各 Board 进度</div>

@@ -11,6 +11,7 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
 
   const scroll = () => requestAnimationFrame(() => boxRef.current?.scrollTo(0, 1e9));
@@ -18,10 +19,18 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
   async function send(text?: string) {
     const q = (text ?? input).trim();
     if (!q || busy) return;
-    setInput(''); setBusy(true);
+    setInput(''); setBusy(true); setErr('');
     setMsgs((m) => [...m, { role: 'user', content: q }]); scroll();
 
-    const reader = await aiChatStream(boardId, q);
+    let reader: ReadableStreamDefaultReader<Uint8Array>;
+    try {
+      reader = await aiChatStream(boardId, q);
+    } catch (e) {
+      setErr(`AI 请求失败：${(e as Error).message}`);
+      setMsgs((m) => [...m, { role: 'ai', content: `⚠️ ${(e as Error).message}` }]);
+      setBusy(false);
+      return;
+    }
     const decoder = new TextDecoder();
     let full = '';
     const idx = msgs.length + 1;
@@ -31,7 +40,14 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value);
+      // 剥掉 SSE 帧前缀（后端发的是 `data: xxx\n\n`）
+      const raw = decoder.decode(value, { stream: true });
+      const chunk = raw
+        .split('\n')
+        .map((line) => (line.startsWith('data: ') ? line.slice(6) : line))
+        .filter((line) => !line.startsWith('event:') && line !== '[DONE]')
+        .join('');
+      if (!chunk.trim()) continue;
       const toolMatch = chunk.match(/\[TOOL_CALL\] (.+)/);
       if (toolMatch) {
         const call = JSON.parse(toolMatch[1]);
@@ -105,10 +121,22 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
               style={{ fontSize: 12, color: '#4f6ef7', background: '#eef1fe', border: 'none', borderRadius: 14, padding: '5px 11px', cursor: 'pointer' }}>{s}</button>
           ))}
         </div>
-        <textarea value={input} onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="问我任何关于这个 Board 的问题…"
-          style={{ width: '100%', height: 64, border: '1px solid #e6e8ef', borderRadius: 10, padding: '9px 12px', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit' }} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <textarea value={input} onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="问我任何关于这个 Board 的问题…（Enter 发送，Shift+Enter 换行）"
+            style={{ flex: 1, height: 64, border: '1px solid #e6e8ef', borderRadius: 10, padding: '9px 12px',
+              fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          <button onClick={() => send()} disabled={busy || !input.trim()}
+            title="发送"
+            style={{
+              height: 40, padding: '0 16px', borderRadius: 10, border: 'none',
+              background: busy || !input.trim() ? '#c9d3fb' : '#4f6ef7', color: '#fff',
+              cursor: busy || !input.trim() ? 'not-allowed' : 'pointer',
+              fontSize: 13, fontWeight: 600, flexShrink: 0,
+            }}>{busy ? '…' : '发送'}</button>
+        </div>
+        {err && <div style={{ marginTop: 8, color: '#e2445c', fontSize: 12 }}>{err}</div>}
       </div>
     </aside>
   );

@@ -8,3 +8,10 @@ backend/public/
 .DS_Store
 .neon
 .env.local
+
+frontend/e2e-*.png
+frontend/test-e2e.js
+frontend/test-write.js
+frontend/test-extra.js
+frontend/probe.js
+.browsers/

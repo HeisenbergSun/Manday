@@ -3,7 +3,7 @@
  * 安全三原则：工具白名单 / 写操作确认 / 全量审计（source:'ai'）
  */
 import { Module } from '@nestjs/common';
-import { Controller, Post, Body, Sse, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, Sse, Query, Req, Res } from '@nestjs/common';
 import { map, Observable } from 'rxjs';
 import { WorkBuddyAIService } from './workbuddy-ai.service';
 
@@ -11,9 +11,39 @@ import { WorkBuddyAIService } from './workbuddy-ai.service';
 export class AiController {
   constructor(private readonly ai: WorkBuddyAIService) {}
 
-  /** 对话（SSE 流式）：前端侧边栏直接消费 */
+  /**
+   * 对话（SSE 流式，POST）——前端 AiSidebar 用 fetch POST 消费（可带 Authorization 头）
+   * 手动写 SSE 帧而不是用 @Sse，因为 @Sse 只支持 GET 且无法取 body
+   */
+  @Post('chat/stream')
+  async chatPost(@Req() req, @Res() res, @Body() body: { boardId?: string; message: string }) {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+    const stream = this.ai.chat({
+      userId: req.user.id,
+      boardId: body.boardId,
+      allowWriteTools: true,
+      messages: [{ role: 'user', content: body.message }],
+    });
+    try {
+      for await (const chunk of stream) {
+        res.write(`data: ${String(chunk).replace(/\n/g, '\ndata: ')}\n\n`);
+      }
+      res.write('event: done\ndata: [DONE]\n\n');
+    } catch (e: any) {
+      res.write(`data: \n\n`);
+    } finally {
+      res.end();
+    }
+  }
+
+  /** 兼容 GET 版本（浏览器直接访问/调试用） */
   @Sse('chat/stream')
-  async chat(@Req() req, @Body() body: { boardId?: string; message: string; confirmedToolCall?: string }) {
+  async chat(@Req() req, @Query('message') message: string, @Query('boardId') boardId?: string) {
+    const body = { boardId, message: message ?? '' };
     // req.user 来自 SSO 守卫；AI 全程以用户身份运行，无独立权限
     const stream = this.ai.chat({
       userId: req.user.id,

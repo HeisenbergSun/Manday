@@ -5,11 +5,13 @@ import { create } from 'zustand';
 
 export interface Item { id: string; name: string; version: number; values: Record<string, unknown>; }
 export interface ColumnDef { id: string; type: string; name: string; settings: Record<string, unknown>; }
+export interface GroupDef { id: string; name: string; position?: number; color?: string; }
 
 interface ItemsState {
   items: Record<string, Item>;
   columns: ColumnDef[];
-  setBoard: (items: Item[], columns: ColumnDef[]) => void;
+  groups: GroupDef[];
+  setBoard: (items: Item[], columns: ColumnDef[], groups?: GroupDef[]) => void;
   /** 实时 item 级 diff 更新：只动一个条目 */
   applyPatch: (itemId: string, field: string, value: unknown, version: number) => void;
   bumpVersion: (itemId: string, version: number) => void;
@@ -18,9 +20,11 @@ interface ItemsState {
 export const useItems = create<ItemsState>((set) => ({
   items: {},
   columns: [],
-  setBoard: (items, columns) => set((s) => ({
-    items: Object.fromEntries(items.map((i) => [i.id, i])),
-    columns,
+  groups: [],
+  setBoard: (items, columns, groups) => set(() => ({
+    items: Object.fromEntries((items ?? []).map((i) => [i.id, i])),
+    columns: columns ?? [],
+    groups: groups ?? [],
   })),
   applyPatch: (itemId, field, value, version) => set((s) => {
     const it = s.items[itemId];

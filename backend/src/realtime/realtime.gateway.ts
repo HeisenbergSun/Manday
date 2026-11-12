@@ -6,6 +6,7 @@ import {
   WebSocketGateway, SubscribeMessage, WebSocketServer, OnGatewayConnection, OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import * as jwt from 'jsonwebtoken';
 
 @WebSocketGateway({ cors: { origin: true, credentials: true } })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -13,9 +14,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   private online = new Map<string, string>(); // socketId -> userId
 
   handleConnection(socket: Socket) {
-    const userId = socket.handshake.auth?.userId; // 生产环境改为校验 SSO token
-    if (!userId) return socket.disconnect();
-    this.online.set(socket.id, userId);
+    // 身份来源：auth.userId > query > Authorization 头里的 JWT（生产应只信 JWT）
+    const auth: any = socket.handshake.auth ?? {};
+    const q: any = socket.handshake.query ?? {};
+    let userId: string | undefined = auth.userId || q.userId;
+    if (!userId) {
+      const hdr = socket.handshake.headers?.authorization;
+      if (hdr?.startsWith('Bearer ')) {
+        try {
+          const payload: any = jwt.decode(hdr.slice(7));
+          userId = payload?.sub ?? payload?.userId ?? payload?.id;
+        } catch { /* 忽略：按匿名处理 */ }
+      }
+    }
+    if (!userId) return;              // 匿名连接不立即断开（避免前端无限重连刷 400），只是不订阅房间
+    this.online.set(socket.id, userId as string);
     socket.join(`user:${userId}`);
   }
   handleDisconnect(socket: Socket) { this.online.delete(socket.id); }

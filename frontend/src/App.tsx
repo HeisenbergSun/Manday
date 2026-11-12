@@ -64,6 +64,7 @@ export function App() {
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(() =>
     getToken() ? { id: localStorage.getItem('userId') ?? '', name: '', email: '' } : null);
   const setBoard = useItems((s) => s.setBoard);
+  const groups = useItems((s) => s.groups);
 
   // 登录后自动打开第一个可见 Board
   useEffect(() => {
@@ -77,7 +78,7 @@ export function App() {
   useEffect(() => {
     if (!user || !activeBoard?.id) return;
     const boardId = activeBoard.id;
-    api.getBoard(boardId).then((d) => setBoard(d.items ?? [], d.columns ?? [])).catch(() => {});
+    api.getBoard(boardId as string).then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [])).catch(() => {});
     joinBoard(boardId);
     return () => leaveBoard(boardId);
   }, [user?.id, activeBoard?.id]);
@@ -115,7 +116,7 @@ export function App() {
           {!activeBoard ? (
             <div style={{ padding: 48, color: '#7a7f8c', fontSize: 14 }}>← 从左侧选择一个 Board，或新建一个</div>
           ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} />
-            : view === 'kanban' ? <Kanban groups={[{ id: 'g1', name: '待办' }, { id: 'g2', name: '进行中' }, { id: 'g3', name: '已完成' }]} />
+            : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} />
             : <DashboardPage boardIds={activeBoard ? [activeBoard.id] : []} />}
         </main>
         {detailId && <ItemDetail itemId={detailId} onClose={() => setDetailId(null)} />}
@@ -127,7 +128,7 @@ export function App() {
           onCreated={async (boardId) => {
             // 实例化后刷新导航并打开新 Board（简化：直接加载）
             const d = await api.getBoard(boardId).catch(() => null);
-            if (d) { setBoard(d.items, d.columns); setActiveBoard({ id: boardId, name: '新 Board' }); }
+            if (d) { setBoard(d.items, d.columns, (d as any).groups); setActiveBoard({ id: boardId, name: '新 Board' }); }
           }} />
       )}
     </div>
