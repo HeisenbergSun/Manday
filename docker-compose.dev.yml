@@ -1,0 +1,29 @@
+# 本地开发依赖：PG + Redis + MinIO 一键起
+# 用法: docker compose -f docker-compose.dev.yml up -d
+# 然后跑: psql postgres://manday:manday@localhost:5432/manday -f db/schema.sql -f db/seed.sql
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: manday
+      POSTGRES_PASSWORD: manday
+      POSTGRES_DB: manday
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio-data:/data]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  minio-data:

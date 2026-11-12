@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manday — 项目看板原型</title>
+<style>
+  :root{
+    --primary:#4f6ef7; --primary-soft:#eef1fe; --bg:#f6f7fb; --card:#ffffff;
+    --border:#e6e8ef; --text:#25272c; --text-2:#7a7f8c;
+    --green:#00c875; --red:#e2445c; --orange:#fdab3d; --blue:#579bfc; --purple:#9d3dd7;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+  body{background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+  /* 顶栏 */
+  .topbar{height:52px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:16px;flex-shrink:0}
+  .logo{font-weight:800;font-size:17px;color:var(--primary);letter-spacing:.5px}
+  .logo span{color:var(--text)}
+  .board-tabs{display:flex;gap:6px}
+  .board-tab{padding:6px 14px;border-radius:8px;font-size:13px;cursor:pointer;color:var(--text-2)}
+  .board-tab.active{background:var(--primary-soft);color:var(--primary);font-weight:600}
+  .topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .online-avatars{display:flex}
+  .avatar{width:26px;height:26px;border-radius:50%;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;margin-left:-6px}
+  .btn{padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500}
+  .btn-primary{background:var(--primary);color:#fff}
+  .btn-primary:hover{opacity:.92}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .btn-ghost:hover{background:var(--bg)}
+
+  /* 视图切换条 */
+  .viewbar{height:44px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:4px;flex-shrink:0}
+  .view-btn{padding:6px 12px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--text-2);display:flex;align-items:center;gap:6px}
+  .view-btn.active{background:var(--primary-soft);color:var(--primary);font-weight:600}
+  .viewbar .spacer{flex:1}
+  .search-input{width:220px;height:30px;border:1px solid var(--border);border-radius:7px;padding:0 10px;font-size:13px;outline:none;background:var(--bg)}
+  .search-input:focus{border-color:var(--primary)}
+
+  /* 主区 */
+  .main{flex:1;display:flex;overflow:hidden;position:relative}
+  .content{flex:1;overflow:auto;padding:14px}
+  .content.hidden{display:none}
+
+  /* 表格视图 */
+  table.grid{width:100%;border-collapse:separate;border-spacing:0;background:var(--card);border-radius:10px;overflow:hidden;font-size:13px}
+  .grid th{background:#fafbfd;text-align:left;padding:10px 12px;font-weight:600;color:var(--text-2);border-bottom:1px solid var(--border);white-space:nowrap;font-size:12px}
+  .grid td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+  .grid tr:hover td{background:#fafcff}
+  .item-name{font-weight:500;cursor:pointer}
+  .item-name:hover{color:var(--primary)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+  .pill .dot{width:7px;height:7px;border-radius:50%}
+  .tag-people{display:inline-flex;align-items:center;gap:5px}
+  .tag-people .avatar{width:20px;height:20px;margin:0;border:none;font-size:10px}
+  .date-cell{color:var(--text-2)}
+  .date-cell.overdue{color:var(--red);font-weight:600}
+  .row-check{cursor:pointer;font-size:13px}
+  .row-check.sel{color:var(--primary)}
+  .batch-bar{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:9px 18px;border-radius:10px;font-size:13px;display:none;align-items:center;gap:14px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:50}
+  .batch-bar.show{display:flex}
+  .batch-bar a{color:#9db4ff;cursor:pointer;text-decoration:underline}
+
+  /* 看板视图 */
+  .kanban{display:flex;gap:14px;align-items:flex-start}
+  .kcol{background:#eef0f5;border-radius:10px;width:280px;flex-shrink:0;padding:10px}
+  .kcol-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:0 4px}
+  .kcol-count{background:#dde1ea;color:var(--text-2);border-radius:10px;padding:0 7px;font-size:11px}
+  .kcard{background:var(--card);border-radius:8px;padding:11px 13px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.07);cursor:grab;font-size:13px}
+  .kcard:hover{box-shadow:0 3px 10px rgba(0,0,0,.12)}
+  .kcard .kname{font-weight:500;margin-bottom:8px}
+  .kcard .kmeta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .kcard.dragging{opacity:.45;transform:rotate(2deg)}
+  .kcol.dragover{outline:2px dashed var(--primary);outline-offset:-3px}
+
+  /* AI 侧边栏 */
+  .ai-panel{width:380px;background:var(--card);border-left:1px solid var(--border);display:none;flex-direction:column;flex-shrink:0}
+  .ai-panel.open{display:flex}
+  .ai-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  .ai-logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#4f6ef7,#9d3dd7);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px}
+  .ai-title{font-size:14px;font-weight:700}
+  .ai-sub{font-size:11px;color:var(--text-2)}
+  .ai-close{margin-left:auto;cursor:pointer;color:var(--text-2);font-size:16px;padding:4px}
+  .ai-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:88%;padding:10px 13px;border-radius:12px;font-size:13px;line-height:1.55;white-space:pre-wrap}
+  .msg.user{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+  .msg.ai{align-self:flex-start;background:var(--bg);border:1px solid var(--border);border-bottom-left-radius:4px}
+  .msg .tool-tag{display:inline-flex;align-items:center;gap:5px;background:var(--primary-soft);color:var(--primary);font-size:11px;padding:2px 8px;border-radius:5px;margin-bottom:6px;font-weight:600}
+  .confirm-card{border:1px solid var(--border);border-radius:10px;background:#fff;padding:11px;margin-top:6px;font-size:12px}
+  .confirm-card h5{font-size:12px;margin-bottom:7px;color:var(--text)}
+  .confirm-card .cc-row{display:flex;gap:6px;margin-top:8px;justify-content:flex-end}
+  .confirm-card .cc-row .btn{padding:4px 11px;font-size:12px}
+  .confirm-card.applied{border-color:var(--green);background:#f2fbf7}
+  .confirm-card.applied .cc-row{display:none}
+  .applied-badge{color:var(--green);font-weight:600;font-size:12px}
+  .ai-suggest{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 8px}
+  .suggest-chip{font-size:12px;color:var(--primary);background:var(--primary-soft);border:none;border-radius:14px;padding:5px 11px;cursor:pointer}
+  .suggest-chip:hover{background:#e0e6fd}
+  .ai-input-wrap{padding:12px 14px;border-top:1px solid var(--border)}
+  .ai-input{width:100%;height:64px;border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-size:13px;resize:none;outline:none;font-family:inherit}
+  .ai-input:focus{border-color:var(--primary)}
+  .ai-send{margin-top:8px;float:right}
+  .typing{display:inline-flex;gap:4px;padding:4px 0}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--text-2);animation:blink 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+
+  .toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:9px 18px;border-radius:9px;font-size:13px;opacity:0;transition:.3s;z-index:99;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">Manday<span> · 工作管理</span></div>
+  <div class="board-tabs">
+    <div class="board-tab active">📱 App 2.0 项目</div>
+    <div class="board-tab">📋 需求池</div>
+    <div class="board-tab">🎯 市场活动</div>
+  </div>
+  <div class="topbar-right">
+    <div class="online-avatars">
+      <div class="avatar" style="background:#579bfc">张</div>
+      <div class="avatar" style="background:#00c875">李</div>
+      <div class="avatar" style="background:#fdab3d">王</div>
+      <div class="avatar" style="background:#9d3dd7">陈</div>
+    </div>
+    <button class="btn btn-ghost" onclick="toast('已打开回收站（原型示意）')">回收站</button>
+    <button class="btn btn-primary" onclick="toggleAI()">✦ AI 助手</button>
+  </div>
+</div>
+
+<div class="viewbar">
+  <div class="view-btn active" data-view="table" onclick="switchView('table')">▤ 表格</div>
+  <div class="view-btn" data-view="kanban" onclick="switchView('kanban')">▦ 看板</div>
+  <div class="view-btn" data-view="timeline" onclick="toast('时间线视图：P1 交付')">⟐ 时间线</div>
+  <div class="spacer"></div>
+  <input class="search-input" placeholder="搜索条目…（全局搜索 P0）" oninput="filterRows(this.value)">
+  <button class="btn btn-primary" onclick="toast('已通过 AI 生成本周进展（原型示意）')">✦ 生成周报</button>
+</div>
+
+<div class="main">
+  <div class="content" id="view-table"></div>
+  <div class="content hidden" id="view-kanban"></div>
+
+  <div class="ai-panel" id="aiPanel">
+    <div class="ai-header">
+      <div class="ai-logo">✦</div>
+      <div>
+        <div class="ai-title">AI 助手 · WorkBuddy</div>
+        <div class="ai-sub">已连接 Scania WorkBuddy 企业版 · 身份：张伟（技术部）</div>
+      </div>
+      <div class="ai-close" onclick="toggleAI()">✕</div>
+    </div>
+    <div class="ai-msgs" id="aiMsgs"></div>
+    <div class="ai-suggest" id="aiSuggest"></div>
+    <div class="ai-input-wrap">
+      <textarea class="ai-input" id="aiInput" placeholder="问我任何关于这个 Board 的问题，或让我帮你建表、改状态…"></textarea>
+      <button class="btn btn-primary ai-send" onclick="sendAI()">发送</button>
+    </div>
+  </div>
+</div>
+
+<div class="batch-bar" id="batchBar">
+  已选 <b id="selCount">0</b> 条 <a onclick="batchStatus()">批量改状态</a><a onclick="batchAssign()">批量指派</a><a onclick="batchDelete()">删除</a>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= 数据模型（模拟 item_values 窄表） ================= */
+const statusLabels = {
+  todo:    {label:'待办',   color:'#d0d4e0', dot:'#8a90a3'},
+  doing:   {label:'进行中', color:'#e3f0ff', dot:'#579bfc'},
+  blocked: {label:'阻塞',   color:'#fdeaea', dot:'#e2445c'},
+  done:    {label:'已完成', color:'#e2f7ec', dot:'#00c875'},
+};
+const people = {
+  zhang:{name:'张伟',color:'#579bfc'}, li:{name:'李娜',color:'#00c875'},
+  wang:{name:'王强',color:'#fdab3d'}, chen:{name:'陈晨',color:'#9d3dd7'},
+};
+let items = [
+  {id:1, name:'登录模块 SSO 联调', group:'进行中', status:'doing', assignee:'zhang', date:'2026-11-15', prio:'高'},
+  {id:2, name:'看板拖拽性能优化', group:'进行中', status:'doing', assignee:'li', date:'2026-11-18', prio:'中'},
+  {id:3, name:'WorkBuddy AI 工具白名单评审', group:'进行中', status:'blocked', assignee:'wang', date:'2026-11-13', prio:'高'},
+  {id:4, name:'双机部署脚本编写', group:'待办', status:'todo', assignee:'chen', date:'2026-11-22', prio:'中'},
+  {id:5, name:'Excel 导入列映射设计', group:'待办', status:'todo', assignee:'zhang', date:'2026-11-25', prio:'低'},
+  {id:6, name:'通知聚合规则定稿', group:'已完成', status:'done', assignee:'li', date:'2026-11-08', prio:'中'},
+  {id:7, name:'审计日志表结构评审', group:'已完成', status:'done', assignee:'wang', date:'2026-11-06', prio:'低'},
+];
+const groups = ['进行中','待办','已完成'];
+let selected = new Set();
+
+/* ================= 表格视图 ================= */
+function statusPill(s){
+  const l = statusLabels[s];
+  return `<span class="pill" style="background:${l.color}"><span class="dot" style="background:${l.dot}"></span>${l.label}</span>`;
+}
+function renderTable(){
+  const rows = items.filter(i=>!i._hide).map(i=>{
+    const p = people[i.assignee];
+    const overdue = i.status!=='done' && new Date(i.date) < new Date('2026-11-12');
+    return `<tr>
+      <td><span class="row-check ${selected.has(i.id)?'sel':''}" onclick="toggleSel(${i.id})">${selected.has(i.id)?'☑':'☐'}</span></td>
+      <td><span class="item-name" onclick="toast('打开条目详情侧边栏（原型示意）')">${i.name}</span></td>
+      <td>${statusPill(i.status)}</td>
+      <td><span class="tag-people"><span class="avatar" style="background:${p.color}">${p.name[0]}</span>${p.name}</span></td>
+      <td><span class="date-cell ${overdue?'overdue':''}">${overdue?'⚠ ':''}${i.date}</span></td>
+      <td>${i.prio}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('view-table').innerHTML = `
+    <table class="grid">
+      <tr><th style="width:34px"></th><th>条目</th><th>状态</th><th>负责人</th><th>截止日期</th><th>优先级</th></tr>
+      ${rows}
+    </table>`;
+}
+function toggleSel(id){
+  selected.has(id)?selected.delete(id):selected.add(id);
+  renderTable();
+  const bar = document.getElementById('batchBar');
+  document.getElementById('selCount').textContent = selected.size;
+  bar.classList.toggle('show', selected.size>0);
+}
+function filterRows(q){
+  items.forEach(i=> i._hide = q && !i.name.includes(q));
+  renderTable();
+}
+function batchStatus(){ toast('批量修改状态（原型示意）'); }
+function batchAssign(){ toast('批量指派（原型示意）'); }
+function batchDelete(){
+  items = items.filter(i=>!selected.has(i.id)); selected.clear();
+  document.getElementById('batchBar').classList.remove('show');
+  renderTable(); renderKanban(); toast('已移入回收站，可随时恢复');
+}
+
+/* ================= 看板视图（拖拽） ================= */
+let dragItem = null;
+function renderKanban(){
+  document.getElementById('view-kanban').innerHTML = `<div class="kanban">` + groups.map(g=>{
+    const cards = items.filter(i=>i.group===g).map(i=>{
+      const p = people[i.assignee];
+      return `<div class="kcard" draggable="true" ondragstart="dragStart(event,${i.id})" ondragend="dragEnd(event)">
+        <div class="kname">${i.name}</div>
+        <div class="kmeta">${statusPill(i.status)}
+          <span class="tag-people"><span class="avatar" style="background:${p.color}">${p.name[0]}</span></span>
+          <span class="date-cell">${i.date.slice(5)}</span></div>
+      </div>`;
+    }).join('');
+    return `<div class="kcol" ondragover="dragOver(event,this)" ondragleave="this.classList.remove('dragover')" ondrop="drop(event,this)">
+      <div class="kcol-title">${g}<span class="kcol-count">${items.filter(i=>i.group===g).length}</span></div>${cards}
+    </div>`;
+  }).join('') + `</div>`;
+}
+function dragStart(e,id){ dragItem=id; e.target.classList.add('dragging'); }
+function dragEnd(e){ e.target.classList.remove('dragging'); }
+function dragOver(e,el){ e.preventDefault(); el.classList.add('dragover'); }
+function drop(e,el){
+  e.preventDefault(); el.classList.remove('dragover');
+  const item = items.find(i=>i.id===dragItem);
+  const newGroup = el.querySelector('.kcol-title').childNodes[0].textContent.trim();
+  if(item.group!==newGroup){ item.group=newGroup; item.status = {'待办':'todo','进行中':'doing','已完成':'done'}[newGroup];
+    toast('已乐观更新（拖拽先本地生效，PATCH 失败自动回滚）'); renderKanban(); renderTable(); }
+}
+
+/* ================= 视图切换 ================= */
+function switchView(v){
+  document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.getElementById('view-table').classList.toggle('hidden',v!=='table');
+  document.getElementById('view-kanban').classList.toggle('hidden',v!=='kanban');
+}
+
+/* ================= AI 助手（模拟 WorkBuddy 对话网关） ================= */
+let aiOpen=false, aiHistory=[];
+function toggleAI(){
+  aiOpen=!aiOpen;
+  document.getElementById('aiPanel').classList.toggle('open',aiOpen);
+  if(aiOpen && aiHistory.length===0){
+    aiMsg('ai','你好张伟！我是 Manday 内置的 AI 助手，由 Scania WorkBuddy 企业版驱动。\n\n我可以帮你：\n· 查询任务与风险（只读，直接执行）\n· 自然语言建列、建条目（写操作，我会先给你预览卡片确认）\n\n当前上下文：📱 App 2.0 项目');
+    setSuggest(['我这周的任务和风险？','加一列"工时估算"','把阻塞的任务列出来','新建 5 条下迭代任务']);
+  }
+}
+function setSuggest(list){
+  document.getElementById('aiSuggest').innerHTML = list.map(s=>`<button class="suggest-chip" onclick="quickAsk('${s}')">${s}</button>`).join('');
+}
+function quickAsk(s){ document.getElementById('aiInput').value=s; sendAI(); }
+function aiMsg(role, html){
+  const box = document.getElementById('aiMsgs');
+  const div = document.createElement('div');
+  div.className = 'msg '+role;
+  div.innerHTML = html;
+  box.appendChild(div); box.scrollTop = box.scrollHeight;
+  return div;
+}
+async function sendAI(){
+  const input = document.getElementById('aiInput');
+  const q = input.value.trim(); if(!q) return;
+  input.value=''; aiMsg('user',q);
+  const typing = aiMsg('ai','<span class="typing"><i></i><i></i><i></i></span>');
+  await new Promise(r=>setTimeout(r,700));
+
+  // 模拟 WorkBuddy 网关的 function calling 路由
+  if(/加一?列|新增列|工时/.test(q)){
+    typing.innerHTML = `<span class="tool-tag">🔧 调用工具 · create_board_column</span>
+      我把它翻译成了列定义，请确认后执行：` + confirmCard({
+        title:'新增列：工时估算',
+        rows:[['类型','数字（小时）'],['默认值','8'],['可见性','全员可见']],
+        apply:'confirmColumn' });
+  } else if(/新建|创建.*任务|下迭代/.test(q)){
+    typing.innerHTML = `<span class="tool-tag">🔧 调用工具 · create_items</span>
+      已生成 5 条条目草稿（批量写入需确认）：<div class="confirm-card"><h5>写入「📱 App 2.0 项目 / 待办」共 5 条</h5>
+      1. 消息推送服务接入  2. 离线缓存方案  3. 性能埋点上报  4. 崩溃日志收集  5. 灰度发布流程
+      <div class="cc-row"><button class="btn btn-ghost" onclick="denyCard(this)">取消</button>
+      <button class="btn btn-primary" onclick="applyCard(this)">确认创建</button></div></div>`;
+  } else if(/阻塞|风险/.test(q)){
+    typing.innerHTML = `<span class="tool-tag">🔧 调用工具 · search_items + aggregate</span>
+      当前有 <b>1 条阻塞、1 条已逾期</b>：\n\n⚠️ <b>WorkBuddy AI 工具白名单评审</b> — 状态"阻塞"，负责人王强，截止 11-13（明天到期）\n\n建议：AI 已检测到该条逾期风险，要我@王强 并发一条提醒吗？（写操作，需确认）`;
+    setSuggest(['@王强 发提醒','查看全部分组统计']);
+  } else if(/本周|任务/.test(q)){
+    typing.innerHTML = `<span class="tool-tag">🔧 调用工具 · search_items</span>
+      你本周的任务（3 条进行中，1 条完成）：\n\n① 登录模块 SSO 联调 — 进行中，截止 11-15\n② Excel 导入列映射设计 — 待办，截止 11-25\n③ 通知聚合规则定稿 — ✅ 已完成\n\n全组进度：完成 2/7（29%），建议优先处理逾期项「AI 工具白名单评审」。`;
+  } else {
+    typing.innerHTML = `<span class="tool-tag">🔧 调用工具 · get_board_schema + aggregate</span>
+      「App 2.0 项目」概况：7 条条目 / 3 个分组 / 完成率 29%。\n\n我暂时没理解这个问题的具体意图，你可以让我：查询任务、生成周报、建列、建条目、创建自动化规则。`;
+    setSuggest(['我这周的任务和风险？','加一列"工时估算"']);
+  }
+}
+function confirmCard({title,rows,apply}){
+  return `<div class="confirm-card"><h5>✍️ ${title}</h5>${rows.map(r=>`<div style="color:#7a7f8c">${r[0]}：<b style="color:#25272c">${r[1]}</b></div>`).join('')}
+    <div class="cc-row"><button class="btn btn-ghost" onclick="denyCard(this)">取消</button>
+    <button class="btn btn-primary" onclick="${apply}(this)">确认执行</button></div></div>`;
+}
+function confirmColumn(btn){
+  const card = btn.closest('.confirm-card');
+  card.classList.add('applied');
+  card.insertAdjacentHTML('beforeend','<span class="applied-badge">✓ 已创建（source: ai，已记入审计日志，可撤销）</span>');
+  toast('列「工时估算」已添加');
+}
+function applyCard(btn){
+  const card = btn.closest('.confirm-card');
+  card.classList.add('applied');
+  card.insertAdjacentHTML('beforeend','<span class="applied-badge">✓ 5 条条目已创建（source: ai，可撤销）</span>');
+  // 原型：把第一批条目真的写进看板
+  ['消息推送服务接入','离线缓存方案','性能埋点上报','崩溃日志收集','灰度发布流程'].forEach((n,idx)=>{
+    items.push({id:100+idx,name:n,group:'待办',status:'todo',assignee:'zhang',date:'2026-12-01',prio:'中'});
+  });
+  renderTable(); renderKanban(); toast('AI 已创建 5 条条目');
+}
+function denyCard(btn){
+  const card = btn.closest('.confirm-card')||btn.closest('.msg');
+  card.innerHTML += '<div style="margin-top:6px;color:#e2445c;font-size:12px">✕ 已取消，未执行任何写入</div>';
+  const row = card.querySelector('.cc-row'); if(row) row.remove();
+}
+
+/* ================= 通用 ================= */
+function toast(t){
+  const el = document.getElementById('toast');
+  el.textContent = t; el.classList.add('show');
+  clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove('show'),2200);
+}
+document.getElementById('aiInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendAI(); }
+});
+renderTable(); renderKanban();
+</script>
+</body>
+</html>

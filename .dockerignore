@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+dist
+**/dist
+**/public
+.git
+*.md
+prototype
+scripts
+deploy
+.env
+.env.example

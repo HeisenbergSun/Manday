@@ -1,0 +1,65 @@
+# Manday 双机部署 —— 应用机 compose（数据库机单独跑 PG 主从，见 db/README）
+# 启动: docker compose up -d
+services:
+  app:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgres://manday:***@db-primary.internal:5432/manday
+    depends_on: [redis, minio]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+
+  app-blue:   # 简化蓝绿：Nginx upstream 切换，保留旧组 10 分钟可回滚
+    build: ./backend
+    profiles: ["bluegreen"]
+    env_file: ./backend/.env
+
+  nginx:
+    image: nginx:alpine
+    ports: ["443:443"]
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on: [app]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    volumes: [minio-data:/data]
+    restart: unless-stopped
+
+  worker:     # BullMQ 自动化 worker（独立进程，崩溃不拖累 API）
+    build: ./backend
+    command: node dist/modules/automation/worker-main.js
+    env_file: ./backend/.env
+    restart: unless-stopped
+
+  # ---- 监控最小集 ----
+  uptime:
+    image: louislam/uptime-kuma:1
+    volumes: [uptime-data:/app/data]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus
+    volumes: [./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana
+    volumes: [grafana-data:/var/lib/grafana]
+    restart: unless-stopped
+
+volumes:
+  minio-data:
+  uptime-data:
+  grafana-data:

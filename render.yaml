@@ -1,0 +1,28 @@
+# Render Blueprint — 一键部署 Manday（免费层试用）
+# 用法：把 manday/ 推到 GitHub → Render 控制台 New → Blueprint → 选仓库即可
+# 文档：https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: manday
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free            # 750h/月免费，15 分钟无访问休眠（唤醒约 1 分钟）
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: manday-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SEED_DEMO
+        value: "true"      # 首次启动写入演示数据（部门/用户/示例 Board）
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: manday-db
+    plan: free             # 注意：免费 PG 30 天过期，到期需备份迁移或升级 $7/月
+    databaseName: manday
+    user: manday
