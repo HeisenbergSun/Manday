@@ -12,7 +12,7 @@ ON CONFLICT (email) DO NOTHING;
 WITH d AS (SELECT id FROM departments WHERE path='/全公司/技术部'),
      b AS (
        INSERT INTO boards (name, visibility, owner_id)
-       SELECT 'App 2.0 项目', 'department', (SELECT id FROM users WHERE name='张伟')
+       SELECT 'App 2.0 项目', 'company', (SELECT id FROM users WHERE name='张伟')
        RETURNING id
      ),
      g AS (

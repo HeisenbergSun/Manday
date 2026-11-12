@@ -2,7 +2,7 @@
  * 认证模块 — 企业微信 OAuth（可切换飞书/钉钉，策略模式）
  * P0 决策：禁用本地密码登录；SSO 即唯一入口
  */
-import { Injectable, Controller, Get, UseGuards, Req, UnauthorizedException, Module, Inject } from '@nestjs/common';
+import { Injectable, Controller, Get, Post, UseGuards, Req, UnauthorizedException, Module, Inject } from '@nestjs/common';
 import { Public } from './auth.guard';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtModule } from '@nestjs/jwt';
@@ -98,6 +98,17 @@ export class AuthController {
   @Public()
   @Get('callback')
   async callback(@Req() req: any) { return this.auth.login(req.query.code); }
+
+  /** 开发登录：仅 DEV_LOGIN=true 时可用（本地试用/联调；生产绝不开启） */
+  @Public()
+  @Post('dev-login')
+  async devLogin() {
+    if (this.cfg.get('DEV_LOGIN') !== 'true') {
+      throw new UnauthorizedException('DEV_LOGIN 未开启');
+    }
+    // 复用首登建户逻辑：邮箱固定 dev@internal
+    return this.auth.login('dev-code');
+  }
 }
 
 @Module({

@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { DomainExceptionFilter } from './common/http-exception.filter';
 import * as path from 'path';
 import * as express from 'express';
 import * as fs from 'fs';
@@ -38,6 +39,7 @@ async function bootstrap() {
   await ensureSchema();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalFilters(new DomainExceptionFilter());
   app.enableCors({ origin: process.env.CORS_ORIGIN ?? true, credentials: true });
 
   // 前端调用带 /api 前缀 → 剥掉后转发给后端路由（同源部署，零 CORS 配置）
