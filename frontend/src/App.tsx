@@ -59,20 +59,30 @@ export function App() {
   const [view, setView] = useState<'table' | 'kanban' | 'dashboard'>('table');
   const { aiOpen, toggleAI } = useUi();
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>({ id: 'demo-board', name: 'Demo' });
+  const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(() =>
     getToken() ? { id: localStorage.getItem('userId') ?? '', name: '', email: '' } : null);
   const setBoard = useItems((s) => s.setBoard);
 
-  if (!user) return <Login onLogin={setUser} />;
-
+  // 登录后自动打开第一个可见 Board
   useEffect(() => {
-    const boardId = activeBoard?.id ?? 'demo-board';
-    api.getBoard(boardId).then((d) => setBoard(d.items, d.columns));
+    if (!user || activeBoard) return;
+    api.getBoards().then((bs) => {
+      if (Array.isArray(bs) && bs.length) setActiveBoard({ id: bs[0].id, name: bs[0].name });
+    }).catch(() => {});
+  }, [user?.id, activeBoard?.id]);
+
+  // 加载当前 Board 数据 + 订阅实时推送
+  useEffect(() => {
+    if (!user || !activeBoard?.id) return;
+    const boardId = activeBoard.id;
+    api.getBoard(boardId).then((d) => setBoard(d.items ?? [], d.columns ?? [])).catch(() => {});
     joinBoard(boardId);
     return () => leaveBoard(boardId);
-  }, [activeBoard?.id]);
+  }, [user?.id, activeBoard?.id]);
+
+  if (!user) return <Login onLogin={setUser} />;
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f6f7fb' }}>
@@ -102,7 +112,9 @@ export function App() {
         <WorkspaceNav activeId={activeBoard?.id} onOpen={(b) => { setActiveBoard(b); setView('table'); }}
           onNewBoard={() => setNewBoardOpen(true)} />
         <main style={{ flex: 1, overflow: 'auto' }}>
-          {view === 'table' ? <BoardTable boardId={activeBoard?.id ?? 'demo-board'} onOpenItem={setDetailId} />
+          {!activeBoard ? (
+            <div style={{ padding: 48, color: '#7a7f8c', fontSize: 14 }}>← 从左侧选择一个 Board，或新建一个</div>
+          ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} />
             : view === 'kanban' ? <Kanban groups={[{ id: 'g1', name: '待办' }, { id: 'g2', name: '进行中' }, { id: 'g3', name: '已完成' }]} />
             : <DashboardPage boardIds={activeBoard ? [activeBoard.id] : []} />}
         </main>

@@ -2,6 +2,7 @@
  * 工作区布局 — 左侧导航（Board 列表 / Dashboard / 回收站入口）+ 顶栏路由
  */
 import { useEffect, useState } from 'react';
+import { api } from '../api';
 
 interface BoardItem { id: string; name: string; my_role: string; department_name?: string; visibility: string; }
 
@@ -12,7 +13,8 @@ export function WorkspaceNav({ activeId, onOpen, onNewBoard }: {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    fetch('/api/boards').then((r) => r.json()).then(setBoards);
+    // 带 token 的统一封装；失败不崩导航（静默降级为空列表）
+    api.getBoards().then((d) => setBoards(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   return (
