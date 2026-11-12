@@ -6,3 +6,5 @@ backend/public/
 .env
 *.log
 .DS_Store
+.neon
+.env.local
