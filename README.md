@@ -1,3 +1,14 @@
+---
+# ↓ Hugging Face Spaces 部署元数据（其他平台忽略此块）
+title: Manday
+emoji: 📋
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Manday — 轻量版工作管理平台
 
 > 内部替代 Monday.com 的轻量 Work OS，200 人规模，内置对接 **Scania WorkBuddy 企业版** 的 AI 助手。

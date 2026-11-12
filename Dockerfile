@@ -19,6 +19,8 @@ RUN cd frontend && npx vite build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+# Hugging Face Spaces 要求：应用监听 7860 端口、以非 root 用户运行
+ENV PORT=7860
 
 COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/node_modules ./node_modules
@@ -26,6 +28,9 @@ COPY --from=build /app/backend/package.json ./
 COPY --from=build /app/db-src ./db
 COPY --from=build /app/frontend/dist ./public
 
-EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:3000/health || exit 1
+RUN adduser -D -u 1000 manday && chown -R manday:manday /app
+USER manday
+
+EXPOSE 7860
+HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:${PORT}/health || exit 1
 CMD ["node", "dist/main.js"]
