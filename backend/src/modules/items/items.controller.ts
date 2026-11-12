@@ -31,6 +31,12 @@ export class BoardsItemsController {
     return 'viewer'; // 其余可见者只读
   }
 
+  @Post(':id/items')
+  async createItem(@Req() req: any, @Param('id') boardId: string, @Body() b: { name?: string; groupId?: string }) {
+    const role = await this.resolveBoardRole(boardId, req.user.id);
+    return this.items.createItem(boardId, b.name ?? '', b.groupId ?? null, role, req.user.id);
+  }
+
   @Get(':id/items')
   async getBoard(@Req() req: any, @Param('id') boardId: string) {
     const role = await this.resolveBoardRole(boardId, req.user.id);
@@ -78,6 +84,12 @@ export class ItemsController {
     if (!b.changes?.length) return { updated: 0 };
     const { role } = await this.resolveRoleForItem(b.changes[0].itemId, req.user.id);
     return this.items.batchUpdate(b.changes, role, req.user.id);
+  }
+
+  @Patch(':id')
+  async updateItem(@Req() req: any, @Param('id') itemId: string, @Body() b: { name?: string; groupId?: string }) {
+    const { role } = await this.resolveRoleForItem(itemId, req.user.id);
+    return this.items.updateItem(itemId, b, role, req.user.id);
   }
 
   @Post('soft-delete')

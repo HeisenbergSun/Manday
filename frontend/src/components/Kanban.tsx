@@ -39,10 +39,21 @@ export function Kanban({ groups }: { groups: { id: string; name: string }[] }) {
 
   async function onDragEnd(e: DragEndEvent) {
     const itemId = String(e.active.id);
-    const targetGroup = String(e.over?.id);
-    if (!targetGroup) return;
-    // 乐观更新：先改本地 store（视觉即时反馈），再 PATCH；失败 toast 回滚
-    await api.batchUpdate([{ itemId, columnId: 'group', value: targetGroup }]);
+    const targetGroup = e.over?.id == null ? '' : String(e.over.id);
+    if (!targetGroup || targetGroup === 'undefined' || targetGroup === 'default') return;
+    const store = useItems.getState();
+    const item = store.items[itemId];
+    if (!item || item.group_id === targetGroup) return;
+    // 乐观更新：先改本地（视觉即时反馈），失败回滚
+    const prevGroupId = item.group_id;
+    store.patchItem(itemId, { groupId: targetGroup });
+    try {
+      const r: any = await api.updateItem(itemId, { groupId: targetGroup });
+      if (r?.version) store.patchItem(itemId, { version: r.version });
+    } catch {
+      store.patchItem(itemId, prevGroupId ? { groupId: prevGroupId } : {});
+      alert('移动失败，已回滚');
+    }
   }
 
   return (

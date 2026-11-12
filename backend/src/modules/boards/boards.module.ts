@@ -35,6 +35,47 @@ export class BoardsService {
     return rows;
   }
 
+  /** Board 级角色解析（与 items.controller.resolveRoleForItem 同一规则） */
+  private async resolveRole(boardId: string, userId: string) {
+    const { rows: br } = await this.pg.query(
+      `SELECT b.owner_id, b.visibility, bp.role,
+              EXISTS (SELECT 1 FROM user_departments ud WHERE ud.user_id = $2
+                      AND ud.department_id = b.department_id) AS in_dept
+       FROM boards b
+       LEFT JOIN board_permissions bp ON bp.board_id = b.id AND bp.subject_type = 'user' AND bp.subject_id = $2
+       WHERE b.id = $1`, [boardId, userId]);
+    if (!br.length) return null;
+    const r = br[0];
+    return r.role ?? (r.owner_id === userId ? 'owner'
+      : (r.visibility === 'company' || (r.visibility === 'department' && r.in_dept)) ? 'editor' : 'viewer');
+  }
+
+  /** Board 详情（条目 + 动态列 + 分组，一次性返回，前端冷启动/冲突重载用） */
+  async detail(boardId: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'read')) throw new Error('FORBIDDEN');
+    const { rows: b } = await this.pg.query(
+      `SELECT * FROM boards WHERE id = $1 AND is_archived = false`, [boardId]);
+    if (!b.length) throw new Error('NOT_FOUND');
+    const { rows: columns } = await this.pg.query(
+      `SELECT * FROM board_columns WHERE board_id = $1 ORDER BY position`, [boardId]);
+    const { rows: groups } = await this.pg.query(
+      `SELECT id, name, position, color FROM board_groups WHERE board_id = $1 ORDER BY position`, [boardId]);
+    const { rows: items } = await this.pg.query(
+      `SELECT i.id, i.group_id, i.name, i.position, i.version,
+              jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
+       FROM items i
+       LEFT JOIN item_values iv ON iv.item_id = i.id
+       WHERE i.board_id = $1 AND i.deleted_at IS NULL
+       GROUP BY i.id ORDER BY i.position`, [boardId]);
+    const itemRows = items.map((r) => {
+      const values: Record<string, unknown> = {};
+      for (const kv of r.kv ?? []) values[kv.k] = kv.v;
+      return { ...r, values };
+    });
+    return { board: b[0], columns, groups, items: itemRows };
+  }
+
   async create(userId: string, dto: { name: string; departmentId?: string; visibility?: string }) {
     const { rows } = await this.pg.query(
       `INSERT INTO boards (name, department_id, visibility, owner_id)
@@ -56,7 +97,8 @@ export class BoardsService {
   }
 
   /** 回收站（P0 刚需）：列出已删除条目，支持恢复 */
-  async recycleBin(boardId: string, userRole: any) {
+  async recycleBin(boardId: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
     if (!can(userRole, 'read')) throw new Error('FORBIDDEN');
     const { rows } = await this.pg.query(
       `SELECT id, name, deleted_at FROM items
@@ -66,7 +108,9 @@ export class BoardsService {
     return rows;
   }
 
-  async restore(itemIds: string[], userRole: any, userId: string) {
+  async restore(itemIds: string[], userId: string) {
+    const bid = (await this.pg.query(`SELECT board_id FROM items WHERE id = $1`, [itemIds[0]])).rows[0]?.board_id;
+    const userRole = bid ? await this.resolveRole(bid, userId) : null;
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
     await this.pg.query(`UPDATE items SET deleted_at = NULL WHERE id = ANY($1::uuid[])`, [itemIds]);
     await this.pg.query(
@@ -83,9 +127,12 @@ export class BoardsController {
   constructor(private svc: BoardsService) {}
   @Get() list(@Req() req) { return this.svc.listForUser(req.user.id); }
   @Post() create(@Req() req, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
-  @Get(':id/recycle-bin') recycle(@Req() req) { return this.svc.recycleBin(req.params.id, req.user.role); }
+  @Get(':id') detail(@Req() req, @Param('id') id: string) {
+    return this.svc.detail(id, req.user.id);
+  }
+  @Get(':id/recycle-bin') recycle(@Req() req, @Param('id') id: string) { return this.svc.recycleBin(id, req.user.id); }
   @Post(':id/restore') restore(@Req() req, @Body() b: { itemIds: string[] }) {
-    return this.svc.restore(b.itemIds, req.user.role, req.user.id);
+    return this.svc.restore(b.itemIds, req.user.id);
   }
 }
 

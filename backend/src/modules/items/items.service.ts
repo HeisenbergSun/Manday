@@ -18,7 +18,7 @@ export class ItemsService {
     if (!can(userRole, 'read')) throw new Error('FORBIDDEN');
     const { rows } = await this.pg.query(
       `SELECT i.id, i.group_id, i.name, i.position, i.version,
-              jsonb_object_agg(iv.column_id, iv.value #>> '{}') AS values
+              jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
        WHERE i.board_id = $1 AND i.deleted_at IS NULL
@@ -26,8 +26,12 @@ export class ItemsService {
        ORDER BY i.position`,
       [boardId],
     );
-    // jsonb_object_agg 全为 NULL（无任何列值）时返回 null，统一成空对象，避免前端 Object.values 崩
-    return rows.map((r) => ({ ...r, values: r.values ?? {} }));
+    // jsonb_agg 组装成 {columnId: value}（jsonb_object_agg 在 Neon/pg 驱动上有 field name 解析 bug，弃用）
+    return rows.map((r) => {
+      const values: Record<string, unknown> = {};
+      for (const kv of r.kv ?? []) values[kv.k] = kv.v;
+      return { ...r, values };
+    });
   }
 
   /** Board 分组（看板视图的列） */
@@ -77,6 +81,50 @@ export class ItemsService {
   }
 
   /** 软删除 → 回收站（P0 刚需） */
+  /** 创建条目（P0）：默认放第一个分组，初始 version=1 */
+  async createItem(boardId: string, name: string, groupId: string | null, userRole: BoardRole | null, userId: string) {
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    let gid = groupId;
+    if (!gid) {
+      const { rows } = await this.pg.query(
+        `SELECT id FROM board_groups WHERE board_id = $1 ORDER BY position LIMIT 1`, [boardId]);
+      gid = rows[0]?.id;
+    }
+    const { rows } = await this.pg.query(
+      `INSERT INTO items (board_id, group_id, name, position, version, created_by)
+       VALUES ($1,$2,$3,$4,1,$5) RETURNING id, group_id, name, version`,
+      [boardId, gid, name || '新条目', Date.now() / 1000, userId],
+    );
+    await this.pg.query(
+      `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'item.create',$2,'ui')`,
+      [userId, `item:${rows[0].id}`],
+    );
+    return rows[0];
+  }
+
+  /** 更新条目本体：改名 / 换分组（看板拖拽持久化） */
+  async updateItem(itemId: string, patch: { name?: string; groupId?: string }, userRole: BoardRole | null, userId: string) {
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    const sets: string[] = [];
+    const args: unknown[] = [];
+    if (patch.name !== undefined) { sets.push(`name = $${sets.length + 1}`); args.push(patch.name); }
+    if (patch.groupId !== undefined) { sets.push(`group_id = $${sets.length + 1}`); args.push(patch.groupId); }
+    if (!sets.length) return { ok: true };
+    sets.push('version = version + 1');
+    args.push(itemId);
+    const { rows } = await this.pg.query(
+      `UPDATE items SET ${sets.join(', ')} WHERE id = $${args.length} AND deleted_at IS NULL RETURNING id, name, group_id, version`,
+      args,
+    );
+    if (rows.length) {
+      await this.pg.query(
+        `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'item.update',$2,'ui')`,
+        [userId, `item:${itemId}`],
+      );
+    }
+    return rows[0] ?? null;
+  }
+
   async softDelete(itemIds: string[], userRole: BoardRole | null, userId: string) {
     if (!can(userRole, 'delete')) throw new Error('FORBIDDEN');
     await this.pg.query(

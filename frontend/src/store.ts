@@ -3,7 +3,7 @@
  */
 import { create } from 'zustand';
 
-export interface Item { id: string; name: string; version: number; values: Record<string, unknown>; }
+export interface Item { id: string; group_id?: string; name: string; version: number; values: Record<string, unknown>; }
 export interface ColumnDef { id: string; type: string; name: string; settings: Record<string, unknown>; }
 export interface GroupDef { id: string; name: string; position?: number; color?: string; }
 
@@ -15,6 +15,8 @@ interface ItemsState {
   /** 实时 item 级 diff 更新：只动一个条目 */
   applyPatch: (itemId: string, field: string, value: unknown, version: number) => void;
   bumpVersion: (itemId: string, version: number) => void;
+  addItem: (item: Item) => void;
+  patchItem: (itemId: string, patch: { name?: string; groupId?: string; version?: number }) => void;
 }
 
 export const useItems = create<ItemsState>((set) => ({
@@ -34,6 +36,12 @@ export const useItems = create<ItemsState>((set) => ({
   bumpVersion: (itemId, version) => set((s) => {
     const it = s.items[itemId];
     return it ? { items: { ...s.items, [itemId]: { ...it, version } } } : s;
+  }),
+  addItem: (item) => set((s) => ({ items: { ...s.items, [item.id]: item } })),
+  patchItem: (itemId, patch) => set((s) => {
+    const it = s.items[itemId];
+    if (!it) return s;
+    return { items: { ...s.items, [itemId]: { ...it, ...patch } } };
   }),
 }));
 

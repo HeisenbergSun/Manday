@@ -11,6 +11,46 @@ import { useItems, useUi } from './store';
 import { api, getToken, clearToken } from './api';
 import { joinBoard, leaveBoard } from './socket';
 
+/** 回收站 — 列出已删条目，支持恢复（后端 /boards/:id/recycle-bin） */
+function TrashView({ boardId }: { boardId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [msg, setMsg] = useState('');
+
+  const load = () => api.recycleBin(boardId)
+    .then((d: any) => setRows(Array.isArray(d) ? d : []))
+    .catch((e) => setMsg((e as Error).message));
+  useEffect(() => { load(); }, [boardId]);
+
+  const restore = async (ids: string[]) => {
+    try {
+      await api.restoreItems(boardId, ids);
+      setMsg(`已恢复 ${ids.length} 条`);
+      load();
+    } catch (e) { setMsg(`恢复失败：${(e as Error).message}`); }
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🗑 回收站（{rows.length}）</div>
+      {msg && <div style={{ background: '#eef1fe', color: '#4f6ef7', borderRadius: 8, padding: '7px 12px',
+        fontSize: 12, marginBottom: 10 }}>{msg}</div>}
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+          background: '#fff', borderRadius: 10, border: '1px solid #e6e8ef', marginBottom: 8 }}>
+          <span style={{ flex: 1, fontSize: 13 }}>{r.name}</span>
+          <span style={{ color: '#7a7f8c', fontSize: 12 }}>
+            删除于 {new Date(r.deleted_at).toLocaleString('zh-CN')}</span>
+          <button onClick={() => restore([r.id])} style={{ padding: '5px 12px', borderRadius: 7,
+            border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 12 }}>恢复</button>
+        </div>
+      ))}
+      {rows.length === 0 && !msg && (
+        <div style={{ color: '#7a7f8c', fontSize: 13 }}>回收站是空的</div>
+      )}
+    </div>
+  );
+}
+
 /** 登录页 — 开发一键登录 + 手动 token 备用通道（SSO 未配置时） */
 function Login({ onLogin }: { onLogin: (u: { id: string; name: string; email: string }) => void }) {
   const [busy, setBusy] = useState(false);
@@ -56,7 +96,7 @@ function Login({ onLogin }: { onLogin: (u: { id: string; name: string; email: st
 }
 
 export function App() {
-  const [view, setView] = useState<'table' | 'kanban' | 'dashboard'>('table');
+  const [view, setView] = useState<'table' | 'kanban' | 'dashboard' | 'trash'>('table');
   const { aiOpen, toggleAI } = useUi();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>(null);
@@ -90,12 +130,12 @@ export function App() {
       <header style={{ height: 52, background: '#fff', borderBottom: '1px solid #e6e8ef', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16 }}>
         <div style={{ fontWeight: 800, fontSize: 17, color: '#4f6ef7' }}>Manday</div>
         <nav style={{ display: 'flex', gap: 4 }}>
-          {(['table', 'kanban', 'dashboard'] as const).map((v) => (
+          {(['table', 'kanban', 'dashboard', 'trash'] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
               style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
                 background: view === v ? '#eef1fe' : 'transparent', color: view === v ? '#4f6ef7' : '#7a7f8c',
                 fontWeight: view === v ? 600 : 400 }}>
-              {v === 'table' ? '▤ 表格' : v === 'kanban' ? '▦ 看板' : '📊 Dashboard'}
+              {v === 'table' ? '▤ 表格' : v === 'kanban' ? '▦ 看板' : v === 'dashboard' ? '📊 Dashboard' : '🗑 回收站'}
             </button>
           ))}
         </nav>
@@ -117,7 +157,7 @@ export function App() {
             <div style={{ padding: 48, color: '#7a7f8c', fontSize: 14 }}>← 从左侧选择一个 Board，或新建一个</div>
           ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} />
             : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} />
-            : <DashboardPage boardIds={activeBoard ? [activeBoard.id] : []} />}
+            : view === 'trash' ? <TrashView boardId={activeBoard.id} /> : <DashboardPage boardIds={[activeBoard.id]} />}
         </main>
         {detailId && <ItemDetail itemId={detailId} onClose={() => setDetailId(null)} />}
         {aiOpen && <AiSidebar boardId={activeBoard?.id} />}
