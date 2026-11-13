@@ -2,7 +2,7 @@
  * 表格视图 — AG Grid Community（P0 落地，P1 换自研 TanStack）
  * 列类型渲染器走统一注册表：表格/看板/详情面板三处复用
  */
-import { useMemo, useCallback, useState, useRef } from 'react';
+import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, CellValueChangedEvent, GridApi } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
@@ -30,12 +30,105 @@ export const columnTypeRegistry: Record<string, {
 /** 列类型的中文展示名 */
 const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选' } as Record<string, string>)[t] ?? t;
 
+/** 成员与权限管理弹窗：列表 + 改角色 + 移除 + 添加公司内用户 */
+const ROLE_LABEL: Record<string, string> = { owner: '负责人', editor: '可编辑', viewer: '只读', guest: '访客' };
+function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: () => void; flash: (s: string) => void }) {
+  const [members, setMembers] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [pickUser, setPickUser] = useState('');
+  const [pickRole, setPickRole] = useState('editor');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setMembers(await api.listMembers(boardId).catch(() => []));
+  };
+  useEffect(() => { load(); api.listUsers().then((u) => setUsers(Array.isArray(u) ? u : [])).catch(() => {}); }, [boardId]);
+
+  const add = async () => {
+    if (!pickUser || busy) return;
+    setBusy(true);
+    try {
+      await api.addMember(boardId, pickUser, pickRole);
+      setPickUser('');
+      await load();
+      flash('已添加成员');
+    } catch (e) { flash(`添加失败：${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+
+  const changeRole = async (m: any, role: string) => {
+    try {
+      await api.addMember(boardId, m.id, role);
+      await load();
+      flash(`已改为「${ROLE_LABEL[role] ?? role}」`);
+    } catch (e) { flash(`改角色失败：${(e as Error).message}`); }
+  };
+
+  const remove = async (m: any) => {
+    if (!confirm(`移除成员「${m.name}」？`)) return;
+    try {
+      await api.removeMember(boardId, m.id);
+      await load();
+      flash('已移除成员');
+    } catch (e) { flash(`移除失败：${(e as Error).message}`); }
+  };
+
+  const memberIds = new Set(members.map((m) => m.id));
+  const candidates = users.filter((u) => !memberIds.has(u.id));
+
+  return (
+    <div style={{ position: 'absolute', top: 52, left: 12, zIndex: 60, background: '#fff', borderRadius: 12,
+      boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 380 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+        <b style={{ fontSize: 14 }}>👥 成员与权限</b>
+        <button onClick={onClose} style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
+      </div>
+      {members.map((m) => (
+        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
+          <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#579bfc', color: '#fff', fontSize: 11,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{(m.name || '?')[0]}</div>
+          <div style={{ flex: 1 }}>
+            <div>{m.name} {m.is_owner && <span style={{ fontSize: 11, color: '#b8860b' }}>（负责人）</span>}</div>
+            <div style={{ fontSize: 11, color: '#a0a4b1' }}>{m.email}</div>
+          </div>
+          {m.is_owner ? (
+            <span style={{ fontSize: 12, color: '#7a7f8c' }}>owner</span>
+          ) : (
+            <>
+              <select value={m.role} onChange={(e) => changeRole(m, e.target.value)}
+                style={{ padding: '4px 6px', borderRadius: 7, border: '1px solid #e6e8ef', fontSize: 12 }}>
+                {['editor', 'viewer', 'guest', 'owner'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              </select>
+              <button onClick={() => remove(m)} title="移除"
+                style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>
+            </>
+          )}
+        </div>
+      ))}
+      <b style={{ fontSize: 13, display: 'block', marginTop: 12 }}>添加成员</b>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <select value={pickUser} onChange={(e) => setPickUser(e.target.value)}
+          style={{ flex: 1, padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+          <option value="">选择公司内成员…</option>
+          {candidates.map((u) => <option key={u.id} value={u.id}>{u.name}（{u.email}）</option>)}
+        </select>
+        <select value={pickRole} onChange={(e) => setPickRole(e.target.value)}
+          style={{ padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+          {['editor', 'viewer', 'guest'].map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+        </select>
+        <button onClick={add} disabled={busy || !pickUser}
+          style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: pickUser ? '#4f6ef7' : '#c5c9d4', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
+      </div>
+    </div>
+  );}
+
 export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenItem?: (itemId: string) => void }) {
   const { items, columns, groups, bumpVersion, addItem, patchItem, setBoard } = useItems();
   const gridRef = useRef<GridApi>(null);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
   const [mgrOpen, setMgrOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState('text');
   const [newGroupName, setNewGroupName] = useState('');
@@ -53,7 +146,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   );
 
   const colDefs = useMemo<ColDef[]>(() => [
-    { field: 'name', headerName: '条目', editable: true, flex: 2 },
+    { field: 'name', headerName: '条目', editable: true, flex: 2, rowDrag: true },
     ...columns.map((c) => ({
       field: c.id,
       headerName: c.name,
@@ -176,6 +269,12 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
             cursor: 'pointer', fontSize: 13, color: '#e2445c' }}>
           🗑 删除选中
         </button>
+        <button onClick={() => setMembersOpen(true)}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
+          👥 成员
+        </button>
+        {membersOpen && <MembersModal boardId={boardId} onClose={() => setMembersOpen(false)} flash={flash} />}
         <button onClick={() => setMgrOpen(!mgrOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#eef1fe' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
@@ -257,6 +356,19 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
           pagination
           paginationPageSize={100}
           rowBuffer={10}                    // 虚拟滚动缓冲
+          onRowDragEnd={async () => {
+            // 拖拽排序：取拖完后的行序 → 后端批量写 position
+            const g: any = gridRef.current;
+            const api2 = g?.api ?? g;
+            const nodes = api2?.getRenderedNodes?.() ?? [];
+            const rows: any[] = nodes.length ? nodes.map((n: any) => n.data)
+              : (api2?.getModel?.()?.rowsToDisplay ?? []).map((n: any) => n?.data).filter(Boolean);
+            if (rows.length) {
+              const orders = rows.map((r, i) => ({ id: r.id, position: (i + 1) * 1000 }));
+              try { await api.reorderItems(orders); flash('排序已保存'); }
+              catch (e) { flash(`排序保存失败：${(e as Error).message}`); await reloadBoard(); }
+            }
+          }}
           onCellValueChanged={onCellValueChanged}
           onRowClicked={(e) => onOpenItem?.(e.data.id)}
           animateRows

@@ -188,6 +188,73 @@ export class BoardsService {
     await this.pg.query(`DELETE FROM board_groups WHERE id = $1 AND board_id = $2`, [gid, boardId]);
     return { deleted: true };
   }
+
+  /** —— 成员与权限 —— */
+  /** Board 成员列表：owner + 显式授权的用户，带姓名邮箱 */
+  async listMembers(boardId: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'read')) throw new Error('FORBIDDEN');
+    const owner = (await this.pg.query(`SELECT owner_id FROM boards WHERE id = $1`, [boardId])).rows[0]?.owner_id;
+    const { rows } = await this.pg.query(
+      `SELECT u.id, u.name, u.email, u.avatar_url,
+              CASE WHEN u.id = $2 THEN 'owner' ELSE bp.role END AS role,
+              (u.id = $2) AS is_owner
+       FROM board_permissions bp
+       JOIN users u ON u.id = bp.subject_id
+       WHERE bp.board_id = $1 AND bp.subject_type = 'user'
+       ORDER BY (u.id = $2) DESC, u.name`,
+      [boardId, owner]);
+    const ownerRow = owner
+      ? (await this.pg.query(`SELECT id, name, email, avatar_url FROM users WHERE id = $1`, [owner])).rows[0]
+      : null;
+    const ids = new Set(rows.map((r) => r.id));
+    const list = ownerRow && !ids.has(ownerRow.id)
+      ? [{ ...ownerRow, role: 'owner', is_owner: true }, ...rows]
+      : rows;
+    return list;
+  }
+
+  /** 添加成员（已有则改角色） */
+  async addMember(boardId: string, userId: string, dto: { userId: string; role: string }) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!['owner', 'editor', 'viewer', 'guest'].includes(dto.role)) throw new Error('BAD_ROLE');
+    const u = (await this.pg.query(`SELECT id, name, email FROM users WHERE id = $1`, [dto.userId])).rows[0];
+    if (!u) throw new Error('USER_NOT_FOUND');
+    const owner = (await this.pg.query(`SELECT owner_id FROM boards WHERE id = $1`, [boardId])).rows[0]?.owner_id;
+    if (dto.userId === owner) throw new Error('OWNER_ALREADY');
+    await this.pg.query(
+      `INSERT INTO board_permissions (board_id, subject_type, subject_id, role)
+       VALUES ($1,'user',$2,$3)
+       ON CONFLICT (board_id, subject_type, subject_id) DO UPDATE SET role = EXCLUDED.role`,
+      [boardId, dto.userId, dto.role]);
+    return { ...u, role: dto.role, is_owner: false };
+  }
+
+  /** 移除成员 */
+  async removeMember(boardId: string, targetUserId: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    const owner = (await this.pg.query(`SELECT owner_id FROM boards WHERE id = $1`, [boardId])).rows[0]?.owner_id;
+    if (targetUserId === owner) throw new Error('CANNOT_REMOVE_OWNER');
+    await this.pg.query(
+      `DELETE FROM board_permissions WHERE board_id = $1 AND subject_type = 'user' AND subject_id = $2`,
+      [boardId, targetUserId]);
+    return { removed: true };
+  }
+
+  /** 可选成员列表（全公司用户） */
+  async listUsers() {
+    const { rows } = await this.pg.query(
+      `SELECT id, name, email FROM users WHERE status = 'active' ORDER BY name LIMIT 200`);
+    return rows;
+  }
+}
+
+@Controller('users')
+export class UsersController {
+  constructor(private svc: BoardsService) {}
+  @Get() list(@Req() req) { return this.svc.listUsers(); }
 }
 
 @Controller('boards')
@@ -216,11 +283,20 @@ export class BoardsController {
   @Delete(':id/groups/:gid') deleteGroup(@Req() req, @Param('id') id: string, @Param('gid') gid: string) {
     return this.svc.deleteGroup(id, gid, req.user.id);
   }
+  @Get(':id/members') listMembers(@Req() req, @Param('id') id: string) {
+    return this.svc.listMembers(id, req.user.id);
+  }
+  @Post(':id/members') addMember(@Req() req, @Param('id') id: string, @Body() b: { userId: string; role: string }) {
+    return this.svc.addMember(id, req.user.id, b);
+  }
+  @Delete(':id/members/:memberId') removeMember(@Req() req, @Param('id') id: string, @Param('memberId') memberId: string) {
+    return this.svc.removeMember(id, memberId, req.user.id);
+  }
   @Get(':id/recycle-bin') recycle(@Req() req, @Param('id') id: string) { return this.svc.recycleBin(id, req.user.id); }
   @Post(':id/restore') restore(@Req() req, @Body() b: { itemIds: string[] }) {
     return this.svc.restore(b.itemIds, req.user.id);
   }
 }
 
-@Module({ controllers: [BoardsController], providers: [BoardsService] })
+@Module({ controllers: [BoardsController, UsersController], providers: [BoardsService] })
 export class BoardsModule {}

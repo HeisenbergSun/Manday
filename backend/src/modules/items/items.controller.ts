@@ -98,6 +98,13 @@ export class ItemsController {
     return this.items.createSubItem(itemId, b.name, role, req.user.id);
   }
 
+  @Post('reorder')
+  async reorder(@Req() req: any, @Body() b: { orders: { id: string; position: number }[] }) {
+    if (!b.orders?.length) return { updated: 0 };
+    const { role } = await this.resolveRoleForItem(b.orders[0].id, req.user.id);
+    return this.items.reorder(b.orders, role, req.user.id);
+  }
+
   @Post('soft-delete')
   async softDelete(@Req() req: any, @Body() b: { itemIds: string[] }) {
     if (!b.itemIds?.length) return { moved: 0 };

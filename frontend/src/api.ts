@@ -51,6 +51,14 @@ export const api = {
     request(`/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   addSubitem: (itemId: string, name: string) =>
     request(`/items/${itemId}/subitems`, { method: 'POST', body: JSON.stringify({ name }) }),
+  reorderItems: (orders: { id: string; position: number }[]) =>
+    request(`/items/reorder`, { method: 'POST', body: JSON.stringify({ orders }) }),
+  listMembers: (boardId: string) => request(`/boards/${boardId}/members`),
+  addMember: (boardId: string, userId: string, role: string) =>
+    request(`/boards/${boardId}/members`, { method: 'POST', body: JSON.stringify({ userId, role }) }),
+  removeMember: (boardId: string, memberId: string) =>
+    request(`/boards/${boardId}/members/${memberId}`, { method: 'DELETE' }),
+  listUsers: () => request(`/users`),
   recycleBin: (boardId: string) => request(`/boards/${boardId}/recycle-bin`),
   restoreItems: (boardId: string, itemIds: string[]) =>
     request(`/boards/${boardId}/restore`, { method: 'POST', body: JSON.stringify({ itemIds }) }),

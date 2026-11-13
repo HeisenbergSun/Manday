@@ -80,6 +80,27 @@ export class ItemsService {
     } finally { client.release(); }
   }
 
+  /** 批量重排序（拖拽）：一次事务写入新 position */
+  async reorder(orders: { id: string; position: number }[], userRole: BoardRole | null, userId: string) {
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!orders?.length) return { updated: 0 };
+    const client = await this.pg.connect();
+    try {
+      await client.query('BEGIN');
+      for (const o of orders) {
+        await client.query(`UPDATE items SET position = $2 WHERE id = $1`, [o.id, o.position]);
+      }
+      await client.query(
+        `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'items.reorder',$2,'ui')`,
+        [userId, `items:${orders.length}`]);
+      await client.query('COMMIT');
+      return { updated: orders.length };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally { client.release(); }
+  }
+
   /** 软删除 → 回收站（P0 刚需） */
   /** 创建条目（P0）：默认放第一个分组，初始 version=1 */
   async createItem(boardId: string, name: string, groupId: string | null, userRole: BoardRole | null, userId: string) {
