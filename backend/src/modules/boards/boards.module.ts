@@ -120,6 +120,74 @@ export class BoardsService {
     );
     return { restored: itemIds.length };
   }
+
+  /** —— 列管理 —— */
+  async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!['text', 'status', 'people', 'date', 'number'].includes(dto.type)) throw new Error('BAD_TYPE');
+    const settings = dto.settings ?? (dto.type === 'status'
+      ? { labels: [{ label: '待办', color: '#8a90a3' }, { label: '进行中', color: '#579bfc' }, { label: '已完成', color: '#00c875' }] }
+      : {});
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM board_columns WHERE board_id = $1`, [boardId])).rows[0].p;
+    const { rows } = await this.pg.query(
+      `INSERT INTO board_columns (board_id, type, name, settings, position) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING *`,
+      [boardId, dto.type, dto.name, JSON.stringify(settings), pos]);
+    await this.pg.query(`INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'column.create',$2,'ui')`, [userId, dto.name]);
+    return rows[0];
+  }
+
+  async renameColumn(boardId: string, colId: string, userId: string, dto: { name?: string; settings?: any }) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    const { rows } = await this.pg.query(
+      `UPDATE board_columns SET
+         name = COALESCE($3, name),
+         settings = COALESCE($4::jsonb, settings)
+       WHERE id = $2 AND board_id = $1 RETURNING *`,
+      [boardId, colId, dto.name ?? null, dto.settings ? JSON.stringify(dto.settings) : null]);
+    if (!rows.length) throw new Error('NOT_FOUND');
+    return rows[0];
+  }
+
+  async deleteColumn(boardId: string, colId: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    await this.pg.query(`DELETE FROM item_values WHERE column_id = $1`, [colId]);
+    await this.pg.query(`DELETE FROM board_columns WHERE id = $1 AND board_id = $2`, [colId, boardId]);
+    await this.pg.query(`INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'column.delete',$2,'ui')`, [userId, colId]);
+    return { deleted: true };
+  }
+
+  /** —— 分组管理 —— */
+  async addGroup(boardId: string, userId: string, dto: { name: string }) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM board_groups WHERE board_id = $1`, [boardId])).rows[0].p;
+    const { rows } = await this.pg.query(
+      `INSERT INTO board_groups (board_id, name, position) VALUES ($1,$2,$3) RETURNING *`,
+      [boardId, dto.name, pos]);
+    return rows[0];
+  }
+
+  async renameGroup(boardId: string, gid: string, userId: string, dto: { name?: string; color?: string }) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    const { rows } = await this.pg.query(
+      `UPDATE board_groups SET name = COALESCE($3, name), color = COALESCE($4, color)
+       WHERE id = $2 AND board_id = $1 RETURNING *`,
+      [boardId, gid, dto.name ?? null, dto.color ?? null]);
+    if (!rows.length) throw new Error('NOT_FOUND');
+    return rows[0];
+  }
+
+  async deleteGroup(boardId: string, gid: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    await this.pg.query(`UPDATE items SET group_id = NULL WHERE group_id = $1`, [gid]);
+    await this.pg.query(`DELETE FROM board_groups WHERE id = $1 AND board_id = $2`, [gid, boardId]);
+    return { deleted: true };
+  }
 }
 
 @Controller('boards')
@@ -129,6 +197,24 @@ export class BoardsController {
   @Post() create(@Req() req, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
   @Get(':id') detail(@Req() req, @Param('id') id: string) {
     return this.svc.detail(id, req.user.id);
+  }
+  @Post(':id/columns') addColumn(@Req() req, @Param('id') id: string, @Body() b: { name: string; type: string; settings?: any }) {
+    return this.svc.addColumn(id, req.user.id, b);
+  }
+  @Patch(':id/columns/:colId') renameColumn(@Req() req, @Param('id') id: string, @Param('colId') colId: string, @Body() b: { name?: string; settings?: any }) {
+    return this.svc.renameColumn(id, colId, req.user.id, b);
+  }
+  @Delete(':id/columns/:colId') deleteColumn(@Req() req, @Param('id') id: string, @Param('colId') colId: string) {
+    return this.svc.deleteColumn(id, colId, req.user.id);
+  }
+  @Post(':id/groups') addGroup(@Req() req, @Param('id') id: string, @Body() b: { name: string }) {
+    return this.svc.addGroup(id, req.user.id, b);
+  }
+  @Patch(':id/groups/:gid') renameGroup(@Req() req, @Param('id') id: string, @Param('gid') gid: string, @Body() b: { name?: string; color?: string }) {
+    return this.svc.renameGroup(id, gid, req.user.id, b);
+  }
+  @Delete(':id/groups/:gid') deleteGroup(@Req() req, @Param('id') id: string, @Param('gid') gid: string) {
+    return this.svc.deleteGroup(id, gid, req.user.id);
   }
   @Get(':id/recycle-bin') recycle(@Req() req, @Param('id') id: string) { return this.svc.recycleBin(id, req.user.id); }
   @Post(':id/restore') restore(@Req() req, @Body() b: { itemIds: string[] }) {

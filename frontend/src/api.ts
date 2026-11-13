@@ -44,7 +44,7 @@ export const api = {
   loginWithToken: (token: string) => { setToken(token); },
 
   getBoards: () => request('/boards'),
-  getBoard: (boardId: string) => request(`/boards/${boardId}/items`),
+  getBoard: (boardId: string) => request(`/boards/${boardId}`),
   createItem: (boardId: string, name: string, groupId?: string) =>
     request(`/boards/${boardId}/items`, { method: 'POST', body: JSON.stringify({ name, groupId }) }),
   updateItem: (itemId: string, patch: { name?: string; groupId?: string }) =>
@@ -52,6 +52,18 @@ export const api = {
   recycleBin: (boardId: string) => request(`/boards/${boardId}/recycle-bin`),
   restoreItems: (boardId: string, itemIds: string[]) =>
     request(`/boards/${boardId}/restore`, { method: 'POST', body: JSON.stringify({ itemIds }) }),
+  addColumn: (boardId: string, name: string, type: string) =>
+    request(`/boards/${boardId}/columns`, { method: 'POST', body: JSON.stringify({ name, type }) }),
+  renameColumn: (boardId: string, colId: string, name: string) =>
+    request(`/boards/${boardId}/columns/${colId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteColumn: (boardId: string, colId: string) =>
+    request(`/boards/${boardId}/columns/${colId}`, { method: 'DELETE' }),
+  addGroup: (boardId: string, name: string) =>
+    request(`/boards/${boardId}/groups`, { method: 'POST', body: JSON.stringify({ name }) }),
+  renameGroup: (boardId: string, gid: string, name: string) =>
+    request(`/boards/${boardId}/groups/${gid}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteGroup: (boardId: string, gid: string) =>
+    request(`/boards/${boardId}/groups/${gid}`, { method: 'DELETE' }),
   item: (itemId: string) => request(`/items/${itemId}`),
   itemUpdates: (itemId: string) => request(`/items/${itemId}/updates`),
   itemSubitems: (itemId: string) => request(`/items/${itemId}/subitems`),

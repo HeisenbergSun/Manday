@@ -27,11 +27,24 @@ export const columnTypeRegistry: Record<string, {
   // status / people / dropdown 由 columnTypes.tsx 的富列渲染器接管
 };
 
+/** 列类型的中文展示名 */
+const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选' } as Record<string, string>)[t] ?? t;
+
 export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenItem?: (itemId: string) => void }) {
-  const { items, columns, bumpVersion, addItem, patchItem, setBoard } = useItems();
+  const { items, columns, groups, bumpVersion, addItem, patchItem, setBoard } = useItems();
   const gridRef = useRef<GridApi>(null);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
+  const [mgrOpen, setMgrOpen] = useState(false);
+  const [newColName, setNewColName] = useState('');
+  const [newColType, setNewColType] = useState('text');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const reloadBoard = useCallback(async () => {
+    const d: any = await api.getBoard(boardId).catch(() => null);
+    if (d) setBoard(d.items ?? [], d.columns ?? [], d.groups ?? []);
+  }, [boardId, setBoard]);
 
   const rowData = useMemo(
     // 必须带 version：updateCell 走 LWW，缺 version 会被后端判 409
@@ -79,14 +92,50 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
     if (!confirm(`把选中的 ${sel.length} 行移入回收站？`)) return;
     try {
       await api.softDelete(sel.map((r: any) => r.id));
-      // 本地即时移除
-      const d: any = await api.getBoard(boardId);
-      setBoard(d.items ?? [], d.columns ?? [], d.groups ?? []);
+      await reloadBoard();
       flash(`已移入回收站 ${sel.length} 行`);
     } catch (e) {
       flash(`删除失败：${(e as Error).message}`);
     }
-  }, [boardId, setBoard]);
+  }, [reloadBoard]);
+
+  /** 新增列（status 列后端会带默认标签） */
+  const addColumn = useCallback(async () => {
+    const name = newColName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    try {
+      await api.addColumn(boardId, name, newColType);
+      await reloadBoard();
+      setNewColName('');
+      flash(`已添加列「${name}」`);
+    } catch (e) { flash(`添加列失败：${(e as Error).message}`); }
+    finally { setBusy(false); }
+  }, [boardId, newColName, newColType, busy, reloadBoard]);
+
+  /** 新增分组 */
+  const addGroup = useCallback(async () => {
+    const name = newGroupName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    try {
+      await api.addGroup(boardId, name);
+      await reloadBoard();
+      setNewGroupName('');
+      flash(`已添加分组「${name}」，去看板视图把条目拖进去`);
+    } catch (e) { flash(`添加分组失败：${(e as Error).message}`); }
+    finally { setBusy(false); }
+  }, [boardId, newGroupName, busy, reloadBoard]);
+
+  /** 删除列（连列值一起清理，不可恢复，需二次确认） */
+  const removeColumn = useCallback(async (colId: string, colName: string) => {
+    if (!confirm(`删除列「${colName}」？该列所有数据会一并删除，不可恢复。`)) return;
+    try {
+      await api.deleteColumn(boardId, colId);
+      await reloadBoard();
+      flash(`已删除列「${colName}」`);
+    } catch (e) { flash(`删除列失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
 
   const onCellValueChanged = useCallback(async (e: CellValueChangedEvent) => {
     const field = e.colDef.field!;
@@ -116,7 +165,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 工具条：新建 / 批量删除 */}
-      <div style={{ display: 'flex', gap: 8, padding: '10px 12px', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, padding: '10px 12px', alignItems: 'center', position: 'relative' }}>
         <button onClick={addItemRow} disabled={creating}
           style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff',
             cursor: creating ? 'wait' : 'pointer', fontSize: 13, fontWeight: 500 }}>
@@ -127,6 +176,50 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
             cursor: 'pointer', fontSize: 13, color: '#e2445c' }}>
           🗑 删除选中
         </button>
+        <button onClick={() => setMgrOpen(!mgrOpen)}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#eef1fe' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
+          ⚙ 列与分组
+        </button>
+        {mgrOpen && (
+          <div style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
+            boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 340 }}>
+            <b style={{ fontSize: 13 }}>新增列</b>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input value={newColName} onChange={(e) => setNewColName(e.target.value)} placeholder="列名"
+                style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+              <select value={newColType} onChange={(e) => setNewColType(e.target.value)}
+                style={{ padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+                <option value="text">文本</option>
+                <option value="status">状态</option>
+                <option value="people">人员</option>
+                <option value="date">日期</option>
+                <option value="number">数字</option>
+              </select>
+              <button onClick={addColumn} disabled={busy || !newColName.trim()}
+                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
+            </div>
+            <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>现有列（点击 ✕ 删除）</b>
+            {columns.map((c: any) => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
+                <span style={{ color: '#7a7f8c', fontSize: 11, width: 44 }}>{typeLabel(c.type)}</span>
+                <span style={{ flex: 1 }}>{c.name}</span>
+                <button onClick={() => removeColumn(c.id, c.name)}
+                  style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>
+              </div>
+            ))}
+            <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>新增分组</b>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="分组名（看板列）"
+                style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+              <button onClick={addGroup} disabled={busy || !newGroupName.trim()}
+                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: '#7a7f8c' }}>
+              分组：{groups.map((g: any) => g.name).join(' / ') || '无'}
+            </div>
+          </div>
+        )}
         <span style={{ fontSize: 12, color: '#7a7f8c', marginLeft: 'auto' }}>
           {rowData.length} 条目 · 双击单元格编辑 · 点击行打开详情
         </span>
@@ -135,7 +228,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
         <div style={{ margin: '0 12px 8px', background: '#eef1fe', color: '#4f6ef7', borderRadius: 8,
           padding: '7px 12px', fontSize: 12 }}>{toast}</div>
       )}
-      <div className="ag-theme-alpine" style={{ flex: 1 }}>
+      <div className="ag-theme-alpine" style={{ flex: 1, position: 'relative' }}>
         <AgGridReact
           ref={gridRef as any}
           rowData={rowData}
