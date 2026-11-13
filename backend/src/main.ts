@@ -35,8 +35,45 @@ async function ensureSchema() {
   }
 }
 
+/** 幂等小迁移：已有库也能补上后加的表（schema.sql 仅空库首启时执行） */
+async function ensureMinorSchema() {
+  const { Pool } = require('pg');
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS board_views (
+        id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        board_id    UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        view_type   TEXT NOT NULL DEFAULT 'table',
+        config      JSONB DEFAULT '{}'::jsonb,
+        locked      BOOLEAN DEFAULT false,
+        locked_by   UUID REFERENCES users(id),
+        position    INT DEFAULT 0,
+        created_by  UUID REFERENCES users(id),
+        created_at  TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(board_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS user_board_prefs (
+        user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        board_id     UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+        default_view TEXT DEFAULT 'table',
+        view_id      UUID REFERENCES board_views(id) ON DELETE SET NULL,
+        prefs        JSONB DEFAULT '{}'::jsonb,
+        updated_at   TIMESTAMPTZ DEFAULT now(),
+        PRIMARY KEY (user_id, board_id)
+      );`);
+    console.log('[bootstrap] minor schema OK');
+  } catch (e) {
+    console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);
+  } finally {
+    await pool.end();
+  }
+}
+
 async function bootstrap() {
   await ensureSchema();
+  await ensureMinorSchema();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new DomainExceptionFilter());

@@ -76,6 +76,20 @@ export const api = {
     request(`/boards/${boardId}/groups/${gid}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteGroup: (boardId: string, gid: string) =>
     request(`/boards/${boardId}/groups/${gid}`, { method: 'DELETE' }),
+  // 视图（P1-3）
+  listViews: (boardId: string) => request(`/boards/${boardId}/views`),
+  createView: (boardId: string, name: string, viewType: string, config: unknown) =>
+    request(`/boards/${boardId}/views`, { method: 'POST', body: JSON.stringify({ name, viewType, config }) }),
+  updateView: (boardId: string, viewId: string, patch: { name?: string; viewType?: string; config?: unknown }) =>
+    request(`/boards/${boardId}/views/${viewId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteView: (boardId: string, viewId: string) =>
+    request(`/boards/${boardId}/views/${viewId}`, { method: 'DELETE' }),
+  lockView: (boardId: string, viewId: string, locked: boolean) =>
+    request(`/boards/${boardId}/views/${viewId}/${locked ? 'lock' : 'unlock'}`, { method: 'POST' }),
+  // 用户偏好（P1-4）
+  getPrefs: (boardId: string) => request(`/boards/${boardId}/prefs`),
+  putPrefs: (boardId: string, patch: { defaultView?: string; viewId?: string | null; prefs?: unknown }) =>
+    request(`/boards/${boardId}/prefs`, { method: 'PUT', body: JSON.stringify(patch) }),
   item: (itemId: string) => request(`/items/${itemId}`),
   itemUpdates: (itemId: string) => request(`/items/${itemId}/updates`),
   itemSubitems: (itemId: string) => request(`/items/${itemId}/subitems`),

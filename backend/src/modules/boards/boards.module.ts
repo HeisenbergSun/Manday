@@ -1,7 +1,7 @@
 /**
  * Boards 服务 — Board/Group/Column CRUD + 可见性过滤 + 回收站
  */
-import { Injectable, Controller, Get, Post, Patch, Delete, Body, Param, Req, Module, ForbiddenException } from '@nestjs/common';
+import { Injectable, Controller, Get, Post, Patch, Put, Delete, Body, Param, Req, Module, ForbiddenException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { can, canEditStructure } from './acl';
 import { applyViewPermission } from '../items/items.service';
@@ -256,6 +256,93 @@ export class BoardsService {
   }
 
   /** 可选成员列表（全公司用户） */
+  /** ===== 视图（P1-3）===== */
+  private async requireRole(boardId: string, userId: string, need: 'read' | 'edit' | 'owner') {
+    const role = await this.resolveRole(boardId, userId);
+    if (!role) throw new ForbiddenException('无权访问该看板');
+    if (need === 'read' && !can(role, 'read')) throw new ForbiddenException('无权访问该看板');
+    if (need === 'edit' && !can(role, 'edit')) throw new ForbiddenException('仅编辑者及以上可操作视图');
+    if (need === 'owner' && role !== 'owner') throw new ForbiddenException('仅看板负责人可操作');
+    return role;
+  }
+
+  async listViews(boardId: string, userId: string) {
+    await this.requireRole(boardId, userId, 'read');
+    const { rows } = await this.pg.query(
+      `SELECT v.*, u.name AS locked_by_name
+       FROM board_views v LEFT JOIN users u ON u.id = v.locked_by
+       WHERE v.board_id = $1 ORDER BY v.position NULLS LAST, v.created_at`, [boardId]);
+    return rows;
+  }
+
+  async createView(boardId: string, userId: string, dto: { name: string; viewType?: string; config?: any }) {
+    await this.requireRole(boardId, userId, 'edit');
+    try {
+      const { rows } = await this.pg.query(
+        `INSERT INTO board_views (board_id, name, view_type, config, created_by)
+         VALUES ($1, $2, $3, $4::jsonb, $5) RETURNING *`,
+        [boardId, dto.name, dto.viewType ?? 'table', JSON.stringify(dto.config ?? {}), userId]);
+      return rows[0];
+    } catch (e: any) {
+      if (String(e?.code) === '23505') throw new ForbiddenException('同名视图已存在');
+      throw e;
+    }
+  }
+
+  async updateView(boardId: string, viewId: string, userId: string, dto: { name?: string; viewType?: string; config?: any }) {
+    await this.requireRole(boardId, userId, 'edit');
+    const { rows } = await this.pg.query(`SELECT * FROM board_views WHERE id = $1 AND board_id = $2`, [viewId, boardId]);
+    if (!rows.length) throw new ForbiddenException('视图不存在');
+    if (rows[0].locked) await this.requireRole(boardId, userId, 'owner'); // 锁定视图仅 owner 可改
+    const cur = rows[0];
+    const { rows: out } = await this.pg.query(
+      `UPDATE board_views SET name = $3, view_type = $4, config = $5::jsonb
+       WHERE id = $1 AND board_id = $2 RETURNING *`,
+      [viewId, boardId, dto.name ?? cur.name, dto.viewType ?? cur.view_type, JSON.stringify(dto.config ?? cur.config)]);
+    return out[0];
+  }
+
+  async deleteView(boardId: string, viewId: string, userId: string) {
+    await this.requireRole(boardId, userId, 'edit');
+    const { rows } = await this.pg.query(`SELECT locked FROM board_views WHERE id = $1 AND board_id = $2`, [viewId, boardId]);
+    if (!rows.length) throw new ForbiddenException('视图不存在');
+    if (rows[0].locked) await this.requireRole(boardId, userId, 'owner');
+    await this.pg.query(`DELETE FROM board_views WHERE id = $1`, [viewId]);
+    return { deleted: true };
+  }
+
+  async setViewLock(boardId: string, viewId: string, userId: string, locked: boolean) {
+    await this.requireRole(boardId, userId, 'owner');
+    const { rows } = await this.pg.query(
+      `UPDATE board_views SET locked = $3, locked_by = $4 WHERE id = $1 AND board_id = $2 RETURNING *`,
+      [viewId, boardId, locked, locked ? userId : null]);
+    if (!rows.length) throw new ForbiddenException('视图不存在');
+    return rows[0];
+  }
+
+  /** ===== 用户偏好（P1-4：每 board 每用户独立）===== */
+  async getPrefs(boardId: string, userId: string) {
+    await this.requireRole(boardId, userId, 'read');
+    const { rows } = await this.pg.query(
+      `SELECT * FROM user_board_prefs WHERE user_id = $1 AND board_id = $2`, [userId, boardId]);
+    return rows[0] ?? { default_view: 'table', view_id: null, prefs: {} };
+  }
+
+  async putPrefs(boardId: string, userId: string, dto: { defaultView?: string; viewId?: string | null; prefs?: any }) {
+    await this.requireRole(boardId, userId, 'read');
+    const { rows } = await this.pg.query(
+      `INSERT INTO user_board_prefs (user_id, board_id, default_view, view_id, prefs, updated_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, now())
+       ON CONFLICT (user_id, board_id) DO UPDATE
+       SET default_view = COALESCE($3, user_board_prefs.default_view),
+           view_id = COALESCE($4, user_board_prefs.view_id),
+           prefs = COALESCE($5::jsonb, user_board_prefs.prefs),
+           updated_at = now()
+       RETURNING *`,
+      [userId, boardId, dto.defaultView ?? null, dto.viewId ?? null, dto.prefs ? JSON.stringify(dto.prefs) : null]);
+    return rows[0];
+  }
+
   async listUsers() {
     const { rows } = await this.pg.query(
       `SELECT id, name, email FROM users WHERE status = 'active' ORDER BY name LIMIT 200`);
@@ -305,6 +392,28 @@ export class BoardsController {
     return this.svc.removeMember(id, memberId, req.user.id);
   }
   @Get(':id/recycle-bin') recycle(@Req() req, @Param('id') id: string) { return this.svc.recycleBin(id, req.user.id); }
+  // 视图（P1-3）
+  @Get(':id/views') listViews(@Req() req, @Param('id') id: string) { return this.svc.listViews(id, req.user.id); }
+  @Post(':id/views') createView(@Req() req, @Param('id') id: string, @Body() b: { name: string; viewType?: string; config?: any }) {
+    return this.svc.createView(id, req.user.id, b);
+  }
+  @Patch(':id/views/:viewId') updateView(@Req() req, @Param('id') id: string, @Param('viewId') viewId: string, @Body() b: { name?: string; viewType?: string; config?: any }) {
+    return this.svc.updateView(id, viewId, req.user.id, b);
+  }
+  @Delete(':id/views/:viewId') deleteView(@Req() req, @Param('id') id: string, @Param('viewId') viewId: string) {
+    return this.svc.deleteView(id, viewId, req.user.id);
+  }
+  @Post(':id/views/:viewId/lock') lockView(@Req() req, @Param('id') id: string, @Param('viewId') viewId: string) {
+    return this.svc.setViewLock(id, viewId, req.user.id, true);
+  }
+  @Post(':id/views/:viewId/unlock') unlockView(@Req() req, @Param('id') id: string, @Param('viewId') viewId: string) {
+    return this.svc.setViewLock(id, viewId, req.user.id, false);
+  }
+  // 用户偏好（P1-4）
+  @Get(':id/prefs') getPrefs(@Req() req, @Param('id') id: string) { return this.svc.getPrefs(id, req.user.id); }
+  @Put(':id/prefs') putPrefs(@Req() req, @Param('id') id: string, @Body() b: { defaultView?: string; viewId?: string | null; prefs?: any }) {
+    return this.svc.putPrefs(id, req.user.id, b);
+  }
   @Post(':id/restore') restore(@Req() req, @Body() b: { itemIds: string[] }) {
     return this.svc.restore(b.itemIds, req.user.id);
   }

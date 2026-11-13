@@ -181,3 +181,28 @@ CREATE TABLE widgets (
   config       JSONB NOT NULL,  -- {boardIds:[...], metric:'count', groupBy:'status'}
   position     INT
 );
+
+-- ========== 视图与用户偏好（P1-3/P1-4） ==========
+CREATE TABLE board_views (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  board_id    UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  view_type   TEXT NOT NULL DEFAULT 'table',  -- table / kanban / calendar / gantt
+  config      JSONB DEFAULT '{}'::jsonb,      -- { sortBy, sortDir, filters }
+  locked      BOOLEAN DEFAULT false,          -- owner 锁定后仅 owner 可改配置
+  locked_by   UUID REFERENCES users(id),
+  position    INT DEFAULT 0,
+  created_by  UUID REFERENCES users(id),
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(board_id, name)
+);
+
+CREATE TABLE user_board_prefs (
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  board_id     UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  default_view TEXT DEFAULT 'table',
+  view_id      UUID REFERENCES board_views(id) ON DELETE SET NULL,
+  prefs        JSONB DEFAULT '{}'::jsonb,     -- collapsedGroups 等个人偏好
+  updated_at   TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (user_id, board_id)
+);

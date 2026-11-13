@@ -32,9 +32,13 @@ type Props = {
   editable: boolean;
   /** 当前用户是否 owner（P1-1/P1-2：结构操作与 owner-only 列编辑的 UI 依据） */
   isOwner?: boolean;
+  /** 视图排序（P1-3）：字段为 'name' 或列 id；点击表头触发 onSortChange */
+  sortBy?: string | null;
+  sortDir?: 'asc' | 'desc';
+  onSortChange?: (field: string) => void;
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -53,8 +57,23 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       const idx = new Map(localOrder.map((id, i) => [id, i]));
       return [...rows].sort((a, b) => (idx.get(a.id) ?? 0) - (idx.get(b.id) ?? 0));
     }
+    if (sortBy) {
+      const dir = sortDir === 'desc' ? -1 : 1;
+      return [...rows].sort((a, b) => {
+        if (sortBy === 'name') return dir * a.name.localeCompare(b.name, 'zh-Hans-CN');
+        const col = columns.find((c) => c.id === sortBy);
+        const av = col?.type === 'checkbox' ? String(a.values[sortBy] === true) : scalar(a.values[sortBy]);
+        const bv = col?.type === 'checkbox' ? String(b.values[sortBy] === true) : scalar(b.values[sortBy]);
+        const an = Number(av), bn = Number(bv);
+        if (av !== '' && bv !== '' && !Number.isNaN(an) && !Number.isNaN(bn)) return dir * (an - bn);
+        if (av === '' && bv === '') return 0;
+        if (av === '') return 1; // 空值恒排后
+        if (bv === '') return -1;
+        return dir * av.localeCompare(bv, 'zh-Hans-CN');
+      });
+    }
     return [...rows].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-  }, [rows, localOrder]);
+  }, [rows, localOrder, sortBy, sortDir, columns]);
 
   const allChecked = sortedRows.length > 0 && sortedRows.every((r) => selected.has(r.id));
 
@@ -221,10 +240,16 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               <input type="checkbox" checked={allChecked} onChange={toggleAll} data-grid-check-all />
             </th>
             <th style={{ ...thStyle, width: 28 }}></th>
-            <th style={{ ...thStyle, textAlign: 'left', width: LABEL_W }}>条目</th>
+            <th style={{ ...thStyle, textAlign: 'left', width: LABEL_W, cursor: onSortChange ? 'pointer' : undefined }}
+              onClick={() => onSortChange?.('name')}
+              title="点击排序">
+              条目{sortBy === 'name' ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
+            </th>
             {columns.map((c) => (
-              <th key={c.id} style={{ ...thStyle, textAlign: 'left' }}>
+              <th key={c.id} style={{ ...thStyle, textAlign: 'left', cursor: onSortChange && !c.restricted ? 'pointer' : undefined }}
+                onClick={() => !c.restricted && onSortChange?.(c.id)} title={c.restricted ? undefined : '点击排序'}>
                 {c.name}
+                {sortBy === c.id ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
                 {c.restricted
                   ? <span title="仅负责人可见" style={{ marginLeft: 4 }}>👁🔒</span>
                   : (c.settings?.editPermission ?? c.settings?.editable) === 'owner'

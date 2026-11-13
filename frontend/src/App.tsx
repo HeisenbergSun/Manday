@@ -121,6 +121,11 @@ export function App() {
     if (!user || !activeBoard?.id) return;
     const boardId = activeBoard.id;
     api.getBoard(boardId as string).then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole)).catch(() => {});
+    // P1-4：读取我的 board 偏好 → 应用默认视图（仅本人生效）
+    api.getPrefs(boardId as string).then((p: any) => {
+      const dv = p?.default_view;
+      if (dv && ['table', 'kanban', 'calendar', 'gantt', 'dashboard'].includes(dv)) setView(dv);
+    }).catch(() => {});
     joinBoard(boardId);
     return () => leaveBoard(boardId);
   }, [user?.id, activeBoard?.id]);

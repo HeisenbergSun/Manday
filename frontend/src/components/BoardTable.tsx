@@ -118,6 +118,77 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   const [newGroupName, setNewGroupName] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // 视图（P1-3）：命名视图（排序配置）+ 锁定；prefs（P1-4）：每 board 每用户独立
+  const [views, setViews] = useState<any[]>([]);
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [newViewName, setNewViewName] = useState('');
+
+  const loadViews = useCallback(async () => {
+    const vs: any = await api.listViews(boardId).catch(() => []);
+    setViews(Array.isArray(vs) ? vs : []);
+  }, [boardId]);
+
+  useEffect(() => { loadViews(); setActiveViewId(null); setSortBy(null); setSortDir('asc'); }, [boardId]);
+
+  /** 应用视图：写入本地排序态 */
+  const applyView = (v: any) => {
+    setActiveViewId(v.id);
+    const cfg = v.config ?? {};
+    setSortBy(cfg.sortBy ?? null);
+    setSortDir(cfg.sortDir === 'desc' ? 'desc' : 'asc');
+    setViewsOpen(false);
+  };
+
+  /** 表头点击排序：锁定视图不可改配置；点击即切回自由排序（脱离视图） */
+  const onSortChange = (field: string) => {
+    if (activeViewId && views.find((v) => v.id === activeViewId)?.locked) { flash('该视图已被负责人锁定，配置不可修改'); return; }
+    if (activeViewId) setActiveViewId(null);
+    if (sortBy === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortBy(field); setSortDir('asc'); }
+  };
+
+  const saveView = async () => {
+    const name = newViewName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    try {
+      const v: any = await api.createView(boardId, name, 'table', { sortBy, sortDir });
+      await loadViews();
+      setActiveViewId(v.id);
+      setNewViewName('');
+      flash(`已保存视图「${name}」`);
+    } catch (e) { flash(`保存视图失败：${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+
+  const setViewLock = async (v: any, locked: boolean) => {
+    try {
+      await api.lockView(boardId, v.id, locked);
+      await loadViews();
+      flash(locked ? `视图「${v.name}」已锁定（仅负责人可改）` : `视图「${v.name}」已解锁`);
+    } catch (e) { flash(`操作失败：${(e as Error).message}`); }
+  };
+
+  const removeView = async (v: any) => {
+    if (!confirm(`删除视图「${v.name}」？`)) return;
+    try {
+      await api.deleteView(boardId, v.id);
+      if (activeViewId === v.id) setActiveViewId(null);
+      await loadViews();
+      flash(`已删除视图「${v.name}」`);
+    } catch (e) { flash(`删除失败：${(e as Error).message}`); }
+  };
+
+  /** 设为我的默认视图（P1-4）：仅影响自己 */
+  const setDefaultView = async (v: any) => {
+    try {
+      await api.putPrefs(boardId, { viewId: v.id });
+      flash(`已设为我的默认视图：${v.name}`);
+    } catch (e) { flash(`设置失败：${(e as Error).message}`); }
+  };
 
   const reloadBoard = useCallback(async () => {
     const d: any = await api.getBoard(boardId).catch(() => null);
@@ -420,6 +491,47 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
             </>)}
           </div>
         )}
+        <button onClick={() => setViewsOpen(!viewsOpen)}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
+          ⧉ 视图{activeViewId ? `：${views.find((v) => v.id === activeViewId)?.name ?? ''}${views.find((v) => v.id === activeViewId)?.locked ? ' 🔒' : ''}` : ''}
+        </button>
+        {viewsOpen && (
+          <div data-views-panel="1" style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
+            boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 420, maxHeight: '70vh', overflow: 'auto' }}>
+            <b style={{ fontSize: 13 }}>已保存视图</b>
+            {views.length === 0 && <div style={{ fontSize: 12, color: '#7a7f8c', margin: '8px 0' }}>还没有保存的视图——先点表头排序，再起个名字保存</div>}
+            {views.map((v) => (
+              <div key={v.id} data-view-item={v.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0',
+                borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
+                <span onClick={() => applyView(v)} title="点击应用视图"
+                  style={{ flex: 1, cursor: 'pointer', color: activeViewId === v.id ? '#4f6ef7' : '#1f2330', fontWeight: activeViewId === v.id ? 600 : 400 }}>
+                  {v.name}{v.locked ? ' 🔒' : ''}
+                  {sortBy && v.id === activeViewId ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
+                </span>
+                {isOwner && (
+                  <button onClick={() => setViewLock(v, !v.locked)} title={v.locked ? '解锁' : '锁定（仅负责人可改配置）'}
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13 }}>{v.locked ? '🔓' : '🔒'}</button>
+                )}
+                <button onClick={() => setDefaultView(v)} title="设为我的默认视图"
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#b8860b' }}>★</button>
+                {!v.locked && <button onClick={() => removeView(v)} title="删除视图"
+                  style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+              </div>
+            ))}
+            <b style={{ fontSize: 13, display: 'block', marginTop: 12 }}>保存当前排序为新视图</b>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input value={newViewName} onChange={(e) => setNewViewName(e.target.value)} placeholder="视图名"
+                style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+              <button onClick={saveView} disabled={busy || !newViewName.trim()}
+                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>保存</button>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: '#7a7f8c', lineHeight: 1.7 }}>
+              当前排序：{sortBy ? `${sortBy === 'name' ? '条目' : columns.find((c: any) => c.id === sortBy)?.name ?? sortBy} ${sortDir === 'desc' ? '降序' : '升序'}` : '未排序'}<br />
+              🔒 锁定后仅负责人可改配置 · ★ 设为我的默认视图（只影响自己）
+            </div>
+          </div>
+        )}
         <span style={{ fontSize: 12, color: '#7a7f8c', marginLeft: 'auto' }}>
           {gridRows.length} 条目 · 双击编辑 · 拖 ⠿ 排序 · ↑↓/Enter/Space 快捷键 · 勾选 3 行以上出批量工具条
         </span>
@@ -458,6 +570,9 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
         columns={gridColumns}
         editable={canEditContent}
         isOwner={isOwner}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSortChange={onSortChange}
         onOpenItem={onOpenItem}
         onEdit={saveCell}
         onOrderChange={saveOrder}
