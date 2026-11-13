@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BoardTable } from './components/BoardTable';
 import { Kanban } from './components/Kanban';
 import { CalendarView } from './components/CalendarView';
+import { GanttView } from './components/GanttView';
 import { AiSidebar } from './components/AiSidebar';
 import { ItemDetail } from './components/ItemDetail';
 import { NotificationBell, CommandPalette } from './components/TopWidgets';
@@ -97,7 +98,7 @@ function Login({ onLogin }: { onLogin: (u: { id: string; name: string; email: st
 }
 
 export function App() {
-  const [view, setView] = useState<'table' | 'kanban' | 'dashboard' | 'trash' | 'calendar'>('table');
+  const [view, setView] = useState<'table' | 'kanban' | 'calendar' | 'gantt' | 'dashboard' | 'trash'>('table');
   const { aiOpen, toggleAI } = useUi();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>(null);
@@ -131,12 +132,12 @@ export function App() {
       <header style={{ height: 52, background: '#fff', borderBottom: '1px solid #e6e8ef', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16 }}>
         <div style={{ fontWeight: 800, fontSize: 17, color: '#4f6ef7' }}>Manday</div>
         <nav style={{ display: 'flex', gap: 4 }}>
-          {(['table', 'kanban', 'calendar', 'dashboard', 'trash'] as const).map((v) => (
+          {(['table', 'kanban', 'calendar', 'gantt', 'dashboard', 'trash'] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
               style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
                 background: view === v ? '#eef1fe' : 'transparent', color: view === v ? '#4f6ef7' : '#7a7f8c',
                 fontWeight: view === v ? 600 : 400 }}>
-              {v === 'table' ? '▤ 表格' : v === 'kanban' ? '▦ 看板' : v === 'calendar' ? '📅 日历' : v === 'dashboard' ? '📊 Dashboard' : '🗑 回收站'}
+              {v === 'table' ? '▤ 表格' : v === 'kanban' ? '▦ 看板' : v === 'calendar' ? '📅 日历' : v === 'gantt' ? '📈 甘特' : v === 'dashboard' ? '📊 Dashboard' : '🗑 回收站'}
             </button>
           ))}
         </nav>
@@ -159,6 +160,7 @@ export function App() {
           ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} />
             : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} />
             : view === 'calendar' ? <CalendarView onOpenItem={setDetailId} />
+            : view === 'gantt' ? <GanttView onOpenItem={setDetailId} />
             : view === 'trash' ? <TrashView boardId={activeBoard.id} /> : <DashboardPage boardIds={[activeBoard.id]} />}
         </main>
         {detailId && <ItemDetail itemId={detailId} onClose={() => setDetailId(null)} />}
