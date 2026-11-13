@@ -66,7 +66,7 @@ export class BoardsService {
               jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
-       WHERE i.board_id = $1 AND i.deleted_at IS NULL
+       WHERE i.board_id = $1 AND i.deleted_at IS NULL AND i.parent_item_id IS NULL
        GROUP BY i.id ORDER BY i.position`, [boardId]);
     const itemRows = items.map((r) => {
       const values: Record<string, unknown> = {};

@@ -87,9 +87,15 @@ export class ItemsController {
   }
 
   @Patch(':id')
-  async updateItem(@Req() req: any, @Param('id') itemId: string, @Body() b: { name?: string; groupId?: string }) {
+  async updateItem(@Req() req: any, @Param('id') itemId: string, @Body() b: { name?: string; groupId?: string; done?: boolean }) {
     const { role } = await this.resolveRoleForItem(itemId, req.user.id);
     return this.items.updateItem(itemId, b, role, req.user.id);
+  }
+
+  @Post(':id/subitems')
+  async createSubItem(@Req() req: any, @Param('id') itemId: string, @Body() b: { name: string }) {
+    const { role } = await this.resolveRoleForItem(itemId, req.user.id);
+    return this.items.createSubItem(itemId, b.name, role, req.user.id);
   }
 
   @Post('soft-delete')

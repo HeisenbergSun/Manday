@@ -16,6 +16,7 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
   });
   const [err, setErr] = useState('');
   const [draft, setDraft] = useState('');
+  const [subDraft, setSubDraft] = useState('');
   const [item, setItem] = useState<any>(null);
 
   const load = async () => {
@@ -52,6 +53,32 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
   }
 
   const authorName = (u: any) => u?.author?.name ?? u?.author_name ?? '成员';
+
+  /** 新建子任务 */
+  async function addSubitem() {
+    const name = subDraft.trim();
+    if (!name) return;
+    setSubDraft('');
+    try {
+      await api.addSubitem(itemId, name);
+      await load();
+    } catch (e) {
+      setErr(`创建子任务失败：${(e as Error).message}`);
+      setSubDraft(name);
+    }
+  }
+
+  /** 勾选/取消子任务完成 */
+  async function toggleSub(s: any) {
+    // 乐观更新，失败回滚
+    setData((d) => ({ ...d, subitems: d.subitems.map((x) => x.id === s.id ? { ...x, done: !x.done } : x) }));
+    try {
+      await api.updateItem(s.id, { done: !s.done });
+    } catch (e) {
+      setErr(`更新失败：${(e as Error).message}`);
+      await load();
+    }
+  }
 
   return (
     <aside style={{ width: 420, background: '#fff', borderLeft: '1px solid #e6e8ef', display: 'flex', flexDirection: 'column' }}>
@@ -96,8 +123,10 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
         )}
 
         {tab === 'subitems' && data.subitems.map((s: any, i: number) => (
-          <div key={s.id ?? i} style={{ padding: '8px 0', borderBottom: '1px solid #e6e8ef', fontSize: 13 }}>
-            ☐ {s.name}
+          <div key={s.id ?? i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #e6e8ef', fontSize: 13 }}>
+            <input type="checkbox" checked={!!s.done} onChange={() => toggleSub(s)}
+              style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#00c875' }} />
+            <span style={s.done ? { textDecoration: 'line-through', color: '#a0a4b1' } : undefined}>{s.name}</span>
           </div>
         ))}
         {tab === 'subitems' && data.subitems.length === 0 && (
@@ -115,6 +144,18 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
           <div style={{ color: '#7a7f8c', fontSize: 12 }}>暂无变更记录</div>
         )}
       </div>
+
+      {tab === 'subitems' && (
+        <div style={{ padding: 12, borderTop: '1px solid #e6e8ef', display: 'flex', gap: 6 }}>
+          <input value={subDraft} onChange={(e) => setSubDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addSubitem(); }}
+            placeholder="新建子任务，回车添加"
+            style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13, outline: 'none' }} />
+          <button onClick={addSubitem} disabled={!subDraft.trim()}
+          style={{ padding: '7px 14px', borderRadius: 7, border: 'none', background: subDraft.trim() ? '#4f6ef7' : '#c5c9d4',
+            color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
+        </div>
+      )}
 
       {tab === 'updates' && (
         <div style={{ padding: 12, borderTop: '1px solid #e6e8ef' }}>

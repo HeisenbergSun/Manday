@@ -47,8 +47,10 @@ export const api = {
   getBoard: (boardId: string) => request(`/boards/${boardId}`),
   createItem: (boardId: string, name: string, groupId?: string) =>
     request(`/boards/${boardId}/items`, { method: 'POST', body: JSON.stringify({ name, groupId }) }),
-  updateItem: (itemId: string, patch: { name?: string; groupId?: string }) =>
+  updateItem: (itemId: string, patch: { name?: string; groupId?: string; done?: boolean }) =>
     request(`/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  addSubitem: (itemId: string, name: string) =>
+    request(`/items/${itemId}/subitems`, { method: 'POST', body: JSON.stringify({ name }) }),
   recycleBin: (boardId: string) => request(`/boards/${boardId}/recycle-bin`),
   restoreItems: (boardId: string, itemIds: string[]) =>
     request(`/boards/${boardId}/restore`, { method: 'POST', body: JSON.stringify({ itemIds }) }),

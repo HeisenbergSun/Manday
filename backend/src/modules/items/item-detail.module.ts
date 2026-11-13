@@ -58,7 +58,7 @@ export class ItemDetailService {
   /** 子任务：复用 items 表 parent_item_id */
   async getSubItems(itemId: string) {
     const { rows } = await this.pg.query(
-      `SELECT id, name, position, version FROM items
+      `SELECT id, name, done, position, version FROM items
        WHERE parent_item_id = $1 AND deleted_at IS NULL ORDER BY position`,
       [itemId],
     );

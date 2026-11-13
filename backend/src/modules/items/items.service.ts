@@ -21,7 +21,7 @@ export class ItemsService {
               jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
-       WHERE i.board_id = $1 AND i.deleted_at IS NULL
+       WHERE i.board_id = $1 AND i.deleted_at IS NULL AND i.parent_item_id IS NULL
        GROUP BY i.id
        ORDER BY i.position`,
       [boardId],
@@ -102,13 +102,14 @@ export class ItemsService {
     return rows[0];
   }
 
-  /** 更新条目本体：改名 / 换分组（看板拖拽持久化） */
-  async updateItem(itemId: string, patch: { name?: string; groupId?: string }, userRole: BoardRole | null, userId: string) {
+  /** 更新条目本体：改名 / 换分组 / 勾选完成（子任务） */
+  async updateItem(itemId: string, patch: { name?: string; groupId?: string; done?: boolean }, userRole: BoardRole | null, userId: string) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
     const sets: string[] = [];
     const args: unknown[] = [];
     if (patch.name !== undefined) { sets.push(`name = $${sets.length + 1}`); args.push(patch.name); }
     if (patch.groupId !== undefined) { sets.push(`group_id = $${sets.length + 1}`); args.push(patch.groupId); }
+    if (patch.done !== undefined) { sets.push(`done = $${sets.length + 1}`); args.push(patch.done); }
     if (!sets.length) return { ok: true };
     sets.push('version = version + 1');
     args.push(itemId);
@@ -123,6 +124,22 @@ export class ItemsService {
       );
     }
     return rows[0] ?? null;
+  }
+
+  /** 创建子任务：挂在父条目下，同 Board/分组，初始未完成 */
+  async createSubItem(parentItemId: string, name: string, userRole: BoardRole | null, userId: string) {
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    const p = (await this.pg.query(`SELECT board_id, group_id FROM items WHERE id = $1 AND deleted_at IS NULL`, [parentItemId])).rows[0];
+    if (!p) throw new Error('PARENT_NOT_FOUND');
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM items WHERE parent_item_id = $1`, [parentItemId])).rows[0].p;
+    const { rows } = await this.pg.query(
+      `INSERT INTO items (board_id, group_id, parent_item_id, name, position, version, created_by)
+       VALUES ($1,$2,$3,$4,$5,1,$6) RETURNING id, parent_item_id, name, done, version`,
+      [p.board_id, p.group_id, parentItemId, name || '新子任务', pos, userId]);
+    await this.pg.query(
+      `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'subitem.create',$2,'ui')`,
+      [userId, `item:${parentItemId}`]);
+    return rows[0];
   }
 
   async softDelete(itemIds: string[], userRole: BoardRole | null, userId: string) {

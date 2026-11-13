@@ -208,6 +208,25 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
                   style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>
               </div>
             ))}
+            <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>分组（双击名称重命名）</b>
+            {groups.map((g: any) => (
+              <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
+                <span style={{ flex: 1 }}
+                  onDoubleClick={() => {
+                    const v = prompt('重命名分组', g.name);
+                    if (v && v.trim() && v.trim() !== g.name) {
+                      api.renameGroup(boardId, g.id, v.trim()).then(reloadBoard).catch((e) => flash(`重命名失败：${(e as Error).message}`));
+                    }
+                  }}
+                  title="双击重命名">{g.name}</span>
+                <button title="删除分组（条目会变为无分组）"
+                  onClick={() => {
+                    if (!confirm(`删除分组「${g.name}」？组内条目将变为无分组。`)) return;
+                    api.deleteGroup(boardId, g.id).then(reloadBoard).catch((e) => flash(`删除分组失败：${(e as Error).message}`));
+                  }}
+                  style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>
+              </div>
+            ))}
             <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>新增分组</b>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="分组名（看板列）"
@@ -216,7 +235,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
                 style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
             </div>
             <div style={{ marginTop: 10, fontSize: 12, color: '#7a7f8c' }}>
-              分组：{groups.map((g: any) => g.name).join(' / ') || '无'}
+              共 {groups.length} 个分组
             </div>
           </div>
         )}

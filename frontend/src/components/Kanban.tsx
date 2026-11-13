@@ -7,12 +7,33 @@ import { api } from '../api';
 
 function Card({ itemId }: { itemId: string }) {
   const item = useItems((s) => s.items[itemId]);
+  const columns = useItems((s) => s.columns);
+  const peopleCol = columns.find((c: any) => c.type === 'people');
+  const dateCol = columns.find((c: any) => c.type === 'date');
+  const people = peopleCol ? (item as any).values?.[peopleCol.id] : null;
+  const peopleNames = Array.isArray(people) ? people.map((p: any) => p?.name ?? String(p)).filter(Boolean)
+    : people ? [typeof people === 'string' ? people : people?.name ?? ''].filter(Boolean) : [];
+  const dateVal = dateCol ? (item as any).values?.[dateCol.id] : null;
+  const overdue = dateVal && new Date(String(dateVal)) < new Date(new Date().toDateString());
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: itemId });
   return (
     <div ref={setNodeRef} {...listeners} {...attributes}
       style={{ transform: transform ? `translate(${transform.x}px,${transform.y}px)` : undefined,
-        background: '#fff', borderRadius: 8, padding: 12, marginBottom: 8, cursor: 'grab' }}>
-      <b>{item.name}</b>
+        background: '#fff', borderRadius: 8, padding: '10px 12px', marginBottom: 8, cursor: 'grab' }}>
+      <b style={{ fontSize: 13, display: 'block', marginBottom: peopleNames.length || dateVal ? 6 : 0 }}>{item.name}</b>
+      {(peopleNames.length > 0 || dateVal) && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {peopleNames.slice(0, 3).map((n) => (
+            <span key={n} style={{ background: '#eef1fe', color: '#4f6ef7', borderRadius: 10, padding: '2px 8px', fontSize: 11 }}>{n}</span>
+          ))}
+          {dateVal && (
+            <span style={{ background: overdue ? '#fdeaea' : '#f0f1f5', color: overdue ? '#e2445c' : '#7a7f8c',
+              borderRadius: 10, padding: '2px 8px', fontSize: 11 }}>
+              📅 {String(dateVal).slice(0, 10)}{overdue ? ' 已逾期' : ''}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
