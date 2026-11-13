@@ -14,7 +14,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          grid: ['ag-grid-react', 'ag-grid-community'],   // 重型依赖单独 chunk
           realtime: ['socket.io-client'],
         },
       },

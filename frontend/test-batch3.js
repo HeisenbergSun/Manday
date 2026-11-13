@@ -52,7 +52,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // 打开详情面板看子任务 tab
   await page.evaluate((n) => {
-    const cells = [...document.querySelectorAll('.ag-cell[col-id="name"]')];
+    const cells = [...document.querySelectorAll('[data-grid-cell][data-col="name"]')];
     const target = cells.find((c) => c.textContent.includes(n.slice(0, 8)));
     if (target) target.click();
   }, parentName);

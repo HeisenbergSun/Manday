@@ -66,6 +66,8 @@ export const api = {
     request(`/boards/${boardId}/columns`, { method: 'POST', body: JSON.stringify({ name, type }) }),
   renameColumn: (boardId: string, colId: string, name: string) =>
     request(`/boards/${boardId}/columns/${colId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  updateColumnSettings: (boardId: string, colId: string, settings: unknown) =>
+    request(`/boards/${boardId}/columns/${colId}`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
   deleteColumn: (boardId: string, colId: string) =>
     request(`/boards/${boardId}/columns/${colId}`, { method: 'DELETE' }),
   addGroup: (boardId: string, name: string) =>

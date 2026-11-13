@@ -52,6 +52,9 @@ export class ItemsService {
     clientVersion: number, userRole: BoardRole | null, userId: string,
   ) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    // 列级权限：settings.editable = 'owner' 时仅 owner 角色可编辑该列
+    const col = (await this.pg.query(`SELECT settings FROM board_columns WHERE id = $1`, [columnId])).rows[0];
+    if (col?.settings?.editable === 'owner' && userRole !== 'owner') throw new Error('FORBIDDEN_COLUMN');
     const client = await this.pg.connect();
     try {
       await client.query('BEGIN');

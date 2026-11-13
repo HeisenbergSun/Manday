@@ -1,34 +1,14 @@
 /**
- * 表格视图 — AG Grid Community（P0 落地，P1 换自研 TanStack）
- * 列类型渲染器走统一注册表：表格/看板/详情面板三处复用
+ * 表格视图 — 自研 React 表格（P1：替换 AG Grid）
+ * 列类型渲染/编辑器统一在 Grid.tsx；LWW 保存与冲突刷新在本组件
  */
-import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { AgGridReact } from 'ag-grid-react';
-import type { ColDef, CellValueChangedEvent, GridApi } from 'ag-grid-community';
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-alpine.css';
+import { useMemo, useCallback, useState, useEffect } from 'react';
+import { BoardGrid, type GridRow } from './Grid';
 import { useItems } from '../store';
 import { api } from '../api';
-import { buildAgColumnExtras } from './columnTypes';
-
-/** 列类型渲染器注册表 — 新增列类型 = 注册一个模块，视图层零改动 */
-export const columnTypeRegistry: Record<string, {
-  cellEditor?: string; valueFormatter?: (p: any) => string; cellRenderer?: any;
-}> = {
-  text: {},
-  number: { cellEditor: 'agNumberCellEditor' },
-  // date 列：值是 ISO 字符串，AG Grid 的 agDateCellEditor 会当成 Date 对象 → 显示 [object Object]
-  // 这里改用文本格式化 + 原生 date input 编辑器，避免隐式转换
-  date: {
-    cellEditor: 'agTextCellEditor',
-    valueFormatter: (p) => (p.value ? String(p.value).slice(0, 10) : ''),
-  },
-  checkbox: { cellEditor: 'agCheckboxCellEditor' },
-  // status / people / dropdown 由 columnTypes.tsx 的富列渲染器接管
-};
 
 /** 列类型的中文展示名 */
-const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选' } as Record<string, string>)[t] ?? t;
+const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选' } as Record<string, string>)[t] ?? t;
 
 /** 成员与权限管理弹窗：列表 + 改角色 + 移除 + 添加公司内用户 */
 const ROLE_LABEL: Record<string, string> = { owner: '负责人', editor: '可编辑', viewer: '只读', guest: '访客' };
@@ -70,7 +50,7 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
       await api.removeMember(boardId, m.id);
       await load();
       flash('已移除成员');
-    } catch (e) { flash(`移除失败：${(e as Error).message}`); }
+    } catch (e) { flash(`移除成员失败：${(e as Error).message}`); }
   };
 
   const memberIds = new Set(members.map((m) => m.id));
@@ -120,11 +100,11 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
           style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: pickUser ? '#4f6ef7' : '#c5c9d4', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
       </div>
     </div>
-  );}
+  );
+}
 
 export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenItem?: (itemId: string) => void }) {
-  const { items, columns, groups, bumpVersion, addItem, patchItem, setBoard } = useItems();
-  const gridRef = useRef<GridApi>(null);
+  const { items, columns, groups, bumpVersion, addItem, setBoard } = useItems();
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
   const [mgrOpen, setMgrOpen] = useState(false);
@@ -133,29 +113,25 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   const [newColType, setNewColType] = useState('text');
   const [newGroupName, setNewGroupName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const reloadBoard = useCallback(async () => {
     const d: any = await api.getBoard(boardId).catch(() => null);
     if (d) setBoard(d.items ?? [], d.columns ?? [], d.groups ?? []);
   }, [boardId, setBoard]);
 
-  const rowData = useMemo(
-    // 必须带 version：updateCell 走 LWW，缺 version 会被后端判 409
-    () => Object.values(items).map((it) => ({ ...it.values, id: it.id, name: it.name, version: it.version })),
+  const gridRows: GridRow[] = useMemo(
+    () => Object.values(items).map((it: any) => ({
+      id: it.id, name: it.name, version: it.version, position: it.position ?? 0,
+      values: it.values ?? {},
+    })),
     [items],
   );
 
-  const colDefs = useMemo<ColDef[]>(() => [
-    { field: 'name', headerName: '条目', editable: true, flex: 2, rowDrag: true },
-    ...columns.map((c) => ({
-      field: c.id,
-      headerName: c.name,
-      editable: true,
-      flex: 1,
-      ...columnTypeRegistry[c.type] ?? {},
-      ...buildAgColumnExtras(c),
-    })),
-  ], [columns]);
+  const gridColumns = useMemo(
+    () => columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings ?? {} })),
+    [columns],
+  );
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -169,7 +145,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
     try {
       const it: any = await api.createItem(boardId, '新条目');
       addItem({ id: it.id, group_id: it.group_id, name: it.name, version: it.version, values: {} });
-      flash('已新建条目，点击"条目"单元格重命名');
+      flash('已新建条目，双击"条目"单元格重命名');
     } catch (e) {
       flash(`新建失败：${(e as Error).message}`);
     } finally {
@@ -179,18 +155,18 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
 
   /** 选中行批量删除 → 回收站可恢复 */
   const deleteSelected = useCallback(async () => {
-    const g: any = gridRef.current;
-    const sel = (g?.api?.getSelectedRows?.() ?? g?.getSelectedRows?.()) ?? [];
+    const sel = [...selectedIds];
     if (!sel.length) { flash('先勾选要删除的行（左侧复选框）'); return; }
     if (!confirm(`把选中的 ${sel.length} 行移入回收站？`)) return;
     try {
-      await api.softDelete(sel.map((r: any) => r.id));
+      await api.softDelete(sel);
+      setSelectedIds(new Set());
       await reloadBoard();
       flash(`已移入回收站 ${sel.length} 行`);
     } catch (e) {
       flash(`删除失败：${(e as Error).message}`);
     }
-  }, [reloadBoard]);
+  }, [selectedIds, reloadBoard]);
 
   /** 新增列（status 列后端会带默认标签） */
   const addColumn = useCallback(async () => {
@@ -230,30 +206,43 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
     } catch (e) { flash(`删除列失败：${(e as Error).message}`); }
   }, [boardId, reloadBoard]);
 
-  const onCellValueChanged = useCallback(async (e: CellValueChangedEvent) => {
-    const field = e.colDef.field!;
+  /** 列级权限：settings.editable = 'all' | 'owner'（保留 settings 其他字段） */
+  const setColumnEditable = useCallback(async (col: any, editable: string) => {
+    try {
+      await api.updateColumnSettings(boardId, col.id, { ...(col.settings ?? {}), editable });
+      await reloadBoard();
+      flash(editable === 'owner' ? `列「${col.name}」已锁定为仅负责人可编辑` : `列「${col.name}」已开放所有人编辑`);
+    } catch (e) { flash(`修改列权限失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
+
+  /** 单元格保存：name 走本体接口，其余走 LWW updateCell */
+  const saveCell = useCallback(async (row: GridRow, field: string, value: unknown) => {
     try {
       if (field === 'name') {
-        // 条目名走独立本体接口（name 是 items 列，不是动态列值）
-        const r: any = await api.updateItem(e.data.id, { name: e.newValue });
-        if (r?.version) bumpVersion(e.data.id, r.version);
+        const r: any = await api.updateItem(row.id, { name: value as string });
+        if (r?.version) bumpVersion(row.id, r.version);
         return;
       }
-      const { version } = await api.updateCell(e.data.id, field, e.newValue, e.data.version);
-      bumpVersion(e.data.id, version);
-      // 本地行也要带上新 version，否则同一行连续改第二次会拿旧 version → 409
-      e.data.version = version;
+      const { version } = await api.updateCell(row.id, field, value, row.version);
+      bumpVersion(row.id, version);
     } catch (err: any) {
-      if (err.code === 'CONFLICT') {
-        flash('该行已被他人修改，正在加载最新内容…');   // LWW：不静默覆盖
-        const d: any = await api.getBoard(boardId).catch(() => null);
-        if (d) setBoard(d.items ?? [], d.columns ?? [], d.groups ?? []);
-        e.node.updateData({ ...e.data });
+      if (err.message?.includes('CONFLICT') || err.code === 'CONFLICT') {
+        flash('该行已被他人修改，正在加载最新内容…');
+        await reloadBoard();
+      } else if (String(err.message ?? err).includes('FORBIDDEN')) {
+        flash('该列仅负责人（owner）可编辑');
+        await reloadBoard();
       } else {
         flash(`保存失败：${err.message ?? err}`);
       }
     }
-  }, [bumpVersion, boardId, setBoard]);
+  }, [bumpVersion, reloadBoard]);
+
+  /** 拖拽排序落库 */
+  const saveOrder = useCallback(async (orders: { id: string; position: number }[]) => {
+    try { await api.reorderItems(orders); flash('排序已保存'); }
+    catch (e) { flash(`排序保存失败：${(e as Error).message}`); await reloadBoard(); }
+  }, [reloadBoard]);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -282,7 +271,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
         </button>
         {mgrOpen && (
           <div style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
-            boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 340 }}>
+            boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 400, maxHeight: '70vh', overflow: 'auto' }}>
             <b style={{ fontSize: 13 }}>新增列</b>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <input value={newColName} onChange={(e) => setNewColName(e.target.value)} placeholder="列名"
@@ -298,11 +287,18 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
               <button onClick={addColumn} disabled={busy || !newColName.trim()}
                 style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
             </div>
-            <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>现有列（点击 ✕ 删除）</b>
+            <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>现有列（✕ 删除 · 🔒 设列级权限）</b>
             {columns.map((c: any) => (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
                 <span style={{ color: '#7a7f8c', fontSize: 11, width: 44 }}>{typeLabel(c.type)}</span>
-                <span style={{ flex: 1 }}>{c.name}</span>
+                <span style={{ flex: 1 }}>{c.name}{c.settings?.editable === 'owner' ? ' 🔒' : ''}</span>
+                <select data-col-perm={c.id} value={c.settings?.editable === 'owner' ? 'owner' : 'all'}
+                  onChange={(e) => setColumnEditable(c, e.target.value)}
+                  title="列级权限：谁可以编辑这一列"
+                  style={{ padding: '3px 5px', borderRadius: 7, border: '1px solid #e6e8ef', fontSize: 12 }}>
+                  <option value="all">所有人可编辑</option>
+                  <option value="owner">仅负责人</option>
+                </select>
                 <button onClick={() => removeColumn(c.id, c.name)}
                   style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>
               </div>
@@ -339,41 +335,22 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
           </div>
         )}
         <span style={{ fontSize: 12, color: '#7a7f8c', marginLeft: 'auto' }}>
-          {rowData.length} 条目 · 双击单元格编辑 · 点击行打开详情
+          {gridRows.length} 条目 · 双击单元格编辑 · 拖 ⠿ 排序 · 点击行打开详情
         </span>
       </div>
       {toast && (
         <div style={{ margin: '0 12px 8px', background: '#eef1fe', color: '#4f6ef7', borderRadius: 8,
           padding: '7px 12px', fontSize: 12 }}>{toast}</div>
       )}
-      <div className="ag-theme-alpine" style={{ flex: 1, position: 'relative' }}>
-        <AgGridReact
-          ref={gridRef as any}
-          rowData={rowData}
-          columnDefs={colDefs}
-          getRowId={(p) => p.data.id}       // 稳定行 ID：store 刷新后不丢选中/不重挂载
-          rowSelection="multiple"
-          pagination
-          paginationPageSize={100}
-          rowBuffer={10}                    // 虚拟滚动缓冲
-          onRowDragEnd={async () => {
-            // 拖拽排序：取拖完后的行序 → 后端批量写 position
-            const g: any = gridRef.current;
-            const api2 = g?.api ?? g;
-            const nodes = api2?.getRenderedNodes?.() ?? [];
-            const rows: any[] = nodes.length ? nodes.map((n: any) => n.data)
-              : (api2?.getModel?.()?.rowsToDisplay ?? []).map((n: any) => n?.data).filter(Boolean);
-            if (rows.length) {
-              const orders = rows.map((r, i) => ({ id: r.id, position: (i + 1) * 1000 }));
-              try { await api.reorderItems(orders); flash('排序已保存'); }
-              catch (e) { flash(`排序保存失败：${(e as Error).message}`); await reloadBoard(); }
-            }
-          }}
-          onCellValueChanged={onCellValueChanged}
-          onRowClicked={(e) => onOpenItem?.(e.data.id)}
-          animateRows
-        />
-      </div>
+      <BoardGrid
+        rows={gridRows}
+        columns={gridColumns}
+        editable
+        onOpenItem={onOpenItem}
+        onEdit={saveCell}
+        onOrderChange={saveOrder}
+        onSelectionChange={setSelectedIds}
+      />
     </div>
   );
 }

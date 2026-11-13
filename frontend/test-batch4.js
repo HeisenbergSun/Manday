@@ -120,7 +120,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---- K5: 表格行拖拽（rowDrag handle 存在）----
   const k5 = await page.evaluate(() => {
-    return { dragHandles: document.querySelectorAll('.ag-row-drag').length };
+    return { dragHandles: document.querySelectorAll('[data-grid-drag]').length };
   });
   console.log('K5 row-drag handles:', JSON.stringify(k5));
   assert(k5.dragHandles > 0, '没有 rowDrag 手柄');

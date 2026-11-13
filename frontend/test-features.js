@@ -65,16 +65,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---- F2: 条目名编辑落库（改新建的条目名，刷新后仍在）----
   // 新条目插在最前，取第一行 name 单元格，单击+F2 进编辑改名
-  const nameCell = await page.waitForSelector('.ag-cell[col-id="name"]', { timeout: 8000 });
-  await nameCell.click({ clickCount: 1 });
-  await sleep(300);
-  await page.keyboard.press('F2');
-  await sleep(600);
-  // 确认进了编辑态（出现 ag-text-field-editor 输入框）
-  const editing = await page.$('.ag-text-field-input');
-  console.log('F2 editor open:', !!editing);
   const NAME = 'E2E测试条目' + Date.now();
-  const input = await page.$('.ag-text-field-input');
+  await page.waitForSelector('[data-grid-cell][data-col="name"]', { timeout: 8000 });
+  await page.evaluate(() => {
+    const cell = document.querySelector('[data-grid-cell][data-col="name"]');
+    cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  });
+  await sleep(600);
+  // 确认进了编辑态（自研表格 data-grid-editor 输入框）
+  const editing = await page.$('[data-grid-editor]');
+  console.log('F2 editor open:', !!editing);
+  const input = await page.$('[data-grid-editor]');
   if (input) {
     await page.evaluate((el, v) => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -156,9 +157,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log('F4 checkpoint A: back to table view');
   // 点名字含 E2E 的行选中
   const rowClicked = await page.evaluate((n) => {
-    const cells = [...document.querySelectorAll('.ag-cell[col-id="name"]')];
-    const target = cells.find((c) => c.textContent.includes(n.slice(0, 10)));
-    if (target) { target.click(); return true; }
+    const rows = [...document.querySelectorAll('[data-grid-row]')];
+    const target = rows.find((r) => r.textContent.includes(n.slice(0, 10)));
+    if (target) { const cb = target.querySelector('[data-grid-check]'); if (cb) { (cb).click(); return true; } }
     return false;
   }, NAME);
   await sleep(500);

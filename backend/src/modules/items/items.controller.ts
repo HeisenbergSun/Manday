@@ -75,7 +75,14 @@ export class ItemsController {
   @Patch(':id/cell')
   async updateCell(@Req() req: any, @Param('id') itemId: string, @Body() b: { columnId: string; value: unknown; version: number }) {
     const { role } = await this.resolveRoleForItem(itemId, req.user.id);
-    return this.items.updateCell(itemId, b.columnId, b.value, b.version, role, req.user.id);
+    try {
+      return await this.items.updateCell(itemId, b.columnId, b.value, b.version, role, req.user.id);
+    } catch (e: any) {
+      if (e?.message === 'FORBIDDEN_COLUMN') throw new ForbiddenException('该列仅负责人可编辑');
+      if (e?.message === 'FORBIDDEN') throw new ForbiddenException();
+      if (e?.message === 'CONFLICT') throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT' });
+      throw e;
+    }
   }
 
   @Post('batch')
