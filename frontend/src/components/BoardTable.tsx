@@ -7,6 +7,7 @@ import { BoardGrid, type GridRow } from './Grid';
 import { useItems } from '../store';
 import { api } from '../api';
 import { UI, TAG, doneLabelsOf } from '../theme';
+import { AutomationPanel } from './AutomationPanel';
 
 /** 列类型的中文展示名 */
 const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选' } as Record<string, string>)[t] ?? t;
@@ -113,6 +114,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   const [toast, setToast] = useState('');
   const [mgrOpen, setMgrOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [autoOpen, setAutoOpen] = useState(false);
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState('text');
   const [newGroupName, setNewGroupName] = useState('');
@@ -491,6 +493,12 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
             </>)}
           </div>
         )}
+        <button onClick={() => setAutoOpen(!autoOpen)}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: autoOpen ? '#eef1fe' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
+          ⚡ 自动化
+        </button>
+        {autoOpen && <AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} />}
         <button onClick={() => setViewsOpen(!viewsOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>

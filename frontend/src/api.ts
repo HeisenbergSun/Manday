@@ -90,6 +90,12 @@ export const api = {
   getPrefs: (boardId: string) => request(`/boards/${boardId}/prefs`),
   putPrefs: (boardId: string, patch: { defaultView?: string; viewId?: string | null; prefs?: unknown }) =>
     request(`/boards/${boardId}/prefs`, { method: 'PUT', body: JSON.stringify(patch) }),
+  // 自动化（P1-9）
+  autoList: (boardId: string) => request(`/boards/${boardId}/automations`),
+  autoCreate: (boardId: string, dto: { trigger: unknown; action: unknown; name?: string; source?: string }) =>
+    request(`/boards/${boardId}/automations`, { method: 'POST', body: JSON.stringify(dto) }),
+  autoRemove: (boardId: string, autoId: string) =>
+    request(`/boards/${boardId}/automations/${autoId}`, { method: 'DELETE' }),
   item: (itemId: string) => request(`/items/${itemId}`),
   itemUpdates: (itemId: string) => request(`/items/${itemId}/updates`),
   itemSubitems: (itemId: string) => request(`/items/${itemId}/subitems`),
