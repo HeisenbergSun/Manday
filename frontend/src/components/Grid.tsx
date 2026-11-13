@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { UI, TAG, doneLabelsOf } from '../theme';
 
 export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown> };
-export type GridColumn = { id: string; name: string; type: string; settings: any };
+export type GridColumn = { id: string; name: string; type: string; settings: any; restricted?: boolean };
 
 const LABEL_W = 260;
 
@@ -30,9 +30,11 @@ type Props = {
   onOrderChange: (orders: { id: string; position: number }[]) => Promise<void>;
   onSelectionChange?: (ids: Set<string>) => void;
   editable: boolean;
+  /** 当前用户是否 owner（P1-1/P1-2：结构操作与 owner-only 列编辑的 UI 依据） */
+  isOwner?: boolean;
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -87,6 +89,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
   const startEdit = (rowId: string, field: string, current: string) => {
     if (!editable) return;
+    const col = columns.find((c) => c.id === field);
+    if (col?.restricted) return; // P1-2 受限查看列不可编辑
     setEditing({ rowId, field });
     setDraft(current);
   };
@@ -127,7 +131,17 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     const raw = row.values[col.id];
     const v = scalar(raw);
     const isEditing = editing?.rowId === row.id && editing.field === col.id;
-    const locked = editable && col.settings?.editable === 'owner' ? false : editable;
+    // P1-2：editPermission='owner'（兼容旧 editable）非 owner 不可编辑；restricted 列整体锁定
+    const ep = col.settings?.editPermission ?? col.settings?.editable;
+    const locked = editable && !col.restricted && (isOwner || ep !== 'owner');
+
+    if (col.restricted) {
+      // 无权查看：模糊占位（保留列宽，不泄漏内容）
+      return <span data-grid-restricted={col.id} title="该列仅负责人可见"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#a0a4b1', fontSize: 12 }}>
+        <span style={{ display: 'inline-block', width: 52, height: 13, borderRadius: 7,
+          background: '#e3e6ee', filter: 'blur(1px)' }} />🔒</span>;
+    }
 
     if (isEditing) {
       if (col.type === 'date') {
@@ -156,7 +170,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
     if (col.type === 'checkbox') {
       return <input type="checkbox" checked={v === 'true'} disabled={!locked}
-        onChange={(e) => onEdit(row, col.id, e.target.checked)} style={{ cursor: locked ? 'pointer' : 'not-allowed' }} />;
+        onChange={(e) => locked && onEdit(row, col.id, e.target.checked)} style={{ cursor: locked ? 'pointer' : 'not-allowed' }} />;
     }
     if (col.type === 'status') {
       const opt = (col.settings?.labels ?? []).find((l: any) => l.label === v);
@@ -211,7 +225,11 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
             {columns.map((c) => (
               <th key={c.id} style={{ ...thStyle, textAlign: 'left' }}>
                 {c.name}
-                {c.settings?.editable === 'owner' && <span title="仅负责人可编辑" style={{ marginLeft: 4 }}>🔒</span>}
+                {c.restricted
+                  ? <span title="仅负责人可见" style={{ marginLeft: 4 }}>👁🔒</span>
+                  : (c.settings?.editPermission ?? c.settings?.editable) === 'owner'
+                    ? <span title="仅负责人可编辑" style={{ marginLeft: 4 }}>✏️🔒</span>
+                    : null}
               </th>
             ))}
           </tr>
@@ -256,7 +274,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               </td>
               {columns.map((c) => (
                 <td key={c.id} data-col={c.id} data-grid-cell={row.id} style={tdStyle}
-                  onDoubleClick={() => startEdit(row.id, c.id, c.type === 'checkbox' ? String(row.values[c.id] === true) : scalar(row.values[c.id]))}>
+                  onDoubleClick={() => !c.restricted && startEdit(row.id, c.id, c.type === 'checkbox' ? String(row.values[c.id] === true) : scalar(row.values[c.id]))}>
                   {renderCell(row, c)}
                 </td>
               ))}

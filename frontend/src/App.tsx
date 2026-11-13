@@ -120,7 +120,7 @@ export function App() {
   useEffect(() => {
     if (!user || !activeBoard?.id) return;
     const boardId = activeBoard.id;
-    api.getBoard(boardId as string).then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [])).catch(() => {});
+    api.getBoard(boardId as string).then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole)).catch(() => {});
     joinBoard(boardId);
     return () => leaveBoard(boardId);
   }, [user?.id, activeBoard?.id]);
@@ -172,7 +172,7 @@ export function App() {
           onCreated={async (boardId) => {
             // 实例化后刷新导航并打开新 Board（简化：直接加载）
             const d = await api.getBoard(boardId).catch(() => null);
-            if (d) { setBoard(d.items, d.columns, (d as any).groups); setActiveBoard({ id: boardId, name: '新 Board' }); }
+            if (d) { setBoard(d.items, d.columns, (d as any).groups, d.myRole); setActiveBoard({ id: boardId, name: '新 Board' }); }
           }} />
       )}
     </div>

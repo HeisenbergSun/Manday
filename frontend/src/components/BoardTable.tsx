@@ -105,7 +105,10 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
 }
 
 export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenItem?: (itemId: string) => void }) {
-  const { items, columns, groups, bumpVersion, applyPatch, addItem, setBoard } = useItems();
+  const { items, columns, groups, myRole, bumpVersion, applyPatch, addItem, setBoard } = useItems();
+  // P1-1：结构（列/组增删改）仅 owner；内容（cell/条目）editor+；myRole 未加载时保守按 owner 展示
+  const isOwner = !myRole || myRole === 'owner';
+  const canEditContent = isOwner || myRole === 'editor';
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
   const [mgrOpen, setMgrOpen] = useState(false);
@@ -118,7 +121,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
 
   const reloadBoard = useCallback(async () => {
     const d: any = await api.getBoard(boardId).catch(() => null);
-    if (d) setBoard(d.items ?? [], d.columns ?? [], d.groups ?? []);
+    if (d) setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole);
   }, [boardId, setBoard]);
 
   const gridRows: GridRow[] = useMemo(
@@ -130,7 +133,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   );
 
   const gridColumns = useMemo(
-    () => columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings ?? {} })),
+    () => columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings ?? {}, restricted: !!c.restricted })),
     [columns],
   );
 
@@ -207,12 +210,18 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
     } catch (e) { flash(`删除列失败：${(e as Error).message}`); }
   }, [boardId, reloadBoard]);
 
-  /** 列级权限：settings.editable = 'all' | 'owner'（保留 settings 其他字段） */
-  const setColumnEditable = useCallback(async (col: any, editable: string) => {
+  /** 列级权限（P1-2 互斥）：editPermission 与 viewPermission 二选一生效，设一个另一个自动回 all */
+  const setColumnPerm = useCallback(async (col: any, kind: 'edit' | 'view', value: 'all' | 'owner') => {
+    const s: any = { ...(col.settings ?? {}) };
+    delete s.editable; // 旧字段归一化
+    if (kind === 'edit') { s.editPermission = value; if (value === 'owner') s.viewPermission = 'all'; }
+    else { s.viewPermission = value; if (value === 'owner') s.editPermission = 'all'; }
     try {
-      await api.updateColumnSettings(boardId, col.id, { ...(col.settings ?? {}), editable });
+      await api.updateColumnSettings(boardId, col.id, s);
       await reloadBoard();
-      flash(editable === 'owner' ? `列「${col.name}」已锁定为仅负责人可编辑` : `列「${col.name}」已开放所有人编辑`);
+      flash(value === 'owner'
+        ? (kind === 'edit' ? `列「${col.name}」已限制为仅负责人编辑` : `列「${col.name}」已限制为仅负责人可见`)
+        : `列「${col.name}」已解除限制`);
     } catch (e) { flash(`修改列权限失败：${(e as Error).message}`); }
   }, [boardId, reloadBoard]);
 
@@ -308,7 +317,13 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
         </button>
         {mgrOpen && (
           <div style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
-            boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 400, maxHeight: '70vh', overflow: 'auto' }}>
+            boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 440, maxHeight: '70vh', overflow: 'auto' }}>
+            {!isOwner && (
+              <div style={{ marginBottom: 10, padding: '8px 12px', background: '#fff8e6', borderRadius: 8, fontSize: 12, color: '#b8860b' }}>
+                🔒 仅看板负责人可修改结构（列/分组）；你可以编辑条目内容
+              </div>
+            )}
+            {isOwner && (<>
             <b style={{ fontSize: 13 }}>新增列</b>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <input value={newColName} onChange={(e) => setNewColName(e.target.value)} placeholder="列名"
@@ -324,19 +339,23 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
               <button onClick={addColumn} disabled={busy || !newColName.trim()}
                 style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
             </div>
-            <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>现有列（✕ 删除 · 🔒 设列级权限）</b>
-            {columns.map((c: any) => (
+            </>)}
+            <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>现有列{isOwner ? '（✕ 删除 · 编辑/查看权限二选一）' : ''}</b>
+            {columns.map((c: any) => {
+              const ep = c.settings?.editPermission ?? c.settings?.editable;
+              const vp = c.settings?.viewPermission;
+              return (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
                 <span style={{ color: '#7a7f8c', fontSize: 11, width: 44 }}>{typeLabel(c.type)}</span>
-                <span style={{ flex: 1 }}>{c.name}{c.settings?.editable === 'owner' ? ' 🔒' : ''}</span>
+                <span style={{ flex: 1 }}>{c.name}{ep === 'owner' ? ' ✏️🔒' : ''}{vp === 'owner' ? ' 👁🔒' : ''}</span>
                 {c.type === 'status' && (
-                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 220 }} data-label-chips={c.id}>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 200 }} data-label-chips={c.id}>
                     {(c.settings?.labels ?? []).map((l: any) => {
                       const inactive = (c.settings?.inactiveLabels ?? []).includes(l.label);
                       const isDone = doneLabelsOf(c.settings).has(l.label);
-                      return <span key={l.label} onClick={(e) => { e.shiftKey ? toggleDoneLabel(c, l.label) : toggleLabelInactive(c, l.label); }}
-                        title={inactive ? '已停用，点恢复' : '点击停用标签（Shift+点 = 设/取消完成语义）'}
-                        style={{ cursor: 'pointer', fontSize: 11, padding: '1px 7px', borderRadius: 10,
+                      return <span key={l.label} onClick={(e) => { if (!isOwner) return; e.shiftKey ? toggleDoneLabel(c, l.label) : toggleLabelInactive(c, l.label); }}
+                        title={isOwner ? (inactive ? '已停用，点恢复' : '点击停用标签（Shift+点 = 设/取消完成语义）') : '仅负责人可修改标签'}
+                        style={{ cursor: isOwner ? 'pointer' : 'default', fontSize: 11, padding: '1px 7px', borderRadius: 10,
                           background: `${l.color}22`, color: inactive ? UI.textFaint : l.color,
                           textDecoration: inactive ? 'line-through' : 'none',
                           border: isDone ? `1px solid ${TAG.done}` : 'none' }}>
@@ -344,17 +363,30 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
                     })}
                   </div>
                 )}
-                <select data-col-perm={c.id} value={c.settings?.editable === 'owner' ? 'owner' : 'all'}
-                  onChange={(e) => setColumnEditable(c, e.target.value)}
-                  title="列级权限：谁可以编辑这一列"
-                  style={{ padding: '3px 5px', borderRadius: 7, border: '1px solid #e6e8ef', fontSize: 12 }}>
-                  <option value="all">所有人可编辑</option>
-                  <option value="owner">仅负责人</option>
-                </select>
-                <button onClick={() => removeColumn(c.id, c.name)}
-                  style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                {isOwner && (
+                  <>
+                    <select data-col-editperm={c.id} value={ep === 'owner' ? 'owner' : 'all'}
+                      onChange={(e) => setColumnPerm(c, 'edit', e.target.value as 'all' | 'owner')}
+                      title="列级权限：谁可以编辑这一列（与限制查看互斥）"
+                      style={{ padding: '3px 5px', borderRadius: 7, border: '1px solid #e6e8ef', fontSize: 12 }}>
+                      <option value="all">所有人可编辑</option>
+                      <option value="owner">仅负责人编辑</option>
+                    </select>
+                    <select data-col-viewperm={c.id} value={vp === 'owner' ? 'owner' : 'all'}
+                      onChange={(e) => setColumnPerm(c, 'view', e.target.value as 'all' | 'owner')}
+                      title="列级权限：谁可以看这一列（与限制编辑互斥）"
+                      style={{ padding: '3px 5px', borderRadius: 7, border: '1px solid #e6e8ef', fontSize: 12 }}>
+                      <option value="all">所有人可见</option>
+                      <option value="owner">仅负责人可见</option>
+                    </select>
+                    <button onClick={() => removeColumn(c.id, c.name)}
+                      style={{ border: 'none', background: 'none', color: '#e2445c', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                  </>
+                )}
               </div>
-            ))}
+              );
+            })}
+            {isOwner && (<>
             <b style={{ fontSize: 13, display: 'block', marginTop: 14 }}>分组（双击名称重命名）</b>
             {groups.map((g: any) => (
               <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
@@ -385,6 +417,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
               共 {groups.length} 个分组<br />
               状态列标签：点一下停用（旧数据保留），再点恢复；带 ✓ 边框的是「完成」语义标签
             </div>
+            </>)}
           </div>
         )}
         <span style={{ fontSize: 12, color: '#7a7f8c', marginLeft: 'auto' }}>
@@ -423,7 +456,8 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
       <BoardGrid
         rows={gridRows}
         columns={gridColumns}
-        editable
+        editable={canEditContent}
+        isOwner={isOwner}
         onOpenItem={onOpenItem}
         onEdit={saveCell}
         onOrderChange={saveOrder}

@@ -10,7 +10,7 @@
  */
 const puppeteer = require('puppeteer-core');
 const EDGE = 'C:/Users/RSU06X/Scania WorkBuddy/2026-11-12-10-43-38/frontend/.browsers/chromium/win64-1742554/chrome-win/chrome.exe';
-const BASE = 'http://localhost:3000';
+const BASE = 'http://localhost:3003';
 const BOARD_NAME = 'P0 优化验证 ' + new Date().toISOString().slice(5,17);
 const results = [];
 let expectDenied = false; // 预期 403 的步骤不计入失败

@@ -1,9 +1,10 @@
 /**
  * Boards 服务 — Board/Group/Column CRUD + 可见性过滤 + 回收站
  */
-import { Injectable, Controller, Get, Post, Patch, Delete, Body, Param, Req, Module } from '@nestjs/common';
+import { Injectable, Controller, Get, Post, Patch, Delete, Body, Param, Req, Module, ForbiddenException } from '@nestjs/common';
 import { Pool } from 'pg';
-import { can } from './acl';
+import { can, canEditStructure } from './acl';
+import { applyViewPermission } from '../items/items.service';
 
 /** 可见性过滤 SQL：Board 权限 > 部门 > 全员（P0 规则，权限治理用） */
 const VISIBLE_WHERE = `
@@ -73,7 +74,9 @@ export class BoardsService {
       for (const kv of r.kv ?? []) values[kv.k] = kv.v;
       return { ...r, values };
     });
-    return { board: b[0], columns, groups, items: itemRows };
+    // P1-2：受限列（viewPermission=owner）对非 owner 剓值、标记 restricted
+    const filtered = applyViewPermission(columns, itemRows, userRole);
+    return { board: b[0], columns: filtered.columns, groups, items: filtered.items, myRole: userRole };
   }
 
   async create(userId: string, dto: { name: string; departmentId?: string; visibility?: string }) {
@@ -121,10 +124,10 @@ export class BoardsService {
     return { restored: itemIds.length };
   }
 
-  /** —— 列管理 —— */
+  /** —— 列管理 ——（P1-1：结构操作仅 owner） */
   async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
-    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加列');
     if (!['text', 'status', 'people', 'date', 'number'].includes(dto.type)) throw new Error('BAD_TYPE');
     const settings = dto.settings ?? (dto.type === 'status'
       ? { labels: [{ label: '待办', color: '#8a90a3' }, { label: '进行中', color: '#579bfc' }, { label: '已完成', color: '#00c875' }], doneLabels: ['已完成'] }
@@ -139,7 +142,16 @@ export class BoardsService {
 
   async renameColumn(boardId: string, colId: string, userId: string, dto: { name?: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
-    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可修改列设置');
+    // P1-2 列权限互斥：限制查看与限制编辑不能同时生效（否则没人能编辑）
+    if (dto.settings) {
+      const s = { ...dto.settings };
+      if (s.editable === 'owner') { s.editPermission = 'owner'; delete s.editable; } // 旧字段归一化
+      const editLocked = s.editPermission === 'owner';
+      const viewLocked = s.viewPermission === 'owner';
+      if (editLocked && viewLocked) throw new ForbiddenException('限制查看与限制编辑互斥，请二选一');
+      dto = { ...dto, settings: s };
+    }
     const { rows } = await this.pg.query(
       `UPDATE board_columns SET
          name = COALESCE($3, name),
@@ -152,17 +164,17 @@ export class BoardsService {
 
   async deleteColumn(boardId: string, colId: string, userId: string) {
     const userRole = await this.resolveRole(boardId, userId);
-    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可删除列');
     await this.pg.query(`DELETE FROM item_values WHERE column_id = $1`, [colId]);
     await this.pg.query(`DELETE FROM board_columns WHERE id = $1 AND board_id = $2`, [colId, boardId]);
     await this.pg.query(`INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'column.delete',$2,'ui')`, [userId, colId]);
     return { deleted: true };
   }
 
-  /** —— 分组管理 —— */
+  /** —— 分组管理 ——（P1-1：结构操作仅 owner） */
   async addGroup(boardId: string, userId: string, dto: { name: string }) {
     const userRole = await this.resolveRole(boardId, userId);
-    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加分组');
     const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM board_groups WHERE board_id = $1`, [boardId])).rows[0].p;
     const { rows } = await this.pg.query(
       `INSERT INTO board_groups (board_id, name, position) VALUES ($1,$2,$3) RETURNING *`,
@@ -172,7 +184,7 @@ export class BoardsService {
 
   async renameGroup(boardId: string, gid: string, userId: string, dto: { name?: string; color?: string }) {
     const userRole = await this.resolveRole(boardId, userId);
-    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可修改分组');
     const { rows } = await this.pg.query(
       `UPDATE board_groups SET name = COALESCE($3, name), color = COALESCE($4, color)
        WHERE id = $2 AND board_id = $1 RETURNING *`,
@@ -183,7 +195,7 @@ export class BoardsService {
 
   async deleteGroup(boardId: string, gid: string, userId: string) {
     const userRole = await this.resolveRole(boardId, userId);
-    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可删除分组');
     await this.pg.query(`UPDATE items SET group_id = NULL WHERE group_id = $1`, [gid]);
     await this.pg.query(`DELETE FROM board_groups WHERE id = $1 AND board_id = $2`, [gid, boardId]);
     return { deleted: true };

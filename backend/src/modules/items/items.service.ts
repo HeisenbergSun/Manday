@@ -7,7 +7,27 @@
  */
 import { Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
-import { can, BoardRole } from '../boards/acl';
+import { can, canEditStructure, BoardRole } from '../boards/acl';
+
+/**
+ * P1-2 受限列读取过滤：viewPermission='owner' 的列对非 owner 只给元数据（restricted:true），值被剔除
+ * 前端渲染 🔒 模糊占位（保留列宽）；owner 端 unrestricted 原样返回
+ */
+export function applyViewPermission(columns: any[], items: any[], userRole: BoardRole | null) {
+  const restrictedIds = userRole === 'owner'
+    ? new Set<string>()
+    : new Set(columns.filter((c) => c.settings?.viewPermission === 'owner').map((c) => c.id));
+  return {
+    columns: columns.map((c) => ({ ...c, restricted: restrictedIds.has(c.id) })),
+    items: restrictedIds.size
+      ? items.map((it) => {
+          const v = { ...it.values };
+          for (const id of restrictedIds) delete v[id];
+          return { ...it, values: v };
+        })
+      : items,
+  };
+}
 
 @Injectable()
 export class ItemsService {
@@ -52,9 +72,10 @@ export class ItemsService {
     clientVersion: number, userRole: BoardRole | null, userId: string,
   ) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
-    // 列级权限：settings.editable = 'owner' 时仅 owner 角色可编辑该列
+    // 列级权限（P1-2）：editPermission='owner'（兼容旧 editable:'owner'）时仅 owner 角色可编辑该列
     const col = (await this.pg.query(`SELECT settings FROM board_columns WHERE id = $1`, [columnId])).rows[0];
-    if (col?.settings?.editable === 'owner' && userRole !== 'owner') throw new Error('FORBIDDEN_COLUMN');
+    const ep = col?.settings?.editPermission ?? col?.settings?.editable;
+    if (ep === 'owner' && userRole !== 'owner') throw new Error('FORBIDDEN_COLUMN');
     const client = await this.pg.connect();
     try {
       await client.query('BEGIN');
@@ -181,12 +202,21 @@ export class ItemsService {
     return { moved: itemIds.length };
   }
 
-  /** 批量编辑（P0 刚需）：一次事务内批量 upsert 列值 */
+  /** 批量编辑（P0 刚需）：一次事务内批量 upsert 列值；P1-2 补列权限校验（原漏洞：批量绕过列限制） */
   async batchUpdate(
     changes: { itemId: string; columnId: string; value: unknown }[],
     userRole: BoardRole | null, userId: string,
   ) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    if (userRole !== 'owner' && changes.length) {
+      const colIds = [...new Set(changes.map((c) => c.columnId))];
+      const { rows: cols } = await this.pg.query(
+        `SELECT id, settings FROM board_columns WHERE id = ANY($1::uuid[])`, [colIds]);
+      const locked = new Set(cols
+        .filter((c) => (c.settings?.editPermission ?? c.settings?.editable) === 'owner')
+        .map((c) => c.id));
+      if (changes.some((c) => locked.has(c.columnId))) throw new Error('FORBIDDEN_COLUMN');
+    }
     const client = await this.pg.connect();
     try {
       await client.query('BEGIN');

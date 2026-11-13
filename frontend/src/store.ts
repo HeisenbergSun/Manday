@@ -11,7 +11,9 @@ interface ItemsState {
   items: Record<string, Item>;
   columns: ColumnDef[];
   groups: GroupDef[];
-  setBoard: (items: Item[], columns: ColumnDef[], groups?: GroupDef[]) => void;
+  /** 当前用户在该 Board 的角色（P1-1 权限拆分 UI 依据；null = 未加载，保守按 owner 展示） */
+  myRole: string | null;
+  setBoard: (items: Item[], columns: ColumnDef[], groups?: GroupDef[], myRole?: string | null) => void;
   /** 实时 item 级 diff 更新：只动一个条目 */
   applyPatch: (itemId: string, field: string, value: unknown, version: number) => void;
   bumpVersion: (itemId: string, version: number) => void;
@@ -23,10 +25,12 @@ export const useItems = create<ItemsState>((set) => ({
   items: {},
   columns: [],
   groups: [],
-  setBoard: (items, columns, groups) => set(() => ({
+  myRole: null,
+  setBoard: (items, columns, groups, myRole) => set(() => ({
     items: Object.fromEntries((items ?? []).map((i) => [i.id, i])),
     columns: columns ?? [],
     groups: groups ?? [],
+    myRole: myRole ?? null,
   })),
   applyPatch: (itemId, field, value, version) => set((s) => {
     const it = s.items[itemId];

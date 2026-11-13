@@ -4,7 +4,7 @@
  */
 import { Controller, Get, Patch, Post, Body, Param, Req, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Pool } from 'pg';
-import { ItemsService } from './items.service';
+import { ItemsService, applyViewPermission } from './items.service';
 import { BoardRole } from '../boards/acl';
 
 @Controller('boards')
@@ -45,7 +45,9 @@ export class BoardsItemsController {
       `SELECT id, type, name, settings, position FROM board_columns
        WHERE board_id = $1 ORDER BY position`, [boardId]);
     const groups = await this.items.listGroups(boardId);
-    return { items, columns, groups };
+    // P1-2：受限列（viewPermission=owner）对非 owner 剓值、标记 restricted
+    const filtered = applyViewPermission(columns, items, role);
+    return { items: filtered.items, columns: filtered.columns, groups, myRole: role };
   }
 }
 
@@ -90,7 +92,12 @@ export class ItemsController {
     // 取第一个 item 的 board 角色近似判断（P0 批量通常同 Board）
     if (!b.changes?.length) return { updated: 0 };
     const { role } = await this.resolveRoleForItem(b.changes[0].itemId, req.user.id);
-    return this.items.batchUpdate(b.changes, role, req.user.id);
+    try {
+      return await this.items.batchUpdate(b.changes, role, req.user.id);
+    } catch (e: any) {
+      if (e?.message === 'FORBIDDEN_COLUMN') throw new ForbiddenException('包含无权编辑的列');
+      throw e;
+    }
   }
 
   @Patch(':id')

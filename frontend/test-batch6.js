@@ -132,10 +132,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const c = d.columns.find((x) => x.type === 'date');
     return { id: c.id, name: c.name, settings: c.settings ?? {} };
   }, bid5, headers);
-  // 设为 owner-only
-  await page.evaluate(async (id, h, col) => {
-    await fetch('/api/boards/' + id + '/columns/' + col.id, { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { ...col.settings, editable: 'owner' } }) });
-  }, bid5, headers, dateCol);
+  // 设为 owner-only（P1-1 后结构操作仅 board owner——App 2.0 项目 owner 是张伟，需用他的 token 设权限）
+  const ZW = '43c4d6a3-2831-4cd7-b8f9-376c1ab8e519';
+  const zwToken = 'Bearer ' + require('../backend/node_modules/jsonwebtoken').sign({ sub: ZW, email: 'zhangwei@internal' }, 'manday-dev-secret', { expiresIn: '12h' });
+  const setRes = await page.evaluate(async (id, auth, col) => {
+    const r = await fetch('/api/boards/' + id + '/columns/' + col.id, { method: 'PATCH', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { ...col.settings, editable: 'owner' } }) });
+    return r.status;
+  }, bid5, zwToken, dateCol);
+  console.log('L5-prep owner sets permission:', setRes);
+  assert(setRes === 200, 'L5-prep board owner 设置列权限失败: ' + setRes);
   const item = await page.evaluate(async (id, h) => {
     const d = await (await fetch('/api/boards/' + id, { headers: h })).json();
     return { id: d.items[0].id, version: d.items[0].version };
@@ -148,9 +153,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log('L5 owner-only edit status:', denied);
   assert(denied === 403, 'owner-only 列未拦截非 owner 编辑（期望403）: ' + denied);
   // 改回 all → 恢复可编辑
-  await page.evaluate(async (id, h, col) => {
-    await fetch('/api/boards/' + id + '/columns/' + col.id, { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { ...col.settings, editable: 'all' } }) });
-  }, bid5, headers, dateCol);
+  const unsetRes = await page.evaluate(async (id, auth, col) => {
+    const r = await fetch('/api/boards/' + id + '/columns/' + col.id, { method: 'PATCH', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { ...col.settings, editable: 'all', editPermission: 'all' } }) });
+    return r.status;
+  }, bid5, zwToken, dateCol);
+  console.log('L5-unlock owner resets permission:', unsetRes);
+  assert(unsetRes === 200, 'L5-unlock board owner 恢复列权限失败: ' + unsetRes);
   const allowed = await page.evaluate(async (h, it, col) => {
     const r = await fetch('/api/items/' + it.id + '/cell', { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ columnId: col.id, value: null, version: it.version }) });
     return r.status;

@@ -18,3 +18,12 @@ export function can(userRole: BoardRole | null, action: Action, isSensitiveColum
   if (isSensitiveColumn && userRole !== 'owner') return false; // P1 列级权限钩子：敏感列仅 owner 可见
   return LEVEL[userRole] >= NEED[action];
 }
+
+/**
+ * P1-1 编辑内容 vs 编辑结构权限拆分（Monday 权限模型地基）：
+ * - 内容（改 cell / 改条目名 / 移组 / 软删）→ editor 及以上（can(role,'edit')）
+ * - 结构（加/改名/删列、加/改名/删组）→ 仅 owner（Monday 默认：成员改不了表格结构）
+ */
+export function canEditStructure(userRole: BoardRole | null): boolean {
+  return userRole === 'owner';
+}
