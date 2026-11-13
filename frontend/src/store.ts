@@ -45,6 +45,9 @@ export const useItems = create<ItemsState>((set) => ({
   }),
 }));
 
+// 调试通道：e2e / 控制台可从 window 读 store 状态
+if (typeof window !== 'undefined') (window as any).__useItems = useItems;
+
 interface UiState {
   aiOpen: boolean;
   toggleAI: () => void;

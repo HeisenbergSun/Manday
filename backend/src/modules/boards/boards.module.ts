@@ -127,7 +127,7 @@ export class BoardsService {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
     if (!['text', 'status', 'people', 'date', 'number'].includes(dto.type)) throw new Error('BAD_TYPE');
     const settings = dto.settings ?? (dto.type === 'status'
-      ? { labels: [{ label: '待办', color: '#8a90a3' }, { label: '进行中', color: '#579bfc' }, { label: '已完成', color: '#00c875' }] }
+      ? { labels: [{ label: '待办', color: '#8a90a3' }, { label: '进行中', color: '#579bfc' }, { label: '已完成', color: '#00c875' }], doneLabels: ['已完成'] }
       : {});
     const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM board_columns WHERE board_id = $1`, [boardId])).rows[0].p;
     const { rows } = await this.pg.query(

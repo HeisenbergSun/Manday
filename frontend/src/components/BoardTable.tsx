@@ -6,6 +6,7 @@ import { useMemo, useCallback, useState, useEffect } from 'react';
 import { BoardGrid, type GridRow } from './Grid';
 import { useItems } from '../store';
 import { api } from '../api';
+import { UI, TAG, doneLabelsOf } from '../theme';
 
 /** 列类型的中文展示名 */
 const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选' } as Record<string, string>)[t] ?? t;
@@ -104,7 +105,7 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
 }
 
 export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenItem?: (itemId: string) => void }) {
-  const { items, columns, groups, bumpVersion, addItem, setBoard } = useItems();
+  const { items, columns, groups, bumpVersion, applyPatch, addItem, setBoard } = useItems();
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
   const [mgrOpen, setMgrOpen] = useState(false);
@@ -224,7 +225,8 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
         return;
       }
       const { version } = await api.updateCell(row.id, field, value, row.version);
-      bumpVersion(row.id, version);
+      // 本地同步值 + 版本（applyPatch 自带 LWW 守卫，先于任何回声；不能再先 bumpVersion，否则补丁被当旧包丢弃）
+      applyPatch(row.id, field, value, version);
     } catch (err: any) {
       if (err.message?.includes('CONFLICT') || err.code === 'CONFLICT') {
         flash('该行已被他人修改，正在加载最新内容…');
@@ -236,13 +238,48 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
         flash(`保存失败：${err.message ?? err}`);
       }
     }
-  }, [bumpVersion, reloadBoard]);
+  }, [bumpVersion, applyPatch, reloadBoard]);
 
   /** 拖拽排序落库 */
   const saveOrder = useCallback(async (orders: { id: string; position: number }[]) => {
     try { await api.reorderItems(orders); flash('排序已保存'); }
     catch (e) { flash(`排序保存失败：${(e as Error).message}`); await reloadBoard(); }
   }, [reloadBoard]);
+
+  /** 删除标签 = 停用（P0-2）：保留历史数据，旧值照常展示，只是编辑时不可再选 */
+  const toggleLabelInactive = useCallback(async (col: any, label: string) => {
+    const cur: string[] = col.settings?.inactiveLabels ?? [];
+    const next = cur.includes(label) ? cur.filter((l: string) => l !== label) : [...cur, label];
+    try {
+      await api.updateColumnSettings(boardId, col.id, { ...(col.settings ?? {}), inactiveLabels: next });
+      await reloadBoard();
+      flash(cur.includes(label) ? `已恢复标签「${label}」` : `已停用标签「${label}」（旧数据保留）`);
+    } catch (e) { flash(`修改标签失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
+
+  /** 设为完成语义标签（P0-3）：doneLabels 决定哪些标签算「完成」（甘特变灰、行名删除线） */
+  const toggleDoneLabel = useCallback(async (col: any, label: string) => {
+    const cur = doneLabelsOf(col.settings);
+    const next = cur.has(label) ? [...cur].filter((l) => l !== label) : [...cur, label];
+    if (!next.length) { flash('至少保留一个完成语义标签'); return; }
+    try {
+      await api.updateColumnSettings(boardId, col.id, { ...(col.settings ?? {}), doneLabels: next });
+      await reloadBoard();
+      flash(`「${label}」${cur.has(label) ? '不再算作' : '已设为'}完成状态`);
+    } catch (e) { flash(`修改失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
+
+  /** 批量改状态（P0-4）：选中 ≥3 行时底部工具条，逐行 LWW 写入 */
+  const statusCol = useMemo(() => columns.find((c: any) => c.type === 'status'), [columns]);
+  const batchSetStatus = useCallback(async (label: string) => {
+    if (!statusCol) return;
+    const rows = gridRows.filter((r) => selectedIds.has(r.id));
+    let ok = 0, fail = 0;
+    for (const r of rows) {
+      try { await saveCell(r, statusCol.id, label); ok++; } catch { fail++; }
+    }
+    flash(`批量改状态：成功 ${ok}${fail ? `，失败 ${fail}` : ''}`);
+  }, [statusCol, gridRows, selectedIds, saveCell]);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -292,6 +329,21 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
                 <span style={{ color: '#7a7f8c', fontSize: 11, width: 44 }}>{typeLabel(c.type)}</span>
                 <span style={{ flex: 1 }}>{c.name}{c.settings?.editable === 'owner' ? ' 🔒' : ''}</span>
+                {c.type === 'status' && (
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 220 }} data-label-chips={c.id}>
+                    {(c.settings?.labels ?? []).map((l: any) => {
+                      const inactive = (c.settings?.inactiveLabels ?? []).includes(l.label);
+                      const isDone = doneLabelsOf(c.settings).has(l.label);
+                      return <span key={l.label} onClick={(e) => { e.shiftKey ? toggleDoneLabel(c, l.label) : toggleLabelInactive(c, l.label); }}
+                        title={inactive ? '已停用，点恢复' : '点击停用标签（Shift+点 = 设/取消完成语义）'}
+                        style={{ cursor: 'pointer', fontSize: 11, padding: '1px 7px', borderRadius: 10,
+                          background: `${l.color}22`, color: inactive ? UI.textFaint : l.color,
+                          textDecoration: inactive ? 'line-through' : 'none',
+                          border: isDone ? `1px solid ${TAG.done}` : 'none' }}>
+                        {l.label}{isDone ? ' ✓' : ''}</span>;
+                    })}
+                  </div>
+                )}
                 <select data-col-perm={c.id} value={c.settings?.editable === 'owner' ? 'owner' : 'all'}
                   onChange={(e) => setColumnEditable(c, e.target.value)}
                   title="列级权限：谁可以编辑这一列"
@@ -329,18 +381,44 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
               <button onClick={addGroup} disabled={busy || !newGroupName.trim()}
                 style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
             </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: '#7a7f8c' }}>
-              共 {groups.length} 个分组
+            <div style={{ marginTop: 10, fontSize: 12, color: '#7a7f8c', lineHeight: 1.7 }}>
+              共 {groups.length} 个分组<br />
+              状态列标签：点一下停用（旧数据保留），再点恢复；带 ✓ 边框的是「完成」语义标签
             </div>
           </div>
         )}
         <span style={{ fontSize: 12, color: '#7a7f8c', marginLeft: 'auto' }}>
-          {gridRows.length} 条目 · 双击单元格编辑 · 拖 ⠿ 排序 · 点击行打开详情
+          {gridRows.length} 条目 · 双击编辑 · 拖 ⠿ 排序 · ↑↓/Enter/Space 快捷键 · 勾选 3 行以上出批量工具条
         </span>
       </div>
       {toast && (
         <div style={{ margin: '0 12px 8px', background: '#eef1fe', color: '#4f6ef7', borderRadius: 8,
           padding: '7px 12px', fontSize: 12 }}>{toast}</div>
+      )}
+      {/* 底部浮动批量工具条（P0-4）：勾选 ≥3 行浮出 */}
+      {selectedIds.size >= 3 && (
+        <div data-batch-bar="1" style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
+          background: UI.text, color: '#fff', borderRadius: 12, padding: '9px 16px',
+          display: 'flex', gap: 10, alignItems: 'center', boxShadow: '0 10px 30px rgba(0,0,0,.25)', zIndex: 80,
+          fontSize: 13 }}>
+          <span>已选 {selectedIds.size} 行</span>
+          {statusCol && (
+            <select data-batch-status defaultValue="" title="批量改状态"
+              onChange={(e) => { const v = e.target.value; if (v) { batchSetStatus(v); e.target.value = ''; } }}
+              style={{ padding: '4px 8px', borderRadius: 7, border: 'none', fontSize: 12 }}>
+              <option value="">改状态…</option>
+              {((statusCol.settings?.labels ?? []) as any[])
+                .filter((l: any) => !((statusCol.settings?.inactiveLabels ?? []) as string[]).includes(l.label))
+                .map((l: any) => <option key={l.label} value={l.label}>{l.label}</option>)}
+            </select>
+          )}
+          <button data-batch-delete onClick={() => { deleteSelected(); }}
+            style={{ border: 'none', background: 'transparent', color: '#ff9aa9', cursor: 'pointer', fontSize: 13 }}>
+            🗑 移入回收站</button>
+          <button onClick={() => setSelectedIds(new Set())}
+            style={{ border: 'none', background: 'transparent', color: '#c5c9d4', cursor: 'pointer', fontSize: 13 }}>
+            清除选择</button>
+        </div>
       )}
       <BoardGrid
         rows={gridRows}

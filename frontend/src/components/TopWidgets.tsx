@@ -33,15 +33,30 @@ export function NotificationBell() {
       </button>
       {open && (
         <div style={{ position: 'absolute', right: 0, top: 34, width: 300, background: '#fff',
-          border: '1px solid #e6e8ef', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60 }}>
+          border: '1px solid #e6e8ef', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60,
+          maxHeight: 420, overflowY: 'auto' }}>
           <div style={{ padding: '10px 14px', fontWeight: 600, fontSize: 13, borderBottom: '1px solid #e6e8ef' }}>通知</div>
           {items.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#7a7f8c', fontSize: 13 }}>没有未读</div>}
-          {items.map((n: any) => (
-            <div key={n.id} style={{ padding: '10px 14px', fontSize: 12, borderBottom: '1px solid #f0f2f7' }}>
-              <b>{({ mention: '@提及', assign: '指派给我', due: '即将到期', automation: '自动化', daily_digest: '每日摘要' } as Record<string, string>)[n.type] ?? n.type}</b>
-              <span style={{ color: '#7a7f8c', marginLeft: 6 }}>{new Date(n.created_at).toLocaleDateString('zh-CN')}</span>
-            </div>
-          ))}
+          {/* 统一落点三分区（P0-9）：提及我的 / 分配与到期 / 看板动态 */}
+          {([
+            ['mention', '💬 提及我的', ['mention']],
+            ['assign', '📌 分配与到期', ['assign', 'due']],
+            ['board', '📋 看板动态', ['automation', 'daily_digest']],
+          ] as [string, string, string[]][]).map(([key, title, types]) => {
+            const list = items.filter((n) => types.includes(n.type));
+            if (!list.length) return null;
+            return (
+              <div key={key}>
+                <div style={{ padding: '7px 14px 3px', fontSize: 11, fontWeight: 700, color: '#a0a4b1' }}>{title}</div>
+                {list.map((n: any) => (
+                  <div key={n.id} style={{ padding: '8px 14px', fontSize: 12, borderBottom: '1px solid #f0f2f7' }}>
+                    <b>{({ mention: '@提及', assign: '指派给我', due: '即将到期', automation: '自动化', daily_digest: '每日摘要' } as Record<string, string>)[n.type] ?? n.type}</b>
+                    <span style={{ color: '#7a7f8c', marginLeft: 6 }}>{new Date(n.created_at).toLocaleDateString('zh-CN')}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

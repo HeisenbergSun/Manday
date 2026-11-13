@@ -119,19 +119,27 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log('L4 拖拽手柄 PASS');
 
   // ---- L5: 列级权限 ----
+  // 注意：列级权限的语义是「非 owner 编辑 owner-only 列 → 403」。
+  // dev 账号是 Monday迁移 的 owner，必须选一个 dev 非 owner 的 board（App 2.0 项目）来测。
+  const bid5 = await page.evaluate(async (h) => {
+    const j = await (await fetch('/api/boards', { headers: h })).json();
+    const arr = Array.isArray(j) ? j : j.items;
+    const target = arr.find((b) => b.name === 'App 2.0 项目') || arr.find((b) => b.id !== bid);
+    return target.id;
+  }, headers);
   const dateCol = await page.evaluate(async (id, h) => {
     const d = await (await fetch('/api/boards/' + id, { headers: h })).json();
     const c = d.columns.find((x) => x.type === 'date');
     return { id: c.id, name: c.name, settings: c.settings ?? {} };
-  }, bid, headers);
+  }, bid5, headers);
   // 设为 owner-only
   await page.evaluate(async (id, h, col) => {
     await fetch('/api/boards/' + id + '/columns/' + col.id, { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { ...col.settings, editable: 'owner' } }) });
-  }, bid, headers, dateCol);
+  }, bid5, headers, dateCol);
   const item = await page.evaluate(async (id, h) => {
     const d = await (await fetch('/api/boards/' + id, { headers: h })).json();
     return { id: d.items[0].id, version: d.items[0].version };
-  }, bid, headers);
+  }, bid5, headers);
   expectDenied = true;
   const denied = await page.evaluate(async (h, it, col) => {
     const r = await fetch('/api/items/' + it.id + '/cell', { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ columnId: col.id, value: '2026-12-01', version: it.version }) });
@@ -142,7 +150,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 改回 all → 恢复可编辑
   await page.evaluate(async (id, h, col) => {
     await fetch('/api/boards/' + id + '/columns/' + col.id, { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { ...col.settings, editable: 'all' } }) });
-  }, bid, headers, dateCol);
+  }, bid5, headers, dateCol);
   const allowed = await page.evaluate(async (h, it, col) => {
     const r = await fetch('/api/items/' + it.id + '/cell', { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ columnId: col.id, value: null, version: it.version }) });
     return r.status;

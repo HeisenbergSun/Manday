@@ -9,6 +9,21 @@ type Tab = 'updates' | 'subitems' | 'history';
 
 const arr = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 
+/** 审计 action → 中文句子片段（五段式历史的“改了什么”段） */
+function historyActionText(h: any): string {
+  const map: Record<string, string> = {
+    'cell.update': '修改了单元格', 'cell.create': '填写了单元格',
+    'item.create': '创建了条目', 'item.rename': '重命名了条目',
+    'item.delete': '删除了条目', 'item.restore': '恢复了条目',
+    'column.create': '添加了列', 'column.rename': '重命名了列',
+    'subitem.create': '添加了子任务', 'subitem.done': '勾选了子任务',
+  };
+  const a = String(h.action ?? '');
+  if (map[a]) return map[a];
+  if (a.includes('cell')) return `更新了 ${h.field ?? '字段'}`;
+  return a || '有变更';
+}
+
 export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('updates');
   const [data, setData] = useState<{ updates: any[]; subitems: any[]; history: any[] }>({
@@ -135,7 +150,15 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
 
         {tab === 'history' && data.history.map((h: any, i: number) => (
           <div key={i} style={{ fontSize: 12, color: '#7a7f8c', padding: '6px 0', borderBottom: '1px dashed #e6e8ef' }}>
-            <b style={{ color: '#25272c' }}>{h.actor ?? '系统'}</b> {h.action ?? h.type}
+            {/* 五段式历史：谁 / 何时 / 改了什么 / 从什么 / 到什么 */}
+            <b style={{ color: '#25272c' }}>{h.actor ?? '系统'}</b>{' '}
+            {historyActionText(h)}
+            {h.before_val != null && h.before_val !== '' && (
+              <span style={{ marginLeft: 4 }}>从 <code style={{ background: '#f3f4f9', borderRadius: 4, padding: '0 4px' }}>{String(h.before_val)}</code></span>
+            )}
+            {h.after_val != null && h.after_val !== '' && (
+              <span style={{ marginLeft: 4 }}>{h.before_val != null && h.before_val !== '' ? '改为' : '设为'} <code style={{ background: '#eef1fe', borderRadius: 4, padding: '0 4px', color: '#4f6ef7' }}>{String(h.after_val)}</code></span>
+            )}
             {h.source === 'ai' && <span style={{ color: '#9d3dd7', marginLeft: 6, fontSize: 11 }}>AI 操作</span>}
             {h.created_at && <div style={{ marginTop: 2 }}>{new Date(h.created_at).toLocaleString('zh-CN')}</div>}
           </div>

@@ -9,6 +9,7 @@
  *   [data-grid-cell][data-col="name"]、[data-grid-check]、[data-grid-drag]、[data-grid-row]
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { UI, TAG, doneLabelsOf } from '../theme';
 
 export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown> };
 export type GridColumn = { id: string; name: string; type: string; settings: any };
@@ -37,6 +38,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   const [draft, setDraft] = useState('');
   const dragId = useRef<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null); // 快捷键导航焦点行
   /** 拖拽后的本地顺序覆盖（items 变化时重置） */
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
   const [itemsVersion, setItemsVersion] = useState(0);
@@ -53,6 +55,29 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   }, [rows, localOrder]);
 
   const allChecked = sortedRows.length > 0 && sortedRows.every((r) => selected.has(r.id));
+
+  /** 表格快捷键（P0-7）：↑↓ 导航、Enter 开详情、Space 勾选、Esc 清除；输入态不接管 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (editing || (t && ['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName))) return;
+      if (!sortedRows.length) return;
+      const idx = activeId ? sortedRows.findIndex((r) => r.id === activeId) : -1;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const next = Math.min(Math.max(idx + (e.key === 'ArrowDown' ? 1 : -1), 0), sortedRows.length - 1);
+        setActiveId(sortedRows[next].id);
+      } else if (e.key === 'Enter' && activeId) {
+        e.preventDefault(); onOpenItem?.(activeId);
+      } else if (e.key === ' ' && activeId) {
+        e.preventDefault(); toggleRow(activeId);
+      } else if (e.key === 'Escape') {
+        setSelected(new Set()); setActiveId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editing, sortedRows, activeId, onOpenItem]);
   const toggleAll = () => {
     setSelected(allChecked ? new Set() : new Set(sortedRows.map((r) => r.id)));
   };
@@ -112,7 +137,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       }
       if (col.type === 'status' || col.type === 'people' || col.type === 'dropdown') {
         const opts: { value: string; label: string }[] = col.type === 'status'
-          ? (col.settings?.labels ?? []).map((l: any) => ({ value: l.label, label: l.label }))
+          ? (col.settings?.labels ?? []).filter((l: any) => !(col.settings?.inactiveLabels ?? []).includes(l.label))
+              .map((l: any) => ({ value: l.label, label: l.label }))
           : col.type === 'people'
             ? (col.settings?.members ?? []).map((m: any) => ({ value: m.id, label: m.name }))
             : (col.settings?.options ?? []).map((o: any) => ({ value: o.label, label: o.label }));
@@ -134,8 +160,10 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     }
     if (col.type === 'status') {
       const opt = (col.settings?.labels ?? []).find((l: any) => l.label === v);
-      if (!v) return <span style={{ color: '#c3c8d4' }}>—</span>;
-      return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${opt?.color ?? '#d0d4e0'}22`,
+      const doneSet = doneLabelsOf(col.settings);
+      if (!v) return <span style={{ color: TAG.gray }}>—</span>;
+      return <span data-status-chip={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: `${opt?.color ?? '#d0d4e0'}22`,
         color: opt?.color ?? '#5a6072', padding: '2px 10px', borderRadius: 20, fontSize: 12 }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: opt?.color ?? '#d0d4e0' }} />{v}</span>;
     }
@@ -156,8 +184,22 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     return <span style={{ fontSize: 13 }}>{v}</span>;
   };
 
+  /** 行是否完成（第一个 status 列值为 done 标签）→ 条目名删除线 + 弱化 */
+  const rowDone = (row: GridRow) => {
+    const c = columns.find((x) => x.type === 'status');
+    if (!c) return false;
+    const v = row.values?.[c.id];
+    return v != null && doneLabelsOf(c.settings).has(String(v));
+  };
+
   return (
     <div style={{ flex: 1, overflow: 'auto', background: '#fff' }} data-grid-root>
+      {/* hover 行时显示 Open 按钮（P0-5）+ 焦点行高亮 */}
+      <style>{`
+        [data-grid-row] [data-grid-open]{opacity:0;transition:opacity .12s}
+        [data-grid-row]:hover [data-grid-open]{opacity:1}
+        tr[data-active="1"] td{background:${UI.primarySoft}}
+      `}</style>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ position: 'sticky', top: 0, background: '#f6f7fb', zIndex: 2 }}>
@@ -176,7 +218,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         </thead>
         <tbody>
           {sortedRows.map((row) => (
-            <tr key={row.id + ':' + itemsVersion} data-grid-row={row.id}
+            <tr key={row.id + ':' + itemsVersion} data-grid-row={row.id} data-active={activeId === row.id ? '1' : '0'}
               draggable={false}
               style={{ borderBottom: '1px solid #eef0f5', background: overId === row.id ? '#eef1fe' : '#fff' }}
               onDragOver={(e) => { if (dragId.current) { e.preventDefault(); setOverId(row.id); } }}
@@ -210,7 +252,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       onBlur={commit}
                       onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(null); }}
                       style={{ ...editorStyle, width: '95%' }} />
-                  : row.name}
+                  : <span style={rowDone(row) ? { textDecoration: 'line-through', color: UI.textFaint } : undefined}>{row.name}</span>}
               </td>
               {columns.map((c) => (
                 <td key={c.id} data-col={c.id} data-grid-cell={row.id} style={tdStyle}
@@ -218,11 +260,17 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                   {renderCell(row, c)}
                 </td>
               ))}
+              <td style={{ ...tdStyle, width: 60, textAlign: 'right' }}>
+                <button data-grid-open={row.id} onClick={(e) => { e.stopPropagation(); onOpenItem?.(row.id); }}
+                  title="打开详情"
+                  style={{ border: 'none', background: UI.primarySoft, color: UI.primary, fontSize: 12,
+                    padding: '3px 10px', borderRadius: 7, cursor: 'pointer' }}>Open</button>
+              </td>
             </tr>
           ))}
           {sortedRows.length === 0 && (
-            <tr><td colSpan={columns.length + 3} style={{ padding: 40, color: '#7a7f8c', fontSize: 14, textAlign: 'center' }}>
-              还没有条目——点「＋ 新建条目」开始
+            <tr><td colSpan={columns.length + 4} style={{ padding: 40, color: '#7a7f8c', fontSize: 14, textAlign: 'center' }}>
+              还没有条目——点「＋ 新建条目」开始（快捷键：↑↓ 导航 · Enter 打开 · Space 勾选 · Esc 清除）
             </td></tr>
           )}
         </tbody>

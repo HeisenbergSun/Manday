@@ -47,8 +47,8 @@ export class ItemDetailService {
     if (names.length) {
       await this.pg.query(
         `INSERT INTO notifications (user_id, type, payload)
-         SELECT us.id, 'mention', jsonb_build_object('itemId', $1, 'updateId', $2)
-         FROM users us WHERE us.name = ANY($3::text[]) AND us.id <> $4`,
+         SELECT us.id, 'mention', jsonb_build_object('itemId', $1::uuid, 'updateId', $2::uuid)
+         FROM users us WHERE us.name = ANY($3::text[]) AND us.id <> $4::uuid`,
         [itemId, rows[0].id, names, userId],
       );
     }

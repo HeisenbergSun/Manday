@@ -5,6 +5,7 @@
  */
 import { useMemo, useState } from 'react';
 import { useItems } from '../store';
+import { isItemDone } from '../theme';
 
 const DAY = 24 * 3600 * 1000;
 const ROW_H = 32;
@@ -13,7 +14,7 @@ const LABEL_W = 180; // 左侧名称列宽
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 
-type GRow = { id: string; name: string; start: number; end: number; overdue: boolean };
+type GRow = { id: string; name: string; start: number; end: number; overdue: boolean; done: boolean };
 
 export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => void }) {
   const { items, columns, groups } = useItems();
@@ -35,10 +36,11 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
       const e = endCol ? it.values?.[endCol.id] : null;
       const end = e ? startOfDay(new Date(String(e).slice(0, 10))).getTime() : start;
       const [a, b] = start <= end ? [start, end] : [end, start];
-      out.push({ id: it.id, name: it.name, start: a, end: b, overdue: b < today });
+      out.push({ id: it.id, name: it.name, start: a, end: b, overdue: b < today,
+        done: isItemDone(columns as any[], it.values) });
     }
     return out.sort((x, y) => x.start - y.start);
-  }, [items, startCol, endCol]);
+  }, [items, startCol, endCol, columns]);
 
   /** 时间轴范围：所有条目 min~max 前后各留 3 天，最少覆盖 4 周 */
   const range = useMemo(() => {
@@ -76,10 +78,11 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
       <div onClick={(e) => { e.stopPropagation(); onOpenItem?.(r.id); }} title={r.name}
         data-gantt-bar={r.id}
         style={{ position: 'absolute', top: 6, left, width, height: 20, borderRadius: 6,
-          background: r.overdue ? '#fdebec' : '#eef1fe', border: `1px solid ${r.overdue ? '#e5484d' : '#4f6ef7'}`,
-          color: r.overdue ? '#e5484d' : '#4f6ef7', fontSize: 11, lineHeight: '18px', padding: '0 6px',
+          background: r.done ? '#eceef2' : r.overdue ? '#fdebec' : '#eef1fe',
+          border: `1px solid ${r.done ? '#c3c8d4' : r.overdue ? '#e5484d' : '#4f6ef7'}`,
+          color: r.done ? '#a0a4b1' : r.overdue ? '#e5484d' : '#4f6ef7', fontSize: 11, lineHeight: '18px', padding: '0 6px',
           boxSizing: 'border-box', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}>
-        {r.name}{r.overdue ? ' · 已逾期' : ''}
+        {r.name}{r.done ? ' · 已完成' : r.overdue ? ' · 已逾期' : ''}
       </div>
     );
   };
@@ -149,7 +152,7 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
         <b style={{ fontSize: 15 }}>📈 甘特视图</b>
         <span style={{ fontSize: 12, color: '#7a7f8c' }}>
-          按「{startCol?.name ?? '—'}」{endCol ? `～「${endCol.name}」` : ''}列展示 · {rows.length} 条 · 红色为已逾期
+          按「{startCol?.name ?? '—'}」{endCol ? `～「${endCol.name}」` : ''}列展示 · {rows.length} 条 · 红色已逾期 · 灰色已完成
         </span>
       </div>
       {/* 周刻度表头 */}
