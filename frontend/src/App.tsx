@@ -177,7 +177,7 @@ export function App() {
             : view === 'calendar' ? <CalendarView onOpenItem={setDetailId} />
             : view === 'gantt' ? <GanttView onOpenItem={setDetailId} />
             : view === 'workload' ? <WorkloadView onOpenItem={setDetailId} />
-            : view === 'trash' ? <TrashView boardId={activeBoard.id} /> : <DashboardPage boardIds={[activeBoard.id]} />}
+            : view === 'trash' ? <TrashView boardId={activeBoard.id} /> : <DashboardPage boardIds={[activeBoard.id]} onOpenItem={setDetailId} />}
         </main>
         {detailId && <ItemDetail itemId={detailId} onClose={() => setDetailId(null)} />}
         {aiOpen && <AiSidebar boardId={activeBoard?.id} />}

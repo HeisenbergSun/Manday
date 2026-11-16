@@ -147,6 +147,9 @@ export const api = {
     request(`/dashboards/status-dist?boardIds=${boardIds.join(',')}`),
   dashboardNumbers: (boardIds: string[]) =>
     request(`/dashboards/numbers?boardIds=${boardIds.join(',')}`),
+  dashboardOverdue: () => request('/dashboards/overdue'),
+  dashboardWorkloadRank: () => request('/dashboards/workload-rank'),
+  dashboardActivity: () => request('/dashboards/activity'),
 
   // ---- 通知 / 搜索 ----
   unread: () => request('/notifications/unread'),
