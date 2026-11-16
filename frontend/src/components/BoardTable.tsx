@@ -6,7 +6,7 @@ import { useMemo, useCallback, useState, useEffect } from 'react';
 import { BoardGrid, type GridRow } from './Grid';
 import { useItems } from '../store';
 import { api } from '../api';
-import { UI, TAG, doneLabelsOf } from '../theme';
+import { UI, TAG, doneLabelsOf, soften } from '../theme';
 import { AutomationPanel } from './AutomationPanel';
 
 /** 列类型的中文展示名 */
@@ -201,7 +201,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   const gridRows: GridRow[] = useMemo(
     () => Object.values(items).map((it: any) => ({
       id: it.id, name: it.name, version: it.version, position: it.position ?? 0,
-      values: it.values ?? {},
+      values: it.values ?? {}, group_id: it.group_id,
     })),
     [items],
   );
@@ -445,10 +445,11 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
                     {(c.settings?.labels ?? []).map((l: any) => {
                       const inactive = (c.settings?.inactiveLabels ?? []).includes(l.label);
                       const isDone = doneLabelsOf(c.settings).has(l.label);
+                      const chip = soften(l.color) ?? '#d0d4e0';
                       return <span key={l.label} onClick={(e) => { if (!isOwner) return; e.shiftKey ? toggleDoneLabel(c, l.label) : toggleLabelInactive(c, l.label); }}
                         title={isOwner ? (inactive ? '已停用，点恢复' : '点击停用标签（Shift+点 = 设/取消完成语义）') : '仅负责人可修改标签'}
                         style={{ cursor: isOwner ? 'pointer' : 'default', fontSize: 11, padding: '1px 7px', borderRadius: 10,
-                          background: `${l.color}22`, color: inactive ? UI.textFaint : l.color,
+                          background: `${chip}22`, color: inactive ? UI.textFaint : chip,
                           textDecoration: inactive ? 'line-through' : 'none',
                           border: isDone ? `1px solid ${TAG.done}` : 'none' }}>
                         {l.label}{isDone ? ' ✓' : ''}</span>;
@@ -602,6 +603,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
       <BoardGrid
         rows={gridRows}
         columns={gridColumns}
+        groups={groups}
         editable={canEditContent}
         isOwner={isOwner}
         sortBy={sortBy}

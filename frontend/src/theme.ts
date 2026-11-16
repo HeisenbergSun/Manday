@@ -46,6 +46,41 @@ export function doneLabelsOf(settings: any): Set<string> {
   return new Set(['已完成', 'Done']);
 }
 
+/**
+ * P2-5 视觉低饱和收敛：把高饱和标签色压到柔和区间（S≤45%、L≥58%）
+ * 非法输入原样返回，保证旧数据不受影响
+ */
+export function soften(hex?: string | null): string | null {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return hex ?? null;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  const s2 = Math.min(s, 0.45), l2 = Math.max(l, 0.58);
+  const c = (1 - Math.abs(2 * l2 - 1)) * s2;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l2 - c / 2;
+  const seg = Math.floor(h / 60) % 6;
+  const map: [number, number, number][] = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [0, 0, c], [c, 0, x]];
+  const [rr, gg, bb] = map[seg];
+  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${to(rr)}${to(gg)}${to(bb)}`;
+}
+
+/** P2-5 分组色带调色板（柔和区间，配合 alpha 极浅色带使用） */
+export const GROUP_PALETTE = ['#7b96e3', '#6fbf9a', '#e0a96d', '#c488b8', '#6fb3c4', '#a9a1e0'] as const;
+
+
 /** 条目是否「完成」：第一个 status 列的值落在 done 标签集合内 */
 export function isItemDone(columns: any[], values: Record<string, unknown> | undefined): boolean {
   const statusCol = (columns ?? []).find((c) => c.type === 'status');

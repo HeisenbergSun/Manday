@@ -6,7 +6,7 @@ import { DndContext, DragEndEvent, useDraggable, useDroppable } from '@dnd-kit/c
 import { useEffect, useState } from 'react';
 import { useItems } from '../store';
 import { api } from '../api';
-import { doneLabelsOf } from '../theme';
+import { doneLabelsOf, soften } from '../theme';
 
 function Card({ itemId }: { itemId: string }) {
   const item = useItems((s) => s.items[itemId]);
@@ -142,7 +142,7 @@ export function Kanban({ groups, boardId }: { groups: { id: string; name: string
     <DndContext onDragEnd={onDragEnd}>
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', padding: 14, overflowX: 'auto' }}>
         {mode === 'status'
-          ? statusLanes.map((g) => <StatusLane key={g.id} label={g.id} name={g.name} color={g.color} />)
+          ? statusLanes.map((g) => <StatusLane key={g.id} label={g.id} name={g.name} color={soften(g.color) ?? undefined} />)
           : groups.map((g) => <Column key={g.id} group={g} isDefault={g.id === 'default'} />)}
       </div>
     </DndContext>

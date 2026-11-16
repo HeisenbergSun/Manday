@@ -9,9 +9,9 @@
  *   [data-grid-cell][data-col="name"]、[data-grid-check]、[data-grid-drag]、[data-grid-row]
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { UI, TAG, doneLabelsOf } from '../theme';
+import { UI, TAG, doneLabelsOf, soften, GROUP_PALETTE } from '../theme';
 
-export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown> };
+export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown>; group_id?: string };
 export type GridColumn = { id: string; name: string; type: string; settings: any; restricted?: boolean };
 
 const LABEL_W = 260;
@@ -36,9 +36,11 @@ type Props = {
   sortBy?: string | null;
   sortDir?: 'asc' | 'desc';
   onSortChange?: (field: string) => void;
+  /** P2-5 分组色带：传入 groups 时表格按分组渲染极浅色带（默认排序时） */
+  groups?: { id: string; name: string; color?: string | null }[];
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -199,11 +201,12 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     if (col.type === 'status') {
       const opt = (col.settings?.labels ?? []).find((l: any) => l.label === v);
       const doneSet = doneLabelsOf(col.settings);
+      const chipColor = soften(opt?.color) ?? '#d0d4e0';
       if (!v) return <span style={{ color: TAG.gray }}>—</span>;
       return <span data-status-chip={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
-        background: `${opt?.color ?? '#d0d4e0'}22`,
-        color: opt?.color ?? '#5a6072', padding: '2px 10px', borderRadius: 20, fontSize: 12 }}>
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: opt?.color ?? '#d0d4e0' }} />{v}</span>;
+        background: `${chipColor}22`,
+        color: chipColor, padding: '2px 10px', borderRadius: 20, fontSize: 12 }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: chipColor }} />{v}</span>;
     }
     if (col.type === 'people') {
       const m = (col.settings?.members ?? []).find((u: any) => u.id === v || u.name === v);
@@ -267,23 +270,48 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map((row) => (
-            <tr key={row.id + ':' + itemsVersion} data-grid-row={row.id} data-active={activeId === row.id ? '1' : '0'}
-              draggable={false}
-              style={{ borderBottom: '1px solid #eef0f5', background: overId === row.id ? '#eef1fe' : '#fff' }}
-              onDragOver={(e) => { if (dragId.current) { e.preventDefault(); setOverId(row.id); } }}
-              onDrop={(e) => { e.preventDefault(); drop(row.id); }}
-              onClick={(e) => {
-                const t = e.target as HTMLElement;
-                if (t.closest('[data-grid-check],[data-grid-drag],[data-grid-editor],input,select')) return;
-                if (editing) return;
-                onOpenItem?.(row.id);
-              }}
-              onDoubleClick={(e) => {
-                const t = e.target as HTMLElement;
-                if (t.closest('[data-grid-check],[data-grid-drag],input,select')) return;
-              }}
-            >
+          {(() => {
+            // P2-5 分组色带：默认顺序（无列排序、无拖拽重排）时按分组插入极浅色带行
+            const showBands = !!groups?.length && !sortBy && !localOrder;
+            const colorOf = (gid?: string) => {
+              if (!gid || !groups?.length) return null;
+              const gi = groups.findIndex((g) => g.id === gid);
+              if (gi < 0) return null;
+              const c = groups[gi].color;
+              return (c && /^#[0-9a-fA-F]{6}$/.test(c) ? soften(c) : GROUP_PALETTE[gi % GROUP_PALETTE.length]) as string;
+            };
+            let lastGid: string | undefined | null = '__none__';
+            const out: any[] = [];
+            for (const row of sortedRows) {
+              const gid = showBands ? row.group_id ?? null : null;
+              if (showBands && gid !== lastGid) {
+                lastGid = gid;
+                const g = groups!.find((x) => x.id === gid);
+                const bandColor = (colorOf(gid ?? undefined) ?? '#b5bac8') as string;
+                out.push(<tr key={'band:' + (gid ?? 'none')} data-group-band={gid ?? ''} style={{ background: `${bandColor}14` }}>
+                  <td colSpan={columns.length + 3} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, color: '#5a6072' }}>
+                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: bandColor, marginRight: 7 }} />
+                    {g?.name ?? '未分组'}
+                  </td>
+                </tr>);
+              }
+              const rowTint = colorOf(showBands ? row.group_id : undefined);
+              out.push(<tr key={row.id + ':' + itemsVersion} data-grid-row={row.id} data-active={activeId === row.id ? '1' : '0'}
+                draggable={false}
+                style={{ borderBottom: '1px solid #eef0f5', background: overId === row.id ? '#eef1fe' : (rowTint ? `${rowTint}0D` : '#fff') }}
+                onDragOver={(e) => { if (dragId.current) { e.preventDefault(); setOverId(row.id); } }}
+                onDrop={(e) => { e.preventDefault(); drop(row.id); }}
+                onClick={(e) => {
+                  const t = e.target as HTMLElement;
+                  if (t.closest('[data-grid-check],[data-grid-drag],[data-grid-editor],input,select')) return;
+                  if (editing) return;
+                  onOpenItem?.(row.id);
+                }}
+                onDoubleClick={(e) => {
+                  const t = e.target as HTMLElement;
+                  if (t.closest('[data-grid-check],[data-grid-drag],input,select')) return;
+                }}
+              >
               <td style={tdStyle}>
                 <input type="checkbox" data-grid-check checked={selected.has(row.id)}
                   onChange={() => toggleRow(row.id)} onClick={(e) => e.stopPropagation()} />
@@ -317,7 +345,10 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                     padding: '3px 10px', borderRadius: 7, cursor: 'pointer' }}>Open</button>
               </td>
             </tr>
-          ))}
+            );
+            }
+            return out;
+          })()}
           {sortedRows.length === 0 && (
             <tr><td colSpan={columns.length + 4} style={{ padding: 40, color: '#7a7f8c', fontSize: 14, textAlign: 'center' }}>
               还没有条目——点「＋ 新建条目」开始（快捷键：↑↓ 导航 · Enter 打开 · Space 勾选 · Esc 清除）
