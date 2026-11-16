@@ -46,6 +46,44 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
 
   const max = Math.max(1, ...stats.map((s) => s.total));
 
+  // ---- P1-8+ 按日负载热力条：未来 14 天（含「逾期」桶）----
+  const DAYS = 14;
+  const today0 = new Date(new Date().toDateString());
+  const dayList = useMemo(() => Array.from({ length: DAYS }, (_, i) => {
+    const d = new Date(today0); d.setDate(d.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  }), []);
+  const heat = useMemo(() => {
+    // per person: { overdue: [{id,name}], days: { 'YYYY-MM-DD': [{id,name}] } }
+    const res = new Map<string, { overdue: { id: string; name: string }[]; days: Record<string, { id: string; name: string }[]> }>();
+    if (!peopleCol || !dateCol) return res;
+    const put = (m: Map<string, { id: string; name: string }[]>, k: string, it: any) => {
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push({ id: it.id, name: it.name });
+    };
+    for (const it of Object.values(items) as any[]) {
+      const raw = it.values?.[peopleCol.id];
+      const names = Array.isArray(raw) ? raw.map(scalar).filter(Boolean) : raw ? [scalar(raw)].filter(Boolean) : [];
+      if (!names.length) names.push('（未分配）');
+      const due = it.values?.[dateCol.id] ? String(it.values[dateCol.id]).slice(0, 10) : '';
+      const isDone = statusCol && doneSet.has(String(it.values?.[statusCol.id] ?? ''));
+      for (const n of names) {
+        if (!res.has(n)) res.set(n, { overdue: [], days: {} });
+        const r = res.get(n)!;
+        if (due && dayList.includes(due)) {
+          if (!r.days[due]) r.days[due] = [];
+          r.days[due].push({ id: it.id, name: it.name });
+        } else if (due && !isDone && new Date(due).getTime() < today0.getTime()) {
+          r.overdue.push({ id: it.id, name: it.name });
+        }
+      }
+    }
+    return res;
+  }, [items, peopleCol, dateCol, statusCol, doneSet, dayList]);
+
+  const [openDay, setOpenDay] = useState<{ person: string; key: string } | null>(null);
+  const heatLevel = (n: number) => n <= 0 ? '#f0f1f5' : n === 1 ? '#bcd0fb' : n <= 3 ? '#7f9cf8' : n <= 5 ? '#4f6ef7' : '#e2445c';
+
   return (
     <div style={{ padding: 20, background: '#fff', height: '100%', overflow: 'auto' }} data-workload-root>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -80,8 +118,50 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
             ))}
             {s.ids.length > 8 && <span style={{ fontSize: 11, color: '#a0a4b1' }}>+{s.ids.length - 8}</span>}
           </div>
+          {dateCol && (
+            <div data-workload-heat={s.name} style={{ marginTop: 6, display: 'flex', gap: 3, alignItems: 'flex-end' }}>
+              {(() => {
+                const r = heat.get(s.name);
+                const ov = r?.overdue.length ?? 0;
+                const cells: { key: string; n: number }[] = ov > 0
+                  ? [{ key: 'overdue', n: ov }, ...dayList.map((d) => ({ key: d, n: r?.days[d]?.length ?? 0 }))]
+                  : dayList.map((d) => ({ key: d, n: r?.days[d]?.length ?? 0 }));
+                return cells.map((c) => (
+                  <div key={c.key} data-heat-cell={c.key} data-heat-count={c.n}
+                    onClick={() => setOpenDay(c.n > 0 ? { person: s.name, key: c.key } : null)}
+                    title={c.key === 'overdue' ? `逾期 ${c.n} 条` : `${c.key}：${c.n} 条`}
+                    style={{ width: 22, height: 22, borderRadius: 5, background: heatLevel(c.n), cursor: c.n > 0 ? 'pointer' : 'default',
+                      fontSize: 10, color: c.n > 2 ? '#fff' : '#5a5f6c', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      outline: openDay?.person === s.name && openDay?.key === c.key ? '2px solid #4f6ef7' : 'none' }}>
+                    {c.n > 0 ? c.n : ''}
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
         </div>
       ))}
+      {openDay && (() => {
+        const r = heat.get(openDay.person);
+        const list = openDay.key === 'overdue' ? (r?.overdue ?? []) : (r?.days[openDay.key] ?? []);
+        if (!list.length) return null;
+        return (
+          <div data-workload-day-panel style={{ marginTop: 20, padding: 14, background: '#f7f8fb', borderRadius: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <b style={{ fontSize: 13 }}>
+                {openDay.person} · {openDay.key === 'overdue' ? '🔴 逾期' : `📅 ${openDay.key}`} · {list.length} 条
+              </b>
+              <button onClick={() => setOpenDay(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14 }}>✕</button>
+            </div>
+            {list.map((x) => (
+              <div key={x.id} onClick={() => onOpenItem?.(x.id)}
+                style={{ fontSize: 12, padding: '5px 10px', background: '#fff', borderRadius: 7, marginBottom: 5, cursor: 'pointer' }}>
+                {x.name}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
