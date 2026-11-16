@@ -78,6 +78,30 @@ export const api = {
     request(`/boards/${boardId}/groups/${gid}`, { method: 'DELETE' }),
   // 视图（P1-3）
   listViews: (boardId: string) => request(`/boards/${boardId}/views`),
+  // 附件（P3-2）：multipart 上传不走 JSON request
+  uploadAttachment: async (itemId: string, columnId: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('columnId', columnId);
+    const res = await fetch(BASE + `/items/${itemId}/attachments`, {
+      method: 'POST', credentials: 'include', headers: { ...authHeaders() }, body: fd,
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+  listAttachments: (boardId: string, itemId: string) => request(`/boards/${boardId}/items/${itemId}/attachments`),
+  deleteAttachment: (id: string) => request(`/attachments/${id}`, { method: 'DELETE' }),
+  /** blob 下载（JWT 走 header，浏览器 <a> 无法带）→ 触发浏览器保存 */
+  downloadAttachment: async (id: string, fileName: string) => {
+    const res = await fetch(BASE + `/attachments/${id}/file`, { credentials: 'include', headers: { ...authHeaders() } });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  },
   createView: (boardId: string, name: string, viewType: string, config: unknown) =>
     request(`/boards/${boardId}/views`, { method: 'POST', body: JSON.stringify({ name, viewType, config }) }),
   updateView: (boardId: string, viewId: string, patch: { name?: string; viewType?: string; config?: unknown }) =>

@@ -20,6 +20,7 @@ import { TemplateModule } from './modules/template/template.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AutomationModule } from './modules/automation/automation.module';
 import { AiModule } from './ai/ai.module';
+import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { DatabaseModule } from './database.module';
 
 @Module({
@@ -42,6 +43,7 @@ import { DatabaseModule } from './database.module';
     RealtimeModule,    // Socket.IO：board:{id} / user:{id} 房间
     AutomationModule.register(),  // BullMQ 异步自动化引擎（无 REDIS_URL 时自动降级跳过）
     AiModule,          // WorkBuddy 企业版 AI 集成
+    AttachmentsModule, // P3-2 文件附件：上传/下载/删除（cell value 存元数据 JSON）
     GuardModule,       // 全局 JWT 守卫（/auth/* 与 /health 公开）
   ],
   controllers: [require('./health.controller').HealthController],

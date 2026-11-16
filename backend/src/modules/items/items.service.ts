@@ -94,6 +94,7 @@ export class ItemsService {
     // 列级权限（P1-2）：editPermission='owner'（兼容旧 editable:'owner'）时仅 owner 角色可编辑该列
     const col = (await this.pg.query(`SELECT settings, type FROM board_columns WHERE id = $1`, [columnId])).rows[0];
     if (col?.type === 'formula') throw new Error('FORMULA_READONLY'); // P2-3：公式列只读
+    if (col?.type === 'attachment') throw new Error('ATTACHMENT_MANAGED'); // P3-2：附件列由附件端点维护
     const ep = col?.settings?.editPermission ?? col?.settings?.editable;
     if (ep === 'owner' && userRole !== 'owner') throw new Error('FORBIDDEN_COLUMN');
     const client = await this.pg.connect();

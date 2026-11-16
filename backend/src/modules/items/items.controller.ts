@@ -83,6 +83,7 @@ export class ItemsController {
       if (e?.message === 'FORBIDDEN_COLUMN') throw new ForbiddenException('该列仅负责人可编辑');
       if (e?.message === 'FORBIDDEN') throw new ForbiddenException();
       if (e?.message === 'FORMULA_READONLY') throw new BadRequestException('公式列为只读，不可手动填写');
+      if (e?.message === 'ATTACHMENT_MANAGED') throw new BadRequestException('附件列由上传/删除维护，不可直接填写');
       if (e?.message === 'CONFLICT') throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT' });
       throw e;
     }

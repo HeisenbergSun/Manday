@@ -174,6 +174,10 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       if (col.type === 'mirror') {
         return <MirrorEditor col={col} onCommit={(itemId) => { setEditing(null); if (itemId) onEdit(row, col.id, itemId); }} />;
       }
+      if (col.type === 'attachment') {
+        // P3-2：选文件即上传，成功后触发刷新（不走 updateCell，cell 由附件端点维护）
+        return <AttachmentEditor rowId={row.id} colId={col.id} onDone={() => { setEditing(null); onEdit(row, '__attachments__', null); }} />;
+      }
       if (col.type === 'date') {
         return <input data-grid-editor autoFocus type="date" value={draft} onChange={(e) => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(null); }}
@@ -225,6 +229,23 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         <span style={{ fontSize: 13 }}>{m.name}</span>
         {m.label && <span style={{ background: `${soften(m.color) ?? '#d0d4e0'}22`, color: soften(m.color) ?? '#5a6072',
           padding: '1px 9px', borderRadius: 20, fontSize: 12 }}>{m.label}</span>}
+      </span>;
+    }
+    if (col.type === 'attachment') {
+      // P3-2：cell 存附件元数据 JSON 数组 [{id,name,size,mime}]，chip 点击下载
+      let list: any[] = [];
+      try { const p = JSON.parse(String(v)); if (Array.isArray(p)) list = p; } catch { /* 非法值当空 */ }
+      if (!list.length) return <span data-attach-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
+      return <span data-attach-cell={col.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {list.map((a) => (
+          <span key={a.id} data-attach-chip={a.id} title={`${a.name} · 点击下载`}
+            onClick={() => api.downloadAttachment(a.id, a.name).catch(() => {})}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#eef1fe', color: '#5b6c8f',
+              padding: '2px 9px', borderRadius: 14, fontSize: 12, cursor: 'pointer', maxWidth: 180,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            📎 {a.name}
+          </span>
+        ))}
       </span>;
     }
     if (col.type === 'checkbox') {
@@ -407,6 +428,19 @@ const editorStyle: React.CSSProperties = {
 };
 
 /** P3-1 依赖编辑器：从本看板其他条目中选前置任务，提交条目 id */
+function AttachmentEditor({ rowId, colId, onDone }: { rowId: string; colId: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return <input data-attach-input type="file" disabled={busy} autoFocus
+    onChange={async (e) => {
+      const f = e.target.files?.[0];
+      if (!f) { onDone(); return; }
+      setBusy(true);
+      try { await api.uploadAttachment(rowId, colId, f); } catch { /* 提示由上层 reload 呈现 */ }
+      onDone();
+    }}
+    style={{ fontSize: 13, padding: '4px 8px', borderRadius: 8, border: '1px solid #e6e8ef' }} />;
+}
+
 function DependencyEditor({ rows, onCommit }: { rows: GridRow[]; onCommit: (itemId: string) => void }) {
   return <select data-grid-editor autoFocus value="" onChange={(e) => { if (e.target.value) onCommit(e.target.value); }}
     onBlur={() => onCommit('')} style={editorStyle}>

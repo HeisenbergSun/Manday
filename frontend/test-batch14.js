@@ -107,10 +107,15 @@ const req = async (auth, method, path, body) => {
   // 镜像列可点击选择（编辑器下拉出现）
   await page.evaluate(() => document.querySelector('[data-mirror-cell]').closest('td').dispatchEvent(new Event('dblclick', { bubbles: true })));
   await sleep(600);
-  const editorOk = await page.evaluate(() => {
-    const ed = document.querySelector('[data-grid-editor]');
-    return ed ? ed.tagName === 'SELECT' : false;
-  });
+  // MirrorEditor 需先拉源板（Neon 延迟会显示「加载中…」），轮询等待下拉出现
+  let editorOk = false;
+  for (let i = 0; i < 10 && !editorOk; i++) {
+    editorOk = await page.evaluate(() => {
+      const ed = document.querySelector('[data-grid-editor]');
+      return ed ? ed.tagName === 'SELECT' : false;
+    });
+    if (!editorOk) await sleep(1000);
+  }
   assert(editorOk, 'M5b 双击镜像格出现选择编辑器');
   // Esc 关闭
   await page.keyboard.press('Escape');

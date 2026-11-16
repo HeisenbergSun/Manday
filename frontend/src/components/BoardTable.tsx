@@ -10,7 +10,7 @@ import { UI, TAG, doneLabelsOf, soften } from '../theme';
 import { AutomationPanel } from './AutomationPanel';
 
 /** 列类型的中文展示名 */
-const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像', dependency: '前置' } as Record<string, string>)[t] ?? t;
+const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像', dependency: '前置', attachment: '附件' } as Record<string, string>)[t] ?? t;
 
 /** 成员与权限管理弹窗：列表 + 改角色 + 移除 + 添加公司内用户 */
 const ROLE_LABEL: Record<string, string> = { owner: '负责人', editor: '可编辑', viewer: '只读', guest: '访客' };
@@ -308,6 +308,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
 
   /** 单元格保存：name 走本体接口，其余走 LWW updateCell */
   const saveCell = useCallback(async (row: GridRow, field: string, value: unknown) => {
+    if (field === '__attachments__') { await reloadBoard(); return; } // P3-2：附件上传后刷新（cell 由附件端点维护）
     try {
       if (field === 'name') {
         const r: any = await api.updateItem(row.id, { name: value as string });
@@ -431,6 +432,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
                 <option value="formula">公式</option>
                 <option value="mirror">镜像</option>
                 <option value="dependency">前置任务</option>
+                <option value="attachment">附件</option>
               </select>
               {newColType === 'formula' && (
                 <input value={newColFormula} onChange={(e) => setNewColFormula(e.target.value)} data-newcol-formula

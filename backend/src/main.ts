@@ -71,7 +71,20 @@ async function ensureMinorSchema() {
         created_by         UUID REFERENCES users(id),
         created_at         TIMESTAMPTZ DEFAULT now(),
         UNIQUE(column_id)
-      );`);
+      );
+      CREATE TABLE IF NOT EXISTS item_attachments (
+        id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        item_id     UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        board_id    UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+        column_id   UUID NOT NULL REFERENCES board_columns(id) ON DELETE CASCADE,
+        file_name   TEXT NOT NULL,
+        mime_type   TEXT,
+        size        INT,
+        stored_name TEXT NOT NULL,
+        created_by  UUID REFERENCES users(id),
+        created_at  TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_item_attachments_item ON item_attachments(item_id);`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {
     console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);
@@ -83,6 +96,8 @@ async function ensureMinorSchema() {
 async function bootstrap() {
   await ensureSchema();
   await ensureMinorSchema();
+  // P3-2 附件存储目录
+  fs.mkdirSync(path.resolve(process.cwd(), 'uploads'), { recursive: true });
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new DomainExceptionFilter());
