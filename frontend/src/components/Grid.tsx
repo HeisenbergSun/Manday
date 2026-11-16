@@ -110,6 +110,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     if (!editable) return;
     const col = columns.find((c) => c.id === field);
     if (col?.restricted) return; // P1-2 受限查看列不可编辑
+    if (col?.type === 'formula') return; // P2-3 公式列只读
     setEditing({ rowId, field });
     setDraft(current);
   };
@@ -187,6 +188,10 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         style={editorStyle} />;
     }
 
+    if (col.type === 'formula') {
+      if (v === undefined || v === null || v === '') return <span data-formula-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
+      return <span data-formula-cell={col.id} title={`ƒx ${col.settings?.formula ?? ''}`} style={{ color: '#5b6c8f', fontSize: 13 }}>{v}</span>;
+    }
     if (col.type === 'checkbox') {
       return <input type="checkbox" checked={v === 'true'} disabled={!locked}
         onChange={(e) => locked && onEdit(row, col.id, e.target.checked)} style={{ cursor: locked ? 'pointer' : 'not-allowed' }} />;
@@ -255,6 +260,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                   : (c.settings?.editPermission ?? c.settings?.editable) === 'owner'
                     ? <span title="仅负责人可编辑" style={{ marginLeft: 4 }}>✏️🔒</span>
                     : null}
+              {c.type === 'formula' && <span title={c.settings?.formula} style={{ marginLeft: 4, fontSize: 10,
+                background: '#eef1fe', color: '#5b6c8f', borderRadius: 4, padding: '1px 5px' }}>ƒx</span>}
               </th>
             ))}
           </tr>

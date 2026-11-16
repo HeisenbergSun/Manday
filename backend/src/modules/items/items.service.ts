@@ -8,6 +8,7 @@
 import { Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
 import { can, canEditStructure, BoardRole } from '../boards/acl';
+import { injectFormulaValues, FormulaRow } from '../formula';
 
 /**
  * P1-2 受限列读取过滤：viewPermission='owner' 的列对非 owner 只给元数据（restricted:true），值被剔除
@@ -46,12 +47,28 @@ export class ItemsService {
        ORDER BY i.position`,
       [boardId],
     );
-    // jsonb_agg 组装成 {columnId: value}（jsonb_object_agg 在 Neon/pg 驱动上有 field name 解析 bug，弃用）
-    return rows.map((r) => {
+    const itemRows = rows.map((r) => {
       const values: Record<string, unknown> = {};
       for (const kv of r.kv ?? []) values[kv.k] = kv.v;
       return { ...r, values };
     });
+    // P2-3：Formula 列读取时注入计算值
+    const { rows: columns } = await this.pg.query(
+      `SELECT id, name, type, settings FROM board_columns WHERE board_id = $1 ORDER BY position`, [boardId]);
+    const { rows: childItems } = await this.pg.query(
+      `SELECT i.id, i.parent_item_id,
+              jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
+       FROM items i
+       LEFT JOIN item_values iv ON iv.item_id = i.id
+       WHERE i.board_id = $1 AND i.deleted_at IS NULL AND i.parent_item_id IS NOT NULL
+       GROUP BY i.id`, [boardId]);
+    const childRows: FormulaRow[] = childItems.map((r) => {
+      const values: Record<string, string | null> = {};
+      for (const kv of r.kv ?? []) values[kv.k] = kv.v;
+      return { id: r.id, parentItemId: r.parent_item_id, values };
+    });
+    injectFormulaValues(columns, itemRows, childRows);
+    return itemRows;
   }
 
   /** Board 分组（看板视图的列） */
@@ -73,7 +90,8 @@ export class ItemsService {
   ) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
     // 列级权限（P1-2）：editPermission='owner'（兼容旧 editable:'owner'）时仅 owner 角色可编辑该列
-    const col = (await this.pg.query(`SELECT settings FROM board_columns WHERE id = $1`, [columnId])).rows[0];
+    const col = (await this.pg.query(`SELECT settings, type FROM board_columns WHERE id = $1`, [columnId])).rows[0];
+    if (col?.type === 'formula') throw new Error('FORMULA_READONLY'); // P2-3：公式列只读
     const ep = col?.settings?.editPermission ?? col?.settings?.editable;
     if (ep === 'owner' && userRole !== 'owner') throw new Error('FORBIDDEN_COLUMN');
     const client = await this.pg.connect();

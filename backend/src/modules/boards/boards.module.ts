@@ -5,6 +5,7 @@ import { Injectable, Controller, Get, Post, Patch, Put, Delete, Body, Param, Req
 import { Pool } from 'pg';
 import { can, canEditStructure } from './acl';
 import { applyViewPermission } from '../items/items.service';
+import { injectFormulaValues, validateFormula, FormulaRow } from '../formula';
 
 /** 可见性过滤 SQL：Board 权限 > 部门 > 全员（P0 规则，权限治理用） */
 const VISIBLE_WHERE = `
@@ -74,6 +75,20 @@ export class BoardsService {
       for (const kv of r.kv ?? []) values[kv.k] = kv.v;
       return { ...r, values };
     });
+    // P2-3：Formula 列读取时注入计算值（含 SUM/COUNT 聚合子条目）
+    const { rows: childItems } = await this.pg.query(
+      `SELECT i.id, i.parent_item_id,
+              jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
+       FROM items i
+       LEFT JOIN item_values iv ON iv.item_id = i.id
+       WHERE i.board_id = $1 AND i.deleted_at IS NULL AND i.parent_item_id IS NOT NULL
+       GROUP BY i.id`, [boardId]);
+    const childRows: FormulaRow[] = childItems.map((r) => {
+      const values: Record<string, string | null> = {};
+      for (const kv of r.kv ?? []) values[kv.k] = kv.v;
+      return { id: r.id, parentItemId: r.parent_item_id, values };
+    });
+    injectFormulaValues(columns, itemRows, childRows);
     // P1-2：受限列（viewPermission=owner）对非 owner 剓值、标记 restricted
     const filtered = applyViewPermission(columns, itemRows, userRole);
     return { board: b[0], columns: filtered.columns, groups, items: filtered.items, myRole: userRole };
@@ -128,7 +143,12 @@ export class BoardsService {
   async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
     if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加列');
-    if (!['text', 'status', 'people', 'date', 'number'].includes(dto.type)) throw new Error('BAD_TYPE');
+    if (!['text', 'status', 'people', 'date', 'number', 'formula'].includes(dto.type)) throw new Error('BAD_TYPE');
+    if (dto.type === 'formula' && !(typeof dto.settings?.formula === 'string' && dto.settings.formula.trim())) throw new Error('BAD_FORMULA');
+    if (dto.type === 'formula') {
+      // 语法预检（引用值缺失不算错）
+      if (!validateFormula(dto.settings.formula)) throw new Error('BAD_FORMULA');
+    }
     const settings = dto.settings ?? (dto.type === 'status'
       ? { labels: [{ label: '待办', color: '#8a90a3' }, { label: '进行中', color: '#579bfc' }, { label: '已完成', color: '#00c875' }], doneLabels: ['已完成'] }
       : {});

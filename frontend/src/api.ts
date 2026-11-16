@@ -62,8 +62,8 @@ export const api = {
   recycleBin: (boardId: string) => request(`/boards/${boardId}/recycle-bin`),
   restoreItems: (boardId: string, itemIds: string[]) =>
     request(`/boards/${boardId}/restore`, { method: 'POST', body: JSON.stringify({ itemIds }) }),
-  addColumn: (boardId: string, name: string, type: string) =>
-    request(`/boards/${boardId}/columns`, { method: 'POST', body: JSON.stringify({ name, type }) }),
+  addColumn: (boardId: string, name: string, type: string, settings?: any) =>
+    request(`/boards/${boardId}/columns`, { method: 'POST', body: JSON.stringify({ name, type, settings }) }),
   renameColumn: (boardId: string, colId: string, name: string) =>
     request(`/boards/${boardId}/columns/${colId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   updateColumnSettings: (boardId: string, colId: string, settings: unknown) =>

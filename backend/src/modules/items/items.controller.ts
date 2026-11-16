@@ -2,7 +2,7 @@
  * Items 路由 — 之前只有 Service 没接 Controller（前端 404 的根因）
  * 角色解析：board_permissions 显式授权 > owner > company 可见(试用=editor) > 部门成员(editor)
  */
-import { Controller, Get, Patch, Post, Body, Param, Req, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, Param, Req, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { ItemsService, applyViewPermission } from './items.service';
 import { BoardRole } from '../boards/acl';
@@ -82,6 +82,7 @@ export class ItemsController {
     } catch (e: any) {
       if (e?.message === 'FORBIDDEN_COLUMN') throw new ForbiddenException('该列仅负责人可编辑');
       if (e?.message === 'FORBIDDEN') throw new ForbiddenException();
+      if (e?.message === 'FORMULA_READONLY') throw new BadRequestException('公式列为只读，不可手动填写');
       if (e?.message === 'CONFLICT') throw Object.assign(new Error('CONFLICT'), { code: 'CONFLICT' });
       throw e;
     }
