@@ -170,14 +170,27 @@ async function login(page) {
       chip?.click();
     }, statusCol.id);
     await sleep(800);
-    // 双击单元格打开 status 编辑器，确认「进行中」不在选项里
-    const cell = await page.$(`[data-grid-cell][data-col="${statusCol.id}"]`);
-    await cell.click(); await cell.click({ clickCount: 2 }); await sleep(300);
+    // 双击单元格打开 status 编辑器，确认「进行中」不在选项里（dispatchEvent 方式，与 batch12/14/15 一致；ElementHandle.click 在 headless 下偶发 CDP 冻结）
+    const dblOk = await page.evaluate((colId) => {
+      const cell = document.querySelector(`[data-grid-cell][data-col="${colId}"]`);
+      if (!cell) return false;
+      cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      return true;
+    }, statusCol.id);
+    if (!dblOk) throw new Error('status cell not found');
+    await sleep(600);
     const hasInactive = await page.evaluate(() => [...document.querySelectorAll('select[data-grid-editor] option')].some((o) => o.textContent === '进行中'));
     check('T5-2 停用标签不出现在编辑下拉', !hasInactive);
     await page.keyboard.press('Escape');
+    await sleep(300);
+    // 若编辑器仍开着（dispatchEvent dblclick 后焦点可能不在编辑器上），dispatch blur 关闭
+    const stillOpen = await page.evaluate(() => document.querySelectorAll('[data-grid-editor]').length);
+    if (stillOpen) {
+      await page.evaluate(() => { const ed = document.querySelector('[data-grid-editor]'); if (ed) ed.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); });
+      await sleep(400);
+    }
     // 旧值保留：已完成 chip 仍在表格
-    const oldVal = await page.evaluate(() => [...document.querySelectorAll('[data-status-chip]')].length);
+    const oldVal = await page.evaluate(() => [...document.querySelectorAll('[data-status-chip]')].length); console.log('  [debug] oldVal=' + oldVal, 'editorOpen=' + await page.evaluate(() => document.querySelectorAll('[data-grid-editor]').length));
     check('T5-3 原有状态值照常展示', oldVal >= 3);
   } catch (e) { check('T5 标签停用', false, e.message); }
 

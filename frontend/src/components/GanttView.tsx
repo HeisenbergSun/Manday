@@ -15,7 +15,7 @@ const LABEL_W = 180; // 左侧名称列宽
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 
-type GRow = { id: string; name: string; start: number; end: number; overdue: boolean; done: boolean };
+type GRow = { id: string; name: string; start: number; end: number; overdue: boolean; done: boolean; deps: string[]; blocked: boolean };
 
 export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => void }) {
   const { items, columns, groups } = useItems();
@@ -26,6 +26,7 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
   const dragRef = useRef<{ id: string; mode: 'move' | 'end' | 'start'; startX: number; baseStart: number; baseEnd: number } | null>(null);
 
   const dateCols = useMemo(() => columns.filter((c: any) => c.type === 'date'), [columns]);
+  const depCol = useMemo(() => columns.find((c: any) => c.type === 'dependency'), [columns]);
   const startCol = dateCols[0];
   const endCol = dateCols[1] ?? null;
 
@@ -42,10 +43,30 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
       const end = e ? startOfDay(new Date(String(e).slice(0, 10))).getTime() : start;
       const [a, b] = start <= end ? [start, end] : [end, start];
       out.push({ id: it.id, name: it.name, start: a, end: b, overdue: b < today,
-        done: isItemDone(columns as any[], it.values) });
+        done: isItemDone(columns as any[], it.values), deps: [], blocked: false });
     }
     return out.sort((x, y) => x.start - y.start);
   }, [items, startCol, endCol, columns]);
+
+  /** P3-1 依赖解析：deps = 前置条目 id；blocked = 前置未完成 */
+  const depEdges = useMemo(() => {
+    if (!depCol) return { rowsWithDeps: rows, edges: [] as { from: string; to: string }[] };
+    const itemById = new Map((Object.values(items) as any[]).map((i) => [i.id, i]));
+    const doneOf = (id: string) => isItemDone(columns as any[], itemById.get(id)?.values);
+    const edges: { from: string; to: string }[] = [];
+    const rowsWithDeps = rows.map((r) => {
+      const raw = itemById.get(r.id)?.values?.[depCol.id];
+      let depIds: string[] = [];
+      try { const p = JSON.parse(String(raw)); depIds = Array.isArray(p) ? p.map(String) : p ? [String(p)] : []; }
+      catch { depIds = raw ? [String(raw)] : []; }
+      depIds = depIds.filter(Boolean);
+      for (const d of depIds) if (itemById.has(d)) edges.push({ from: d, to: r.id });
+      const blocked = depIds.some((d) => itemById.has(d) && !doneOf(d));
+      return { ...r, deps: depIds, blocked };
+    });
+    return { rowsWithDeps, edges };
+  }, [rows, depCol, items, columns]);
+  const rowsWithDeps = depEdges.rowsWithDeps;
 
   /** 时间轴范围：所有条目 min~max 前后各留 3 天，最少覆盖 4 周 */
   const range = useMemo(() => {
@@ -76,12 +97,46 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
   const todayLeft = ((range.today - range.from) / DAY) * CELL_W;
   const timelineWidth = ((range.to - range.from) / DAY + 1) * CELL_W;
 
+  /** 展示顺序中的条目行序号（连线 y 坐标依据；折叠的组内行不计） */
+  const displayIds = useMemo(() => {
+    const ids: string[] = [];
+    if (groups.length === 0) return rowsWithDeps.map((r) => r.id);
+    for (const g of groups) {
+      if (collapsed[g.id]) continue;
+      for (const r of rowsWithDeps) if ((items as any)[r.id]?.group_id === g.id) ids.push(r.id);
+    }
+    const inGroups = new Set(ids);
+    if (!collapsed['__ungrouped']) for (const r of rowsWithDeps) if (!inGroups.has(r.id)) ids.push(r.id);
+    return ids;
+  }, [rowsWithDeps, groups, collapsed, items]);
+
+  /** P3-1 连线几何：前置条右缘 → 后置条左缘（肘形路径 + 箭头） */
+  const arrows = useMemo(() => {
+    if (!startCol) return [];
+    const idx = new Map(displayIds.map((id, i) => [id, i]));
+    const rowById = new Map(rowsWithDeps.map((r) => [r.id, r]));
+    const out: { d: string; ax: number; ay: number }[] = [];
+    for (const e of depEdges.edges) {
+      const p = rowById.get(e.from), s = rowById.get(e.to);
+      const yi = idx.get(e.from), yj = idx.get(e.to);
+      if (!p || !s || yi === undefined || yj === undefined) continue;
+      const x1 = ((p.end - range.from) / DAY + 1) * CELL_W;
+      const x2 = ((s.start - range.from) / DAY) * CELL_W;
+      const y1 = yi * ROW_H + ROW_H / 2;
+      const y2 = yj * ROW_H + ROW_H / 2;
+      const midX = Math.max(x1 + 8, (x1 + x2) / 2);
+      out.push({ d: `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2 - 5} ${y2}`, ax: x2 - 5, ay: y2 });
+    }
+    return out;
+  }, [depEdges, displayIds, rowsWithDeps, range, startCol]);
+
   const bar = (r: GRow) => {
     const dOff = dragging?.id === r.id ? dragging : null;
     const start = r.start + (dOff?.dStart ?? 0) * DAY;
     const end = Math.max(r.end + (dOff?.dEnd ?? 0) * DAY, start);
     const left = ((start - range.from) / DAY) * CELL_W;
     const width = Math.max(((end - start) / DAY + 1) * CELL_W, CELL_W);
+    const blocked = r.blocked && !r.done;
     /** 可编辑甘特（P1-5）：整体拖=平移，右缘拖=改结束日期（单日期列时改当天），左缘拖=改开始日期 */
     const onBarMouseDown = (mode: 'move' | 'end' | 'start') => (e: React.MouseEvent) => {
       if (e.button !== 0) return;
@@ -133,17 +188,18 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
       window.addEventListener('mouseup', onUp);
     };
     return (
-      <div title={`${r.name}（拖动平移 · 边缘拉伸改日期）`}
+      <div title={`${r.name}（拖动平移 · 边缘拉伸改日期）${blocked ? ' · 前置任务未完成，阻塞中' : ''}`}
         data-gantt-bar={r.id}
+        data-gantt-blocked={blocked ? '1' : undefined}
         style={{ position: 'absolute', top: 6, left, width, height: 20, borderRadius: 6,
-          background: r.done ? '#eceef2' : r.overdue ? '#fdebec' : '#eef1fe',
-          border: `1px solid ${r.done ? '#c3c8d4' : r.overdue ? '#e5484d' : '#4f6ef7'}`,
-          color: r.done ? '#a0a4b1' : r.overdue ? '#e5484d' : '#4f6ef7', fontSize: 11, lineHeight: '18px', padding: '0 6px',
+          background: r.done ? '#eceef2' : blocked ? '#fff8e6' : r.overdue ? '#fdebec' : '#eef1fe',
+          border: `1px ${blocked ? 'dashed' : 'solid'} ${blocked ? '#e0a96d' : r.done ? '#c3c8d4' : r.overdue ? '#e5484d' : '#4f6ef7'}`,
+          color: r.done ? '#a0a4b1' : blocked ? '#b8860b' : r.overdue ? '#e5484d' : '#4f6ef7', fontSize: 11, lineHeight: '18px', padding: '0 6px',
           boxSizing: 'border-box', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'grab',
           opacity: dOff ? 0.85 : 1, boxShadow: dOff ? '0 2px 8px rgba(79,110,247,.35)' : undefined }}
         onMouseDown={onBarMouseDown('move')}
         onClick={(e) => { e.stopPropagation(); if (!dragging) onOpenItem?.(r.id); }}>
-        {r.name}{r.done ? ' · 已完成' : r.overdue ? ' · 已逾期' : ''}
+        {r.name}{blocked ? ' · ⤴ 阻塞中' : r.done ? ' · 已完成' : r.overdue ? ' · 已逾期' : ''}
         {/* 左右拉伸手柄 */}
         <span onMouseDown={(e) => { e.stopPropagation(); onBarMouseDown('start')(e); }} data-gantt-edge="start"
           style={{ position: 'absolute', left: 0, top: 0, width: 7, height: '100%', cursor: 'ew-resize' }} />
@@ -194,31 +250,31 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
   /** 分组结构：有分组则按组折叠展示，否则平铺 */
   const body = useMemo(() => {
     if (groups.length === 0) {
-      return rows.map((r) => renderRow(r.name, false, r.id, [r]));
+      return rowsWithDeps.map((r) => renderRow(r.name, false, r.id, [r]));
     }
-    const out: JSX.Element[] = [];
+    const out: any[] = [];
     const seen = new Set<string>();
     const pushGroup = (gName: string, gKey: string, list: GRow[]) => {
       list = list.filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
       out.push(renderRow(gName, true, gKey, list));
     };
-    for (const g of groups) pushGroup(g.name, g.id, rows.filter((r) => (items as any)[r.id]?.group_id === g.id));
+    for (const g of groups) pushGroup(g.name, g.id, rowsWithDeps.filter((r) => (items as any)[r.id]?.group_id === g.id));
     // 未分组
     const groupedIds = new Set<string>();
     for (const g of groups) for (const r of rows) {
       const it = (Object.values(items) as any[]).find((x) => x.id === r.id);
       if (it?.group_id === g.id) groupedIds.add(r.id);
     }
-    pushGroup('未分组', '__ungrouped', rows.filter((r) => !groupedIds.has(r.id)));
+    pushGroup('未分组', '__ungrouped', rowsWithDeps.filter((r) => !groupedIds.has(r.id)));
     return out;
-  }, [rows, groups, collapsed, items]);
+  }, [rowsWithDeps, groups, collapsed, items]);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
         <b style={{ fontSize: 15 }}>📈 甘特视图</b>
         <span style={{ fontSize: 12, color: '#7a7f8c' }}>
-          按「{startCol?.name ?? '—'}」{endCol ? `～「${endCol.name}」` : ''}列展示 · {rows.length} 条 · 红色已逾期 · 灰色已完成 · 拖条平移/边缘拉伸改日期
+          按「{startCol?.name ?? '—'}」{endCol ? `～「${endCol.name}」` : ''}列展示 · {rows.length} 条 · 红色已逾期 · 灰色已完成 · 黄色虚线⤴被前置阻塞 · 拖条平移/边缘拉伸改日期
         </span>
         {toast && <span data-gantt-toast style={{ fontSize: 12, color: '#4f6ef7' }}>{toast}</span>}
       </div>
@@ -239,6 +295,17 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
         {!startCol ? (
           <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>📈 这个 Board 还没有日期列——去表格视图添加一个「日期」列，条目就能以甘特图展示时间安排</div>
         ) : body.length ? body : <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>还没有条目设置了日期</div>}
+        {startCol && arrows.length > 0 && (
+          <svg data-gantt-dep-arrows width={timelineWidth} height={displayIds.length * ROW_H + 40}
+            style={{ position: 'absolute', left: LABEL_W, top: 0, pointerEvents: 'none', zIndex: 4, overflow: 'visible' }}>
+            {arrows.map((a, i) => (
+              <g key={i} data-dep-arrow="1">
+                <path d={a.d} fill="none" stroke="#b8a06a" strokeWidth={1.5} strokeDasharray="4 3" />
+                <polygon points={`${a.ax},${a.ay - 4} ${a.ax},${a.ay + 4} ${a.ax + 5},${a.ay}`} fill="#b8a06a" />
+              </g>
+            ))}
+          </svg>
+        )}
       </div>
     </div>
   );

@@ -167,6 +167,10 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     }
 
     if (isEditing) {
+      if (col.type === 'dependency') {
+        return <DependencyEditor rows={rows.filter((r) => r.id !== row.id)}
+          onCommit={(itemId) => { setEditing(null); onEdit(row, col.id, itemId); }} />;
+      }
       if (col.type === 'mirror') {
         return <MirrorEditor col={col} onCommit={(itemId) => { setEditing(null); if (itemId) onEdit(row, col.id, itemId); }} />;
       }
@@ -197,6 +201,20 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     if (col.type === 'formula') {
       if (v === undefined || v === null || v === '') return <span data-formula-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
       return <span data-formula-cell={col.id} title={`ƒx ${col.settings?.formula ?? ''}`} style={{ color: '#5b6c8f', fontSize: 13 }}>{v}</span>;
+    }
+    if (col.type === 'dependency') {
+      // P3-1：cell 存前置条目 id（JSON 数组或裸 id），渲染为 ⤴ 前置条目名
+      let depIds: string[] = [];
+      try {
+        const p = JSON.parse(String(v));
+        depIds = Array.isArray(p) ? p.map(String) : p ? [String(p)] : [];
+      } catch { depIds = v ? [String(v)] : []; }
+      depIds = depIds.filter(Boolean);
+      if (!depIds.length) return <span data-dep-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
+      const names = depIds.map((id) => rows.find((r) => r.id === id)?.name ?? '?');
+      return <span data-dep-cell={col.id} title={`前置：${names.join('、')}`}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#7a7f8c' }}>
+        <span style={{ color: '#b5bac8' }}>⤴</span>{names.join('、')}</span>;
     }
     if (col.type === 'mirror') {
       // P2-4：后端注入 JSON 文本 { itemId, name, label, color }
@@ -387,6 +405,15 @@ const editorStyle: React.CSSProperties = {
   width: '100%', padding: '3px 6px', borderRadius: 6, border: '2px solid #4f6ef7',
   fontSize: 13, outline: 'none', boxSizing: 'border-box',
 };
+
+/** P3-1 依赖编辑器：从本看板其他条目中选前置任务，提交条目 id */
+function DependencyEditor({ rows, onCommit }: { rows: GridRow[]; onCommit: (itemId: string) => void }) {
+  return <select data-grid-editor autoFocus value="" onChange={(e) => { if (e.target.value) onCommit(e.target.value); }}
+    onBlur={() => onCommit('')} style={editorStyle}>
+    <option value="">— 清除前置 —</option>
+    {rows.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+  </select>;
+}
 
 /** P2-4 Mirror 编辑器：从连接的看板选条目，提交源条目 id（状态由后端读取时镜像注入） */
 function MirrorEditor({ col, onCommit }: { col: GridColumn; onCommit: (itemId: string) => void }) {

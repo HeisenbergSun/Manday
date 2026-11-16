@@ -146,7 +146,7 @@ export class BoardsService {
   async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
     if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加列');
-    if (!['text', 'status', 'people', 'date', 'number', 'formula', 'mirror'].includes(dto.type)) throw new Error('BAD_TYPE');
+    if (!['text', 'status', 'people', 'date', 'number', 'formula', 'mirror', 'dependency'].includes(dto.type)) throw new Error('BAD_TYPE');
     if (dto.type === 'formula' && !(typeof dto.settings?.formula === 'string' && dto.settings.formula.trim())) throw new Error('BAD_FORMULA');
     if (dto.type === 'formula') {
       // 语法预检（引用值缺失不算错）
