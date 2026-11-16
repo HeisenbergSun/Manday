@@ -9,6 +9,20 @@ type Tab = 'updates' | 'subitems' | 'history';
 
 const arr = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 
+/** P3-3 评论正文渲染：@提及的名字（后端 mentions 已解析）渲染为蓝色 chip */
+function MentionText({ body, mentions }: { body: string; mentions: { id: string; name: string }[] }) {
+  const names = new Set((mentions ?? []).map((m) => m.name));
+  if (!names.size) return <>{body}</>;
+  const parts = body.split(/(@[\p{Script=Han}\w]+)/gu);
+  return <>
+    {parts.map((p, i) =>
+      p.startsWith('@') && names.has(p.slice(1))
+        ? <span key={i} data-mention-chip={p.slice(1)} style={{ background: '#eef1fe', color: '#4f6ef7', borderRadius: 6, padding: '0 5px', fontSize: 12 }}>{p}</span>
+        : <span key={i}>{p}</span>,
+    )}
+  </>;
+}
+
 /** 审计 action → 中文句子片段（五段式历史的“改了什么”段） */
 function historyActionText(h: any): string {
   const map: Record<string, string> = {
@@ -31,6 +45,10 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
   });
   const [err, setErr] = useState('');
   const [draft, setDraft] = useState('');
+  // P3-3 @补全：输入 @xxx 时弹成员下拉；mentionUsers 全员名单（listUsers 懒加载一次）
+  const [mentionUsers, setMentionUsers] = useState<{ id: string; name: string }[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null=关闭，''=刚输入 @
+  const [draftRef] = useState<{ el: HTMLTextAreaElement | null }>({ el: null });
   const [subDraft, setSubDraft] = useState('');
   const [item, setItem] = useState<any>(null);
 
@@ -52,6 +70,29 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
     load();
     api.item(itemId).then(setItem).catch(() => setItem(null));
   }, [itemId]);
+
+  /** P3-3：光标前解析 @xxx（未闭合），拉全员名单供补全 */
+  const onDraftChange = (e: any) => {
+    const v = e.target.value;
+    const caret = e.target.selectionStart ?? v.length;
+    setDraft(v);
+    draftRef.el = e.target;
+    const m = v.slice(0, caret).match(/@([^\s@]*)$/);
+    if (m) {
+      setMentionQuery(m[1]);
+      if (!mentionUsers.length) api.listUsers().then((us: any) => setMentionUsers(arr(us).map((u) => ({ id: u.id, name: u.name })))).catch(() => {});
+    } else setMentionQuery(null);
+  };
+
+  /** P3-3：补全选择 → 替换未闭合的 @query 为 @全名 + 空格 */
+  const pickMention = (name: string) => {
+    const el = draftRef.el;
+    const caret = el?.selectionStart ?? draft.length;
+    const before = draft.slice(0, caret).replace(/@([^\s@]*)$/, `@${name} `);
+    setDraft(before + draft.slice(caret));
+    setMentionQuery(null);
+    setTimeout(() => el?.focus(), 0);
+  };
 
   async function postUpdate() {
     if (!draft.trim()) return;
@@ -129,7 +170,7 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
               <b>{authorName(u)}</b>
               {u.created_at && <span style={{ color: '#7a7f8c', fontSize: 11, marginLeft: 6 }}>
                 {new Date(u.created_at).toLocaleString('zh-CN')}</span>}
-              <div style={{ whiteSpace: 'pre-wrap' }}>{u.body}</div>
+              <div style={{ whiteSpace: 'pre-wrap' }}><MentionText body={u.body} mentions={u.mentions} /></div>
             </div>
           </div>
         ))}
@@ -181,10 +222,27 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
       )}
 
       {tab === 'updates' && (
-        <div style={{ padding: 12, borderTop: '1px solid #e6e8ef' }}>
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="写更新，@ 提及同事…"
+        <div style={{ padding: 12, borderTop: '1px solid #e6e8ef', position: 'relative' }}>
+          <textarea data-comment-input value={draft} onChange={onDraftChange} placeholder="写更新，@ 提及同事…"
             style={{ width: '100%', height: 56, border: '1px solid #e6e8ef', borderRadius: 8, padding: 8,
               fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          {mentionQuery !== null && (
+            <div data-mention-menu style={{ position: 'absolute', left: 12, bottom: 84, width: 220, maxHeight: 180,
+              overflowY: 'auto', background: '#fff', border: '1px solid #e6e8ef', borderRadius: 8,
+              boxShadow: '0 4px 14px rgba(37,39,44,.12)', zIndex: 10 }}>
+              {arr(mentionUsers).filter((u) => u.name.includes(mentionQuery)).map((u) => (
+                <div key={u.id} data-mention-option={u.name} onClick={() => pickMention(u.name)}
+                  style={{ padding: '7px 10px', fontSize: 13, color: '#25272c', cursor: 'pointer' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#f3f4f9')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                  @{u.name}
+                </div>
+              ))}
+              {arr(mentionUsers).filter((u) => u.name.includes(mentionQuery)).length === 0 && (
+                <div style={{ padding: '7px 10px', fontSize: 12, color: '#a0a4b1' }}>无匹配成员</div>
+              )}
+            </div>
+          )}
           <button onClick={postUpdate} style={{ float: 'right', marginTop: 6, padding: '6px 14px', borderRadius: 7,
             border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>发布</button>
         </div>
