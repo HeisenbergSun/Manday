@@ -9,6 +9,7 @@ import { Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
 import { can, canEditStructure, BoardRole } from '../boards/acl';
 import { injectFormulaValues, FormulaRow } from '../formula';
+import { injectMirrorValues } from '../mirror';
 
 /**
  * P1-2 受限列读取过滤：viewPermission='owner' 的列对非 owner 只给元数据（restricted:true），值被剔除
@@ -35,7 +36,7 @@ export class ItemsService {
   constructor(private readonly pg: Pool) {}
 
   /** 读取整个 Board（含动态列值）——一次查询拉平，免 N+1 */
-  async getBoardItems(boardId: string, userRole: BoardRole | null) {
+  async getBoardItems(boardId: string, userRole: BoardRole | null, userId?: string) {
     if (!can(userRole, 'read')) throw new Error('FORBIDDEN');
     const { rows } = await this.pg.query(
       `SELECT i.id, i.group_id, i.name, i.position, i.version,
@@ -68,6 +69,7 @@ export class ItemsService {
       return { id: r.id, parentItemId: r.parent_item_id, values };
     });
     injectFormulaValues(columns, itemRows, childRows);
+    if (userId) await injectMirrorValues(this.pg, columns, itemRows, userId);
     return itemRows;
   }
 

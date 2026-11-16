@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UI, TAG, doneLabelsOf, soften, GROUP_PALETTE } from '../theme';
+import { api } from '../api';
 
 export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown>; group_id?: string };
 export type GridColumn = { id: string; name: string; type: string; settings: any; restricted?: boolean };
@@ -166,6 +167,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     }
 
     if (isEditing) {
+      if (col.type === 'mirror') {
+        return <MirrorEditor col={col} onCommit={(itemId) => { setEditing(null); if (itemId) onEdit(row, col.id, itemId); }} />;
+      }
       if (col.type === 'date') {
         return <input data-grid-editor autoFocus type="date" value={draft} onChange={(e) => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(null); }}
@@ -193,6 +197,17 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     if (col.type === 'formula') {
       if (v === undefined || v === null || v === '') return <span data-formula-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
       return <span data-formula-cell={col.id} title={`ƒx ${col.settings?.formula ?? ''}`} style={{ color: '#5b6c8f', fontSize: 13 }}>{v}</span>;
+    }
+    if (col.type === 'mirror') {
+      // P2-4：后端注入 JSON 文本 { itemId, name, label, color }
+      let m: any = null;
+      try { m = JSON.parse(String(v)); } catch { /* 非法值当空 */ }
+      if (!m || (!m.name && !m.label)) return <span data-mirror-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
+      return <span data-mirror-cell={col.id} title={`镜像自：${m.name ?? ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 13 }}>{m.name}</span>
+        {m.label && <span style={{ background: `${soften(m.color) ?? '#d0d4e0'}22`, color: soften(m.color) ?? '#5a6072',
+          padding: '1px 9px', borderRadius: 20, fontSize: 12 }}>{m.label}</span>}
+      </span>;
     }
     if (col.type === 'checkbox') {
       return <input type="checkbox" checked={v === 'true'} disabled={!locked}
@@ -372,3 +387,22 @@ const editorStyle: React.CSSProperties = {
   width: '100%', padding: '3px 6px', borderRadius: 6, border: '2px solid #4f6ef7',
   fontSize: 13, outline: 'none', boxSizing: 'border-box',
 };
+
+/** P2-4 Mirror 编辑器：从连接的看板选条目，提交源条目 id（状态由后端读取时镜像注入） */
+function MirrorEditor({ col, onCommit }: { col: GridColumn; onCommit: (itemId: string) => void }) {
+  const [opts, setOpts] = useState<{ id: string; name: string; label: string | null }[] | null>(null);
+  useEffect(() => {
+    api.getBoard(String(col.settings?.connectBoardId ?? '')).then((d: any) => {
+      const sc = (d.columns ?? []).find((c: any) => c.type === 'status');
+      setOpts((d.items ?? []).map((i: any) => ({
+        id: i.id, name: i.name, label: sc ? String(i.values?.[sc.id] ?? '') : null,
+      })));
+    }).catch(() => setOpts([]));
+  }, [col.id]);
+  if (opts === null) return <span style={{ fontSize: 12, color: '#a0a4b1' }}>加载中…</span>;
+  return <select data-grid-editor autoFocus value="" onChange={(e) => { if (e.target.value) onCommit(e.target.value); }}
+    onBlur={() => onCommit('')} style={editorStyle}>
+    <option value="">— 清除镜像 —</option>
+    {opts.map((o) => <option key={o.id} value={o.id}>{o.name}{o.label ? ` · ${o.label}` : ''}</option>)}
+  </select>;
+}

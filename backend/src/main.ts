@@ -62,6 +62,15 @@ async function ensureMinorSchema() {
         prefs        JSONB DEFAULT '{}'::jsonb,
         updated_at   TIMESTAMPTZ DEFAULT now(),
         PRIMARY KEY (user_id, board_id)
+      );
+      CREATE TABLE IF NOT EXISTS board_connects (
+        id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        board_id           UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+        column_id          UUID NOT NULL REFERENCES board_columns(id) ON DELETE CASCADE,
+        connected_board_id UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+        created_by         UUID REFERENCES users(id),
+        created_at         TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(column_id)
       );`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {

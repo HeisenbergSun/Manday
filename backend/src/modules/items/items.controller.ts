@@ -40,7 +40,7 @@ export class BoardsItemsController {
   @Get(':id/items')
   async getBoard(@Req() req: any, @Param('id') boardId: string) {
     const role = await this.resolveBoardRole(boardId, req.user.id);
-    const items = await this.items.getBoardItems(boardId, role);
+    const items = await this.items.getBoardItems(boardId, role, req.user.id);
     const { rows: columns } = await this.pg.query(
       `SELECT id, type, name, settings, position FROM board_columns
        WHERE board_id = $1 ORDER BY position`, [boardId]);

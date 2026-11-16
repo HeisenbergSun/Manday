@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 import { can, canEditStructure } from './acl';
 import { applyViewPermission } from '../items/items.service';
 import { injectFormulaValues, validateFormula, FormulaRow } from '../formula';
+import { injectMirrorValues } from '../mirror';
 
 /** 可见性过滤 SQL：Board 权限 > 部门 > 全员（P0 规则，权限治理用） */
 const VISIBLE_WHERE = `
@@ -89,6 +90,8 @@ export class BoardsService {
       return { id: r.id, parentItemId: r.parent_item_id, values };
     });
     injectFormulaValues(columns, itemRows, childRows);
+    // P2-4：Mirror 列读取时注入源条目名 + 状态（含权限过滤）
+    await injectMirrorValues(this.pg, columns, itemRows, userId);
     // P1-2：受限列（viewPermission=owner）对非 owner 剓值、标记 restricted
     const filtered = applyViewPermission(columns, itemRows, userRole);
     return { board: b[0], columns: filtered.columns, groups, items: filtered.items, myRole: userRole };
@@ -143,11 +146,16 @@ export class BoardsService {
   async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
     if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加列');
-    if (!['text', 'status', 'people', 'date', 'number', 'formula'].includes(dto.type)) throw new Error('BAD_TYPE');
+    if (!['text', 'status', 'people', 'date', 'number', 'formula', 'mirror'].includes(dto.type)) throw new Error('BAD_TYPE');
     if (dto.type === 'formula' && !(typeof dto.settings?.formula === 'string' && dto.settings.formula.trim())) throw new Error('BAD_FORMULA');
     if (dto.type === 'formula') {
       // 语法预检（引用值缺失不算错）
       if (!validateFormula(dto.settings.formula)) throw new Error('BAD_FORMULA');
+    }
+    if (dto.type === 'mirror') {
+      if (!dto.settings?.connectBoardId) throw new Error('BAD_MIRROR'); // 需指定连接的看板
+      const srcRole = await this.resolveRole(String(dto.settings.connectBoardId), userId);
+      if (!can(srcRole, 'read')) throw new ForbiddenException('对被连接看板无查看权限');
     }
     const settings = dto.settings ?? (dto.type === 'status'
       ? { labels: [{ label: '待办', color: '#8a90a3' }, { label: '进行中', color: '#579bfc' }, { label: '已完成', color: '#00c875' }], doneLabels: ['已完成'] }
@@ -157,6 +165,11 @@ export class BoardsService {
       `INSERT INTO board_columns (board_id, type, name, settings, position) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING *`,
       [boardId, dto.type, dto.name, JSON.stringify(settings), pos]);
     await this.pg.query(`INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'column.create',$2,'ui')`, [userId, dto.name]);
+    if (dto.type === 'mirror' && dto.settings?.connectBoardId) {
+      await this.pg.query(
+        `INSERT INTO board_connects (board_id, column_id, connected_board_id, created_by) VALUES ($1,$2,$3,$4) ON CONFLICT (column_id) DO NOTHING`,
+        [boardId, rows[0].id, String(dto.settings.connectBoardId), userId]);
+    }
     return rows[0];
   }
 

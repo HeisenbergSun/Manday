@@ -10,7 +10,7 @@ import { UI, TAG, doneLabelsOf, soften } from '../theme';
 import { AutomationPanel } from './AutomationPanel';
 
 /** 列类型的中文展示名 */
-const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式' } as Record<string, string>)[t] ?? t;
+const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像' } as Record<string, string>)[t] ?? t;
 
 /** 成员与权限管理弹窗：列表 + 改角色 + 移除 + 添加公司内用户 */
 const ROLE_LABEL: Record<string, string> = { owner: '负责人', editor: '可编辑', viewer: '只读', guest: '访客' };
@@ -118,6 +118,12 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState('text');
   const [newColFormula, setNewColFormula] = useState('');
+  const [newColMirrorBoard, setNewColMirrorBoard] = useState('');
+  const [boardOptions, setBoardOptions] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (newColType !== 'mirror') return;
+    api.getBoards().then((list: any[]) => setBoardOptions((list ?? []).map((b) => ({ id: b.id, name: b.name })))).catch(() => {});
+  }, [newColType, mgrOpen]);
   const [newGroupName, setNewGroupName] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -252,13 +258,14 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
     if (!name || busy) return;
     setBusy(true);
     try {
-      await api.addColumn(boardId, name, newColType, newColType === 'formula' ? { formula: newColFormula.trim() } : undefined);
+      await api.addColumn(boardId, name, newColType, newColType === 'formula' ? { formula: newColFormula.trim() }
+        : newColType === 'mirror' ? { connectBoardId: newColMirrorBoard } : undefined);
       await reloadBoard();
       setNewColName('');
       flash(`已添加列「${name}」`);
     } catch (e) { flash(`添加列失败：${(e as Error).message}`); }
     finally { setBusy(false); }
-  }, [boardId, newColName, newColType, newColFormula, busy, reloadBoard]);
+  }, [boardId, newColName, newColType, newColFormula, newColMirrorBoard, busy, reloadBoard]);
 
   /** 新增分组 */
   const addGroup = useCallback(async () => {
@@ -422,13 +429,21 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
                 <option value="date">日期</option>
                 <option value="number">数字</option>
                 <option value="formula">公式</option>
+                <option value="mirror">镜像</option>
               </select>
               {newColType === 'formula' && (
                 <input value={newColFormula} onChange={(e) => setNewColFormula(e.target.value)} data-newcol-formula
                   placeholder="{列名} 引用列，支持 + - * / 与 SUM()/COUNT()"
                   style={{ flex: 1.4, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
               )}
-              <button onClick={addColumn} disabled={busy || !newColName.trim() || (newColType === 'formula' && !newColFormula.trim())}
+              {newColType === 'mirror' && (
+                <select value={newColMirrorBoard} onChange={(e) => setNewColMirrorBoard(e.target.value)} data-newcol-mirror
+                  style={{ padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+                  <option value="">连接看板…</option>
+                  {boardOptions.filter((b) => b.id !== boardId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              )}
+              <button onClick={addColumn} disabled={busy || !newColName.trim() || (newColType === 'formula' && !newColFormula.trim()) || (newColType === 'mirror' && !newColMirrorBoard)}
                 style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13 }}>添加</button>
             </div>
             </>)}
