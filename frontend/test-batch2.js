@@ -32,12 +32,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
 
   const boardInfo = await page.evaluate(async (h) => {
-    const j = await (await fetch('/api/boards', { headers: h })).json();
-    const arr = Array.isArray(j) ? j : j.items || [];
-    const bid = arr[0].id;
+    // P1-1 权限收紧后结构操作需要 owner——创建 dev 自己的 board 再测
+    const r = await (await fetch('/api/boards', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'G2 列分组验证 ' + Date.now() % 100000, visibility: 'private' }) })).json();
+    const bid = r.id ?? r.board?.id;
+    await fetch(`/api/boards/${bid}/columns`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'date', name: '截止日期', settings: {} }) });
     const d = await (await fetch('/api/boards/' + bid, { headers: h })).json();
     return { bid, colCount: (d.columns || []).length, groupCount: (d.groups || []).length };
   }, headers);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2000);
   console.log('board:', JSON.stringify(boardInfo));
 
   // 预清理：删掉历史残留的「优先级」列 /「已上线」分组
@@ -53,7 +58,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ---- G1: 新增列（文本「优先级」）----
   const mgrBtn = await page.evaluateHandle(() => [...document.querySelectorAll('button')].find((b) => b.textContent.includes('列与分组')));
   await mgrBtn.asElement().click();
-  await sleep(500);
+  await sleep(1200);
   await page.evaluate(() => {
     const inputs = [...document.querySelectorAll('input[placeholder="列名"]')];
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;

@@ -34,6 +34,28 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }
   await sleep(2000);
 
+  // P1-1 后结构操作需要 owner——创建 dev 自己的甘特测试板（日期列 + 带日期条目），reload 让 App 打开它
+  const headers0 = await page.evaluate(() => ({ Authorization: 'Bearer ' + localStorage.getItem('manday_token') }));
+  await page.evaluate(async (h) => {
+    const r = await (await fetch('/api/boards', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '甘特验证 ' + Date.now() % 100000, visibility: 'private' }) })).json();
+    const bid = r.id ?? r.board?.id;
+    await fetch(`/api/boards/${bid}/columns`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'date', name: '截止日期', settings: {} }) });
+    const d = await (await fetch(`/api/boards/${bid}`, { headers: h })).json();
+    const gid = d.groups?.[0]?.id;
+    const dateCol = d.columns.find((c) => c.type === 'date');
+    for (let i = 0; i < 3; i++) {
+      const it = await (await fetch(`/api/boards/${bid}/items`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '甘特任务' + (i + 1), groupId: gid }) })).json();
+      const itemId = it.id ?? it.item?.id;
+      if (itemId && dateCol) await fetch(`/api/items/${itemId}/cell`, { method: 'PATCH', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnId: dateCol.id, value: '2026-11-' + (10 + i), version: it.version ?? it.item?.version ?? 0 }) });
+    }
+  }, headers0);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2000);
+
   // ---- T1: 甘特 tab 存在 + 切换 ----
   const tab = await page.evaluateHandle(() => [...document.querySelectorAll('button')].find((b) => b.textContent.includes('甘特')));
   assert(await tab.asElement(), '没有甘特 tab');

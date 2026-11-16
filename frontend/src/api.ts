@@ -130,8 +130,8 @@ export const api = {
 
   // ---- 模板中心 ----
   templates: () => request('/templates'),
-  instantiateTemplate: (key: string, name: string) =>
-    request(`/templates/${key}/instantiate`, { method: 'POST', body: JSON.stringify({ name }) }),
+  instantiateTemplate: (key: string, name: string, withSamples = false) =>
+    request(`/templates/${key}/instantiate`, { method: 'POST', body: JSON.stringify({ name, withSamples }) }),
 
   // ---- AI（WorkBuddy 企业版网关，SSE）----
   aiConfirmTool: (toolCallId: string, tool: string, payload: unknown) =>

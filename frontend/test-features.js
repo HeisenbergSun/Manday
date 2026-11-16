@@ -42,8 +42,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const headers = TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {};
   const boardsRes = await page.evaluate(async (h) => (await (await fetch('/api/boards', { headers: h })).json()), headers);
   const boards = Array.isArray(boardsRes) ? boardsRes : boardsRes.items || [];
-  assert(boards.length > 0, 'no boards');
-  const boardId = boards[0].id;
+  // P1-1 权限收紧后，结构操作需要 owner——必须用 dev 自己的 board，不能依赖列表第一个
+  const ownBoard = await page.evaluate(async (h) => {
+    const r = await (await fetch('/api/boards', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'E2E 功能验证 ' + new Date().toISOString().slice(5, 16), visibility: 'private' }) })).json();
+    const bid = r.id ?? r.board?.id;
+    for (const g of ['待办', '进行中']) await fetch(`/api/boards/${bid}/groups`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: g }) });
+    return bid;
+  }, headers);
+  const boardId = ownBoard ?? boards[0].id;
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2000);
 
   const countItems = () => page.evaluate(async (id, h) => {
     const r = await (await fetch(`/api/boards/${id}/items`, { headers: h })).json();
@@ -147,7 +156,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }
 
   // ---- F4: 回收站 — 删除一条 -> trash 里可见 -> 恢复 ----
-  // 找刚改名的条目，通过 UI 删除（选中行 -> 删除选中）
+  // 刷新拿到最新表格数据（拖拽/改名后 store 可能未同步）
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2000);
   await page.evaluate(() => {
     const tabs = [...document.querySelectorAll('button')];
     const t = tabs.find((b) => b.textContent.includes('表格'));
@@ -159,12 +170,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const rowClicked = await page.evaluate((n) => {
     const rows = [...document.querySelectorAll('[data-grid-row]')];
     const target = rows.find((r) => r.textContent.includes(n.slice(0, 10)));
-    if (target) { const cb = target.querySelector('[data-grid-check]'); if (cb) { (cb).click(); return true; } }
-    return false;
+    if (!target) return { ok: false, rows: rows.length, texts: rows.slice(0, 3).map((r) => r.textContent.slice(0, 30)) };
+    const cb = target.querySelector('[data-grid-check]');
+    if (!cb) return { ok: false, rows: rows.length, noCheck: true, targetText: target.textContent.slice(0, 40) };
+    cb.click();
+    return { ok: true };
   }, NAME);
+  console.log('  [diag]', JSON.stringify(rowClicked));
+  const clicked = typeof rowClicked === 'object' && rowClicked.ok;
   await sleep(500);
-  console.log('F4 checkpoint B: rowClicked=', rowClicked);
-  if (rowClicked) {
+  console.log("F4 checkpoint B: rowClicked=", clicked);
+  if (clicked) {
     const delBtn = await Promise.race([
       page.evaluateHandle(() => [...document.querySelectorAll('button')].find((b) => b.textContent.includes('删除选中'))),
       new Promise((r) => setTimeout(() => r('TIMEOUT-evaluateHandle'), 8000)),

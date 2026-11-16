@@ -27,9 +27,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(2000);
   const headers = await page.evaluate(() => ({ Authorization: 'Bearer ' + localStorage.getItem('manday_token') }));
   const bid = await page.evaluate(async (h) => {
-    const j = await (await fetch('/api/boards', { headers: h })).json();
-    return (Array.isArray(j) ? j : j.items)[0].id;
+    // 自建板 + 3 个条目，避免依赖列表第一个板的残留状态
+    const r = await (await fetch('/api/boards', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'K 拖拽验证 ' + Date.now() % 100000, visibility: 'private' }) })).json();
+    const id = r.id ?? r.board?.id;
+    for (const n of ['K任务1', 'K任务2', 'K任务3', 'K任务4'])
+      await fetch(`/api/boards/${id}/items`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: n }) });
+    return id;
   }, headers);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2000);
 
   // 记录排序前顺序
   const orderBefore = await page.evaluate(async (id, h) => {

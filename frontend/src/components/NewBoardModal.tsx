@@ -11,6 +11,7 @@ export function NewBoardModal({ onClose, onCreated }: { onClose: () => void; onC
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [selected, setSelected] = useState<string>('project');
   const [name, setName] = useState('');
+  const [withSamples, setWithSamples] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -28,7 +29,7 @@ export function NewBoardModal({ onClose, onCreated }: { onClose: () => void; onC
     if (!name.trim() || busy) return;
     setBusy(true); setErr('');
     try {
-      const r: any = await api.instantiateTemplate(selected, name.trim());
+      const r: any = await api.instantiateTemplate(selected, name.trim(), withSamples);
       const boardId = r?.boardId ?? r?.id;
       if (!boardId) throw new Error('模板创建未返回 Board ID');
       onCreated(boardId);
@@ -46,7 +47,7 @@ export function NewBoardModal({ onClose, onCreated }: { onClose: () => void; onC
       <div onClick={(e) => e.stopPropagation()} style={{
         width: 620, background: '#fff', borderRadius: 14, padding: 22, boxShadow: '0 16px 48px rgba(0,0,0,.2)' }}>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>新建 Board</div>
-        <div style={{ fontSize: 12, color: '#7a7f8c', marginBottom: 16 }}>建议从模板开始，保持团队结构一致</div>
+        <div style={{ fontSize: 12, color: '#7a7f8c', marginBottom: 16 }}>建议从模板开始，保持团队结构一致 · 可附带示例数据快速上手</div>
 
         {err && <div style={{ background: '#fff1f0', color: '#e2445c', borderRadius: 8, padding: '8px 12px',
           fontSize: 12, marginBottom: 12 }}>{err}</div>}
@@ -69,7 +70,11 @@ export function NewBoardModal({ onClose, onCreated }: { onClose: () => void; onC
 
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Board 名称"
           style={{ width: '100%', padding: '9px 12px', border: '1px solid #e6e8ef', borderRadius: 8,
-            fontSize: 14, outline: 'none', marginBottom: 14, boxSizing: 'border-box' }} />
+            fontSize: 14, outline: 'none', marginBottom: 10, boxSizing: 'border-box' }} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#5a6072', marginBottom: 14, cursor: 'pointer' }}>
+          <input type="checkbox" checked={withSamples} onChange={(e) => setWithSamples(e.target.checked)} data-with-samples />
+          附带示例数据（5 条样例条目，随时可一键删除）
+        </label>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e6e8ef',
             background: 'none', cursor: 'pointer', fontSize: 13 }}>取消</button>

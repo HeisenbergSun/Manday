@@ -10,6 +10,7 @@ import { NotificationBell, CommandPalette } from './components/TopWidgets';
 import { WorkspaceNav } from './components/WorkspaceNav';
 import { DashboardPage } from './components/DashboardPage';
 import { NewBoardModal } from './components/NewBoardModal';
+import { OnboardingModal } from './components/OnboardingModal';
 import { useItems, useUi } from './store';
 import { api, getToken, clearToken } from './api';
 import { joinBoard, leaveBoard } from './socket';
@@ -104,8 +105,16 @@ export function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
+  // P2-1：首次登录问卷引导（每用户只出现一次）
+  const [onboarding, setOnboarding] = useState(false);
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(() =>
     getToken() ? { id: localStorage.getItem('userId') ?? '', name: '', email: '' } : null);
+  useEffect(() => {
+    if (!user?.id) return;
+    if (localStorage.getItem('manday_onboarded_' + user.id)) return;
+    // 只有「零看板」的新用户才弹问卷——老用户（已有看板）不打扰
+    api.getBoards().then((list: any[]) => { if (Array.isArray(list) && list.length === 0) setOnboarding(true); }).catch(() => {});
+  }, [user?.id]);
   const setBoard = useItems((s) => s.setBoard);
   const groups = useItems((s) => s.groups);
 
@@ -174,6 +183,16 @@ export function App() {
         {aiOpen && <AiSidebar boardId={activeBoard?.id} />}
       </div>
       <CommandPalette />
+      {onboarding && (
+        <OnboardingModal userId={user?.id ?? ''}
+          onDone={(boardId) => {
+            setOnboarding(false);
+            api.getBoard(boardId).then((d: any) => {
+              setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole);
+              setActiveBoard({ id: boardId, name: '我的第一个看板' });
+            }).catch(() => {});
+          }} />
+      )}
       {newBoardOpen && (
         <NewBoardModal onClose={() => setNewBoardOpen(false)}
           onCreated={async (boardId) => {

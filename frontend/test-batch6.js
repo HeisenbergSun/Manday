@@ -33,14 +33,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const t = await b.evaluate((el) => el.textContent || '');
     if (t.includes('一键登录')) { await b.click(); break; }
   }
-  await sleep(2000);
+  await sleep(3000);
   const headers = await page.evaluate(() => ({ Authorization: 'Bearer ' + localStorage.getItem('manday_token') }));
 
   // ---- L1: 自研表格渲染 ----
-  const l1 = await page.evaluate(() => ({
-    rows: document.querySelectorAll('[data-grid-row]').length,
-    agLeftovers: document.querySelectorAll('.ag-row,.ag-cell').length,
-  }));
+  let l1;
+  for (let i = 0; i < 8; i++) {
+    l1 = await page.evaluate(() => ({
+      rows: document.querySelectorAll('[data-grid-row]').length,
+      agLeftovers: document.querySelectorAll('.ag-row,.ag-cell').length,
+    }));
+    if (l1.rows > 0) break;
+    await sleep(1000);
+  }
   console.log('L1 grid rows:', JSON.stringify(l1));
   assert(l1.rows > 0, '自研表格没有渲染行');
   assert(l1.agLeftovers === 0, '仍有 AG Grid 残留 DOM');
@@ -121,12 +126,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ---- L5: 列级权限 ----
   // 注意：列级权限的语义是「非 owner 编辑 owner-only 列 → 403」。
   // dev 账号是 Monday迁移 的 owner，必须选一个 dev 非 owner 的 board（App 2.0 项目）来测。
-  const bid5 = await page.evaluate(async (h) => {
+  const bid5 = await page.evaluate(async (h, cur) => {
     const j = await (await fetch('/api/boards', { headers: h })).json();
     const arr = Array.isArray(j) ? j : j.items;
-    const target = arr.find((b) => b.name === 'App 2.0 项目') || arr.find((b) => b.id !== bid);
-    return target.id;
-  }, headers);
+    const target = arr.find((b) => b.name === 'App 2.0 项目') || arr.find((b) => b.id !== cur);
+    return target?.id ?? null;
+  }, headers, bid);
   const dateCol = await page.evaluate(async (id, h) => {
     const d = await (await fetch('/api/boards/' + id, { headers: h })).json();
     const c = d.columns.find((x) => x.type === 'date');

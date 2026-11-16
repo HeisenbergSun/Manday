@@ -27,9 +27,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(2000);
   const headers = await page.evaluate(() => ({ Authorization: 'Bearer ' + localStorage.getItem('manday_token') }));
   const bid = await page.evaluate(async (h) => {
-    const j = await (await fetch('/api/boards', { headers: h })).json();
-    return (Array.isArray(j) ? j : j.items)[0].id;
+    // 自建板 + 父条目，避免依赖列表第一个板的残留状态
+    const r = await (await fetch('/api/boards', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'H 子任务验证 ' + Date.now() % 100000, visibility: 'private' }) })).json();
+    const id = r.id ?? r.board?.id;
+    await fetch(`/api/boards/${id}/items`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'H父条目' }) });
+    return id;
   }, headers);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2000);
 
   // 找一个父条目（无 parent 的第一行名字）
   const parentName = await page.evaluate(async (id, h) => {

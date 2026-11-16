@@ -353,6 +353,18 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
 
   /** 批量改状态（P0-4）：选中 ≥3 行时底部工具条，逐行 LWW 写入 */
   const statusCol = useMemo(() => columns.find((c: any) => c.type === 'status'), [columns]);
+
+  // P2-2：示例条目（名称以「示例：」开头）可一键删除
+  const sampleIds = useMemo(() => gridRows.filter((r) => r.name.startsWith('示例：')).map((r) => r.id), [gridRows]);
+  const removeSamples = useCallback(async () => {
+    if (!sampleIds.length) return;
+    if (!confirm(`删除 ${sampleIds.length} 条示例条目？（可在回收站找回）`)) return;
+    try {
+      await api.softDelete(sampleIds);
+      await reloadBoard();
+      flash(`已删除 ${sampleIds.length} 条示例条目`);
+    } catch (e) { flash(`删除失败：${(e as Error).message}`); }
+  }, [sampleIds, reloadBoard]);
   const batchSetStatus = useCallback(async (label: string) => {
     if (!statusCol) return;
     const rows = gridRows.filter((r) => selectedIds.has(r.id));
@@ -492,6 +504,13 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
             </div>
             </>)}
           </div>
+        )}
+        {sampleIds.length > 0 && (
+          <button onClick={removeSamples} data-remove-samples="1"
+            style={{ padding: '6px 14px', borderRadius: 8, border: '1px dashed #b8860b', background: '#fff8e6',
+              cursor: 'pointer', fontSize: 13, color: '#b8860b' }}>
+            🧹 删除 {sampleIds.length} 条示例
+          </button>
         )}
         <button onClick={() => setAutoOpen(!autoOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: autoOpen ? '#eef1fe' : '#fff',
