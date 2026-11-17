@@ -105,7 +105,7 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
   );
 }
 
-export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenItem?: (itemId: string) => void }) {
+export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: string; onOpenItem?: (itemId: string) => void; onSwitchView?: (v: string) => void }) {
   const { items, columns, groups, myRole, bumpVersion, applyPatch, addItem, setBoard, boardLoading } = useItems();
   // P1-1：结构（列/组增删改）仅 owner；内容（cell/条目）editor+；myRole 未加载时保守按 owner 展示
   const isOwner = !myRole || myRole === 'owner';
@@ -142,13 +142,36 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
 
   useEffect(() => { loadViews(); setActiveViewId(null); setSortBy(null); setSortDir('asc'); }, [boardId]);
 
-  /** 应用视图：写入本地排序态 */
+  /** 应用视图：写入本地排序态；若视图声明了非 table 类型则跳转到对应视图（第二十二批） */
   const applyView = (v: any) => {
     setActiveViewId(v.id);
     const cfg = v.config ?? {};
     setSortBy(cfg.sortBy ?? null);
     setSortDir(cfg.sortDir === 'desc' ? 'desc' : 'asc');
     setViewsOpen(false);
+    if (v.view_type && v.view_type !== 'table') onSwitchView?.(v.view_type);
+  };
+
+  /** 预设视图集（第二十二批）：一键创建六种类型命名视图，跳过同名已存在 */
+  const applyPresetViews = async () => {
+    if (busy) return;
+    setBusy(true);
+    const presets = [
+      { name: '⚡ 表格', viewType: 'table', config: {} },
+      { name: '⚡ 看板', viewType: 'kanban', config: {} },
+      { name: '⚡ 日历', viewType: 'calendar', config: {} },
+      { name: '⚡ 甘特', viewType: 'gantt', config: {} },
+      { name: '⚡ Workload', viewType: 'workload', config: {} },
+      { name: '⚡ 分析', viewType: 'insights', config: {} },
+    ];
+    try {
+      for (const p of presets) {
+        if (views.some((v) => v.name === p.name)) continue;
+        await api.createView(boardId, p.name, p.viewType, p.config);
+      }
+      await loadViews();
+      flash('已套用预设视图集');
+    } catch { flash('套用预设视图集失败'); } finally { setBusy(false); }
   };
 
   /** 表头点击排序：锁定视图不可改配置；点击即切回自由排序（脱离视图） */
@@ -572,6 +595,11 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
               </div>
             ))}
             <b style={{ fontSize: 13, display: 'block', marginTop: 12 }}>保存当前排序为新视图</b>
+            <button data-preset-views onClick={applyPresetViews} disabled={busy}
+              style={{ marginTop: 8, width: '100%', padding: '8px 0', borderRadius: 8, border: '1px dashed #4f6ef7',
+                background: '#f5f7ff', color: '#4f6ef7', cursor: busy ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600 }}>
+              ✨ 一键套用预设视图集（表格/看板/日历/甘特/Workload/分析）
+            </button>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <input value={newViewName} onChange={(e) => setNewViewName(e.target.value)} placeholder="视图名"
                 style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />

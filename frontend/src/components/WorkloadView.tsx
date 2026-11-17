@@ -28,13 +28,16 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
       return map.get(name)!;
     };
     if (!peopleCol) return [];
+    // 第二十二批：人员 id 经列 settings.members 解析为名字（否则显示 UUID）
+    const memberList: { id: string; name: string }[] = ((peopleCol as any).settings?.members ?? []);
+    const nameOf = (id: string) => memberList.find((m: any) => m.id === id)?.name ?? id;
     const today = new Date(new Date().toDateString()).getTime();
     for (const it of Object.values(items) as any[]) {
       const raw = it.values?.[peopleCol.id];
       const names = Array.isArray(raw) ? raw.map(scalar).filter(Boolean) : raw ? [scalar(raw)].filter(Boolean) : [];
       if (!names.length) bump('（未分配）').total++, bump('（未分配）').ids.push(it.id);
       for (const n of names) {
-        const s = bump(n);
+        const s = bump(nameOf(n));
         s.total++; s.ids.push(it.id);
         if (statusCol && doneSet.has(String(it.values?.[statusCol.id] ?? ''))) s.done++;
         if (dateCol && it.values?.[dateCol.id] && new Date(String(it.values[dateCol.id]).slice(0, 10)).getTime() < today

@@ -12,7 +12,19 @@ interface BoardTemplate {
   columns: { type: string; name: string; settings?: object }[];
   /** P2-2：预置示例数据（名称统一以「示例：」开头，前端可一键删除） */
   samples?: { group: string; values: Record<string, unknown> }[];
+  /** 第二十二批：建板时预置的命名视图（预设可视化） */
+  views?: { name: string; viewType: string; config?: object }[];
 }
+
+/** 预设视图集（第二十二批）：各模板默认套用的六种视图 */
+export const PRESET_VIEWS: { name: string; viewType: string; config?: object }[] = [
+  { name: '⚡ 表格', viewType: 'table', config: {} },
+  { name: '⚡ 看板', viewType: 'kanban', config: {} },
+  { name: '⚡ 日历', viewType: 'calendar', config: {} },
+  { name: '⚡ 甘特', viewType: 'gantt', config: {} },
+  { name: '⚡ Workload', viewType: 'workload', config: {} },
+  { name: '⚡ 分析', viewType: 'insights', config: {} },
+];
 
 /** 示例条目名前缀（识别 + 一键删除用） */
 export const SAMPLE_PREFIX = '示例：';
@@ -115,6 +127,12 @@ export class TemplateService {
       await client.query(
         `INSERT INTO board_permissions (board_id, subject_type, subject_id, role) VALUES ($1,'user',$2,'owner')
          ON CONFLICT DO NOTHING`, [boardId, userId]);
+      // 第二十二批：预置命名视图（预设可视化）
+      for (const [i, vw] of (tpl.views ?? PRESET_VIEWS).entries()) {
+        await client.query(
+          `INSERT INTO board_views (board_id, name, view_type, config, position) VALUES ($1,$2,$3,$4::jsonb,$5)`,
+          [boardId, vw.name, vw.viewType, JSON.stringify(vw.config ?? {}), i + 1]);
+      }
       // P2-2：预置示例条目（名称带前缀，前端可一键删除）
       if (withSamples && tpl.samples?.length) {
         const { rows: gs } = await client.query(`SELECT id, name FROM board_groups WHERE board_id = $1`, [boardId]);
