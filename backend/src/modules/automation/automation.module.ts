@@ -6,6 +6,7 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { AutomationWorker, NotificationService } from './automation.worker';
+import { AutomationRunner } from './automation-runner.service';
 
 const HAS_REDIS = !!process.env.REDIS_URL;
 
@@ -17,8 +18,8 @@ export class AutomationModule {
       imports: HAS_REDIS
         ? [BullModule.registerQueue({ name: 'automation', connection: { url: process.env.REDIS_URL } })]
         : [],
-      providers: HAS_REDIS ? [AutomationWorker, NotificationService] : [NotificationService],
-      exports: [NotificationService],
+      providers: HAS_REDIS ? [AutomationWorker, NotificationService, AutomationRunner] : [NotificationService, AutomationRunner],
+      exports: [NotificationService, AutomationRunner],
     };
   }
 }

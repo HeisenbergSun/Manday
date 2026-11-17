@@ -9,6 +9,7 @@ import { Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
 import { can, canEditStructure, BoardRole } from '../boards/acl';
 import { injectFormulaValues, FormulaRow } from '../formula';
+import { AutomationRunner } from '../automation/automation-runner.service';
 import { injectMirrorValues } from '../mirror';
 
 /**
@@ -33,7 +34,7 @@ export function applyViewPermission(columns: any[], items: any[], userRole: Boar
 
 @Injectable()
 export class ItemsService {
-  constructor(private readonly pg: Pool) {}
+  constructor(private readonly pg: Pool, private readonly automation: AutomationRunner) {}
 
   /** 读取整个 Board（含动态列值）——一次查询拉平，免 N+1 */
   async getBoardItems(boardId: string, userRole: BoardRole | null, userId?: string) {
@@ -92,7 +93,7 @@ export class ItemsService {
   ) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
     // 列级权限（P1-2）：editPermission='owner'（兼容旧 editable:'owner'）时仅 owner 角色可编辑该列
-    const col = (await this.pg.query(`SELECT settings, type FROM board_columns WHERE id = $1`, [columnId])).rows[0];
+    const col = (await this.pg.query(`SELECT settings, type, board_id FROM board_columns WHERE id = $1`, [columnId])).rows[0];
     if (col?.type === 'formula') throw new Error('FORMULA_READONLY'); // P2-3：公式列只读
     if (col?.type === 'attachment') throw new Error('ATTACHMENT_MANAGED'); // P3-2：附件列由附件端点维护
     const ep = col?.settings?.editPermission ?? col?.settings?.editable;
@@ -100,6 +101,9 @@ export class ItemsService {
     const client = await this.pg.connect();
     try {
       await client.query('BEGIN');
+      const prevRow = await client.query(
+        `SELECT value FROM item_values WHERE item_id = $1 AND column_id = $2`, [itemId, columnId]);
+      const prevValue = prevRow.rows[0]?.value ?? null;
       const { rows } = await client.query(
         `UPDATE items SET version = version + 1
          WHERE id = $1 AND version = $2 AND deleted_at IS NULL
@@ -121,6 +125,17 @@ export class ItemsService {
         [userId, `item:${itemId}`, JSON.stringify({ columnId, value })],
       );
       await client.query('COMMIT');
+      // 自动化触发（第二十一批）：状态/人员/其他字段变更事件，内联执行匹配规则
+      if (col.type === 'status') {
+        void this.automation.emit(col.board_id, itemId,
+          { type: 'status_changed', field: col.name, to: value, from: prevValue }, userId);
+      } else if (col.type === 'people') {
+        void this.automation.emit(col.board_id, itemId,
+          { type: 'assignee_changed', field: col.name, to: value, from: prevValue }, userId);
+      } else {
+        void this.automation.emit(col.board_id, itemId,
+          { type: 'field_changed', field: col.name, to: value, from: prevValue }, userId);
+      }
       return { version: rows[0].version };
     } finally { client.release(); }
   }
@@ -165,6 +180,7 @@ export class ItemsService {
       `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'item.create',$2,'ui')`,
       [userId, `item:${rows[0].id}`],
     );
+    void this.automation.emit(boardId, rows[0].id, { type: 'item_created' }, userId);
     return rows[0];
   }
 

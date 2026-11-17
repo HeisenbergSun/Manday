@@ -435,7 +435,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
               </select>
               {newColType === 'formula' && (
                 <input value={newColFormula} onChange={(e) => setNewColFormula(e.target.value)} data-newcol-formula
-                  placeholder="{列名} 引用列，支持 + - * / 与 SUM()/COUNT()"
+                  placeholder="{列名} 引用列，支持 + - * / 与 SUM()/AVG()/MIN()/MAX()/COUNT()/ROUND()/ABS()"
                   style={{ flex: 1.4, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
               )}
               {newColType === 'mirror' && (

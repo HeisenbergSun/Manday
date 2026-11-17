@@ -4,6 +4,8 @@
  */
 import { Injectable, Controller, Get, Post, Delete, Param, Body, Req, Module } from '@nestjs/common';
 import { Pool } from 'pg';
+import { AutomationRunner } from './automation-runner.service';
+import { AutomationModule } from './automation.module';
 
 /** P0 预置配方模板（前端自动化中心直接列出，一键套用） */
 export const RECIPE_TEMPLATES = [
@@ -37,7 +39,7 @@ export class AutomationApiService {
   async create(boardId: string, userId: string, dto: {
     trigger: object; condition?: object; action: object; source?: string; name?: string }) {
     // 校验 action 类型在白名单内（AI 翻译结果不可信，防注入任意 action）
-    const allowedActions = ['notify', 'move_group', 'update_field'];
+    const allowedActions = ['notify', 'move_group', 'update_field', 'set_status'];
     if (!allowedActions.includes((dto.action as any).type)) throw new Error('ACTION_NOT_ALLOWED');
     const { rows } = await this.pg.query(
       `INSERT INTO automations (board_id, trigger, condition, action, created_by)
@@ -60,16 +62,25 @@ export class AutomationApiService {
 
 @Controller('boards/:id/automations')
 export class AutomationApiController {
-  constructor(private svc: AutomationApiService) {}
+  constructor(private svc: AutomationApiService, private runner: AutomationRunner) {}
   @Get('templates') templates() { return this.svc.templates(); }
   @Get() list(@Param('id') id: string) { return this.svc.list(id); }
   @Post() create(@Req() req, @Param('id') id: string, @Body() dto: any) {
     return this.svc.create(id, req.user.id, dto);
+  }
+  /** 手动触发日期扫描（date_arriving/date_passing；进程内定时每小时也会跑一次） */
+  @Post('scan')
+  scan(@Param('id') id: string) {
+    return this.runner.scanDateTriggers(id);
   }
   @Delete(':autoId') remove(@Req() req, @Param('autoId') id: string) {
     return this.svc.remove(id, req.user.id);
   }
 }
 
-@Module({ controllers: [AutomationApiController], providers: [AutomationApiService] })
+@Module({
+  imports: [AutomationModule.register()],
+  controllers: [AutomationApiController],
+  providers: [AutomationApiService],
+})
 export class AutomationApiModule {}

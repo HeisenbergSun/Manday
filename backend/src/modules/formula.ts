@@ -124,10 +124,20 @@ class Parser {
       this.next();
       if (this.peek()?.type !== 'lparen') { this.errors = true; return null; }
       this.next();
+      // 一元函数：ROUND(expr) / ABS(expr)
+      if (fn === 'ROUND' || fn === 'ABS') {
+        const v = this.parseExpr();
+        if (this.peek()?.type !== 'rparen') { this.errors = true; } else { this.next(); }
+        if (v === null) { this.errors = true; return null; }
+        return fn === 'ABS' ? Math.abs(v) : Math.round(v);
+      }
       if (this.peek()?.type !== 'ref') { this.errors = true; return null; }
       const refName = this.next()!.value;
       if (this.peek()?.type !== 'rparen') { this.errors = true; } else { this.next(); }
       if (fn === 'SUM') return this.sumAgg(refName);
+      if (fn === 'AVG') return this.agg(refName, 'avg');
+      if (fn === 'MIN') return this.agg(refName, 'min');
+      if (fn === 'MAX') return this.agg(refName, 'max');
       if (fn === 'COUNT') return this.children.length;
       this.errors = true;
       return null;
@@ -146,6 +156,20 @@ class Parser {
       sum += n;
     }
     return sum;
+  }
+
+  // AVG/MIN/MAX（第二十一批）：聚合子条目；无子条目时回退本行该列值
+  private agg(colName: string, kind: 'avg' | 'min' | 'max'): number | null {
+    if (this.children.length === 0) return toNumber(this.row.values[colName]);
+    const nums: number[] = [];
+    for (const c of this.children) {
+      const n = toNumber(c.values[colName]);
+      if (n === null) return null;
+      nums.push(n);
+    }
+    if (kind === 'avg') return nums.reduce((a, b) => a + b, 0) / nums.length;
+    if (kind === 'min') return Math.min(...nums);
+    return Math.max(...nums);
   }
 }
 
