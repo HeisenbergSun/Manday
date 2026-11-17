@@ -13,6 +13,9 @@ interface ItemsState {
   groups: GroupDef[];
   /** 当前用户在该 Board 的角色（P1-1 权限拆分 UI 依据；null = 未加载，保守按 owner 展示） */
   myRole: string | null;
+  /** 板数据加载中（第二十批骨架屏依据） */
+  boardLoading: boolean;
+  setLoading: (v: boolean) => void;
   setBoard: (items: Item[], columns: ColumnDef[], groups?: GroupDef[], myRole?: string | null) => void;
   /** 实时 item 级 diff 更新：只动一个条目 */
   applyPatch: (itemId: string, field: string, value: unknown, version: number) => void;
@@ -26,6 +29,8 @@ export const useItems = create<ItemsState>((set) => ({
   columns: [],
   groups: [],
   myRole: null,
+  boardLoading: false,
+  setLoading: (v) => set(() => ({ boardLoading: v })),
   setBoard: (items, columns, groups, myRole) => set(() => ({
     items: Object.fromEntries((items ?? []).map((i) => [i.id, i])),
     columns: columns ?? [],
@@ -51,6 +56,17 @@ export const useItems = create<ItemsState>((set) => ({
 
 // 调试通道：e2e / 控制台可从 window 读 store 状态
 if (typeof window !== 'undefined') (window as any).__useItems = useItems;
+
+/** 统一 toast（第二十批）：右下角自动消失，error/success/info */
+export interface ToastItem { id: number; msg: string; kind: 'info' | 'success' | 'error' }
+export const useToast = create<{ toasts: ToastItem[]; toast: (msg: string, kind?: ToastItem['kind']) => void }>((set) => ({
+  toasts: [],
+  toast: (msg, kind = 'info') => {
+    const id = Date.now() + Math.random();
+    set((s) => ({ toasts: [...s.toasts, { id, msg, kind }] }));
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 2600);
+  },
+}));
 
 interface UiState {
   aiOpen: boolean;

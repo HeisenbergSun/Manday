@@ -4,7 +4,7 @@
  */
 import { DndContext, DragEndEvent, useDraggable, useDroppable } from '@dnd-kit/core';
 import { useEffect, useState } from 'react';
-import { useItems } from '../store';
+import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { doneLabelsOf, soften } from '../theme';
 
@@ -116,7 +116,7 @@ export function Kanban({ groups, boardId }: { groups: { id: string; name: string
       if (r?.version) store.patchItem(itemId, { version: r.version } as any);
     } catch {
       store.patchItem(itemId, prevGroupId ? { groupId: prevGroupId } : {});
-      alert('移动失败，已回滚');
+      useToast.getState().toast('移动失败，已回滚', 'error');
     }
   }
 

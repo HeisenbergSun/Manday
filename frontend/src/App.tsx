@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useToast } from './store';
 import { BoardTable } from './components/BoardTable';
 import { Kanban } from './components/Kanban';
 import { CalendarView } from './components/CalendarView';
@@ -116,6 +117,7 @@ export function App() {
     api.getBoards().then((list: any[]) => { if (Array.isArray(list) && list.length === 0) setOnboarding(true); }).catch(() => {});
   }, [user?.id]);
   const setBoard = useItems((s) => s.setBoard);
+  const setLoading = useItems((s) => s.setLoading);
   const groups = useItems((s) => s.groups);
 
   // 登录后自动打开第一个可见 Board
@@ -130,7 +132,11 @@ export function App() {
   useEffect(() => {
     if (!user || !activeBoard?.id) return;
     const boardId = activeBoard.id;
-    api.getBoard(boardId as string).then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole)).catch(() => {});
+    setLoading(true);
+    api.getBoard(boardId as string)
+      .then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole))
+      .catch(() => {})
+      .finally(() => setLoading(false));
     // P1-4：读取我的 board 偏好 → 应用默认视图（仅本人生效）
     api.getPrefs(boardId as string).then((p: any) => {
       const dv = p?.default_view;
@@ -183,6 +189,7 @@ export function App() {
         {aiOpen && <AiSidebar boardId={activeBoard?.id} />}
       </div>
       <CommandPalette />
+      <ToastHost />
       {onboarding && (
         <OnboardingModal userId={user?.id ?? ''}
           onDone={(boardId) => {
@@ -201,6 +208,21 @@ export function App() {
             if (d) { setBoard(d.items, d.columns, (d as any).groups, d.myRole); setActiveBoard({ id: boardId, name: '新 Board' }); }
           }} />
       )}
+    </div>
+  );
+}
+
+/** 统一 toast 宿主（第二十批）：右下角浮层，2.6s 自动消失 */
+export function ToastHost() {
+  const toasts = useToast((s) => s.toasts);
+  const bg = { info: '#3a3f4d', success: '#00a25b', error: '#e2445c' } as const;
+  return (
+    <div data-toast-host style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {toasts.map((t) => (
+        <div key={t.id} data-toast-kind={t.kind}
+          style={{ background: bg[t.kind], color: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13,
+            boxShadow: '0 4px 16px rgba(20,30,70,.25)', maxWidth: 320 }}>{t.msg}</div>
+      ))}
     </div>
   );
 }

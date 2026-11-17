@@ -4,7 +4,7 @@
  */
 import { useMemo, useCallback, useState, useEffect } from 'react';
 import { BoardGrid, type GridRow } from './Grid';
-import { useItems } from '../store';
+import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { UI, TAG, doneLabelsOf, soften } from '../theme';
 import { AutomationPanel } from './AutomationPanel';
@@ -106,12 +106,12 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
 }
 
 export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenItem?: (itemId: string) => void }) {
-  const { items, columns, groups, myRole, bumpVersion, applyPatch, addItem, setBoard } = useItems();
+  const { items, columns, groups, myRole, bumpVersion, applyPatch, addItem, setBoard, boardLoading } = useItems();
   // P1-1：结构（列/组增删改）仅 owner；内容（cell/条目）editor+；myRole 未加载时保守按 owner 展示
   const isOwner = !myRole || myRole === 'owner';
   const canEditContent = isOwner || myRole === 'editor';
   const [creating, setCreating] = useState(false);
-  const [toast, setToast] = useState('');
+  /** 统一 toast（第二十批）：全部路由到全局 ToastHost；「已…」开头默认 success，其余 info */
   const [mgrOpen, setMgrOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [autoOpen, setAutoOpen] = useState(false);
@@ -217,9 +217,8 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
     [columns],
   );
 
-  const flash = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 2600);
+  const flash = (msg: string, kind?: 'info' | 'success' | 'error') => {
+    useToast.getState().toast(msg, kind ?? (msg.startsWith('已') ? 'success' : 'info'));
   };
 
   /** 新建条目：后端落库后乐观插入到表格顶部 */
@@ -589,11 +588,7 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
           {gridRows.length} 条目 · 双击编辑 · 拖 ⠿ 排序 · ↑↓/Enter/Space 快捷键 · 勾选 3 行以上出批量工具条
         </span>
       </div>
-      {toast && (
-        <div style={{ margin: '0 12px 8px', background: '#eef1fe', color: '#4f6ef7', borderRadius: 8,
-          padding: '7px 12px', fontSize: 12 }}>{toast}</div>
-      )}
-      {/* 底部浮动批量工具条（P0-4）：勾选 ≥3 行浮出 */}
+      {/* toast 统一走右下角全局 ToastHost（第二十批） */}      {/* 底部浮动批量工具条（P0-4）：勾选 ≥3 行浮出 */}
       {selectedIds.size >= 3 && (
         <div data-batch-bar="1" style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
           background: UI.text, color: '#fff', borderRadius: 12, padding: '9px 16px',
@@ -618,20 +613,43 @@ export function BoardTable({ boardId, onOpenItem }: { boardId: string; onOpenIte
             清除选择</button>
         </div>
       )}
-      <BoardGrid
-        rows={gridRows}
-        columns={gridColumns}
-        groups={groups}
-        editable={canEditContent}
-        isOwner={isOwner}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSortChange={onSortChange}
-        onOpenItem={onOpenItem}
-        onEdit={saveCell}
-        onOrderChange={saveOrder}
-        onSelectionChange={setSelectedIds}
-      />
+      {boardLoading ? (
+        <div data-skeleton style={{ padding: '12px 12px 20px' }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} style={{ height: 34, borderRadius: 6, marginBottom: 8,
+              background: 'linear-gradient(90deg,#eef0f5 25%,#e2e5ec 50%,#eef0f5 75%)',
+              backgroundSize: '200% 100%', animation: 'skeleton 1.2s infinite linear' }} />
+          ))}
+          <style>{`@keyframes skeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+        </div>
+      ) : (
+        <>
+          {gridRows.length === 0 && (
+            <div data-empty-hint style={{ margin: 24, padding: '32px 20px', textAlign: 'center', background: '#f7f8fb',
+              borderRadius: 12, border: '1px dashed #d5d9e3' }}>
+              <div style={{ fontSize: 26, marginBottom: 8 }}>🪄</div>
+              <b style={{ fontSize: 14 }}>这个 Board 还没有条目</b>
+              <div style={{ color: '#7a7f8c', fontSize: 12, marginTop: 6 }}>
+                点左上角「＋ 新建条目」开始，或用「⚙ 列与分组」先建状态/人员/日期列
+              </div>
+            </div>
+          )}
+          <BoardGrid
+            rows={gridRows}
+            columns={gridColumns}
+            groups={groups}
+            editable={canEditContent}
+            isOwner={isOwner}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSortChange={onSortChange}
+            onOpenItem={onOpenItem}
+            onEdit={saveCell}
+            onOrderChange={saveOrder}
+            onSelectionChange={setSelectedIds}
+          />
+        </>
+      )}
     </div>
   );
 }
