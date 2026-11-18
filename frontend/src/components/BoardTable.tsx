@@ -2,12 +2,14 @@
  * 表格视图 — 自研 React 表格（P1：替换 AG Grid）
  * 列类型渲染/编辑器统一在 Grid.tsx；LWW 保存与冲突刷新在本组件
  */
-import { useMemo, useCallback, useState, useEffect } from 'react';
+import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { BoardGrid, type GridRow } from './Grid';
 import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { UI, TAG, doneLabelsOf, soften } from '../theme';
 import { AutomationPanel } from './AutomationPanel';
+import { parseWorkbook, mapHeaders, convertRow, inferType, type ImportCol } from '../importExcel';
+import { loadCompanyUsers } from '../people';
 
 /** 列类型的中文展示名 */
 const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像', dependency: '前置', attachment: '附件', rating: '星级', tags: '标签', longtext: '长文本' } as Record<string, string>)[t] ?? t;
@@ -111,6 +113,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   const isOwner = !myRole || myRole === 'owner';
   const canEditContent = isOwner || myRole === 'editor';
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   /** 统一 toast（第二十批）：全部路由到全局 ToastHost；「已…」开头默认 success，其余 info */
   const [mgrOpen, setMgrOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -447,6 +450,55 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     flash('已导出 CSV');
   }, [gridRows, columns]);
 
+  /** Excel 导入（第二十八批）：解析 → 表头映射（可自动建列）→ 逐行建条目 + 写单元格 */
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const importExcel = useCallback(async (file: File) => {
+    setImporting(true);
+    const okRows: string[] = [];
+    const failRows: string[] = [];
+    try {
+      const buf = await file.arrayBuffer();
+      const sheet = parseWorkbook(buf);
+      if (!sheet.rows.length) { flash('导入失败：表格无数据行'); return; }
+      let cols: ImportCol[] = columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings }));
+      let headerMap = mapHeaders(sheet.headers, cols);
+      const users = await loadCompanyUsers();
+      // 未匹配列 → owner 自动建列（按内容推断类型）
+      const missing = sheet.headers.filter((h) => headerMap[h] === null);
+      if (missing.length && isOwner) {
+        for (const h of missing) {
+          const vals = sheet.rows.map((r) => r[h]);
+          const type = inferType(vals);
+          try {
+            const created: any = await api.addColumn(boardId, h.trim(), type);
+            cols = [...cols, { id: created.id, name: created.name, type: created.type, settings: created.settings }];
+            headerMap[h] = cols[cols.length - 1];
+          } catch { headerMap[h] = null; }
+        }
+      }
+      const firstGroup = (await api.getBoard(boardId) as any)?.groups?.[0]?.id;
+      for (const row of sheet.rows) {
+        try {
+          const converted = convertRow(row, headerMap, users);
+          if (!converted) { failRows.push('(空行/无条目名)'); continue; }
+          const item: any = await api.createItem(boardId, converted.name, firstGroup);
+          let ver = item?.version ?? 1;
+          for (const cell of converted.cells) {
+            const r: any = await api.updateCell(item.id, cell.columnId, cell.value, ver);
+            if (r?.version) ver = r.version;
+          }
+          okRows.push(converted.name);
+        } catch (e) { failRows.push(`${row['条目'] ?? row['名称'] ?? row['任务'] ?? '?'}：${(e as Error).message}`); }
+      }
+      await reloadBoard();
+      flash(`导入完成：成功 ${okRows.length} 条${failRows.length ? `，失败 ${failRows.length} 条` : ''}`);
+    } catch (e) {
+      flash(`导入失败：${(e as Error).message}`);
+    } finally {
+      setImporting(false);
+    }
+  }, [columns, boardId, isOwner, reloadBoard]);
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 工具条：新建 / 批量删除 */}
@@ -615,6 +667,17 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
             cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
           📥 导出 CSV
+        </button>
+        <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) importExcel(f);
+          }} />
+        <button data-import-excel onClick={() => importFileRef.current?.click()} disabled={importing}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
+            cursor: importing ? 'wait' : 'pointer', fontSize: 13, color: '#00a25b' }}>
+          {importing ? '导入中…' : '📤 导入 Excel'}
         </button>
         <button data-views-trigger="1" onClick={() => setViewsOpen(!viewsOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',
