@@ -5,15 +5,11 @@
 import { useMemo, useState } from 'react';
 import { useItems } from '../store';
 import { doneLabelsOf } from '../theme';
-
-function scalar(v: unknown): string {
-  if (v == null) return '';
-  if (typeof v === 'object') { const o = v as any; return String(o.label ?? o.name ?? o.id ?? ''); }
-  return String(v);
-}
+import { useCompanyUsers, personNames, membersOf } from '../people';
 
 export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => void }) {
   const { items, columns } = useItems();
+  const users = useCompanyUsers();
   const peopleCols = useMemo(() => columns.filter((c: any) => c.type === 'people'), [columns]);
   const [colId, setColId] = useState<string>('');
   const peopleCol = peopleCols.find((c: any) => c.id === colId) ?? peopleCols[0];
@@ -28,16 +24,15 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
       return map.get(name)!;
     };
     if (!peopleCol) return [];
-    // 第二十二批：人员 id 经列 settings.members 解析为名字（否则显示 UUID）
-    const memberList: { id: string; name: string }[] = ((peopleCol as any).settings?.members ?? []);
-    const nameOf = (id: string) => memberList.find((m: any) => m.id === id)?.name ?? id;
+    // 统一解析：真实用户 UUID → 姓名；回退 settings.members 假 id；最后原值
+    const members = membersOf(peopleCol);
     const today = new Date(new Date().toDateString()).getTime();
     for (const it of Object.values(items) as any[]) {
       const raw = it.values?.[peopleCol.id];
-      const names = Array.isArray(raw) ? raw.map(scalar).filter(Boolean) : raw ? [scalar(raw)].filter(Boolean) : [];
+      const names = personNames(raw, users, members);
       if (!names.length) bump('（未分配）').total++, bump('（未分配）').ids.push(it.id);
       for (const n of names) {
-        const s = bump(nameOf(n));
+        const s = bump(n);
         s.total++; s.ids.push(it.id);
         if (statusCol && doneSet.has(String(it.values?.[statusCol.id] ?? ''))) s.done++;
         if (dateCol && it.values?.[dateCol.id] && new Date(String(it.values[dateCol.id]).slice(0, 10)).getTime() < today
@@ -45,7 +40,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
       }
     }
     return [...map.entries()].map(([name, s]) => ({ name, ...s })).sort((a, b) => b.total - a.total);
-  }, [items, peopleCol, statusCol, dateCol, doneSet]);
+  }, [items, peopleCol, statusCol, dateCol, doneSet, users]);
 
   const max = Math.max(1, ...stats.map((s) => s.total));
 
@@ -60,13 +55,10 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
     // per person: { overdue: [{id,name}], days: { 'YYYY-MM-DD': [{id,name}] } }
     const res = new Map<string, { overdue: { id: string; name: string }[]; days: Record<string, { id: string; name: string }[]> }>();
     if (!peopleCol || !dateCol) return res;
-    const put = (m: Map<string, { id: string; name: string }[]>, k: string, it: any) => {
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push({ id: it.id, name: it.name });
-    };
+    const members = membersOf(peopleCol);
     for (const it of Object.values(items) as any[]) {
       const raw = it.values?.[peopleCol.id];
-      const names = Array.isArray(raw) ? raw.map(scalar).filter(Boolean) : raw ? [scalar(raw)].filter(Boolean) : [];
+      const names = personNames(raw, users, members);
       if (!names.length) names.push('（未分配）');
       const due = it.values?.[dateCol.id] ? String(it.values[dateCol.id]).slice(0, 10) : '';
       const isDone = statusCol && doneSet.has(String(it.values?.[statusCol.id] ?? ''));
@@ -82,7 +74,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
       }
     }
     return res;
-  }, [items, peopleCol, dateCol, statusCol, doneSet, dayList]);
+  }, [items, peopleCol, dateCol, statusCol, doneSet, dayList, users]);
 
   const [openDay, setOpenDay] = useState<{ person: string; key: string } | null>(null);
   const heatLevel = (n: number) => n <= 0 ? '#f0f1f5' : n === 1 ? '#bcd0fb' : n <= 3 ? '#7f9cf8' : n <= 5 ? '#4f6ef7' : '#e2445c';

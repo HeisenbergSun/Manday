@@ -7,6 +7,7 @@ import { useMemo, useState, useRef } from 'react';
 import { useItems } from '../store';
 import { api } from '../api';
 import { isItemDone } from '../theme';
+import { useCompanyUsers, personNames, membersOf } from '../people';
 
 const DAY = 24 * 3600 * 1000;
 const ROW_H = 32;
@@ -15,10 +16,13 @@ const LABEL_W = 180; // 左侧名称列宽
 
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 
-type GRow = { id: string; name: string; start: number; end: number; overdue: boolean; done: boolean; deps: string[]; blocked: boolean };
+type GRow = { id: string; name: string; start: number; end: number; overdue: boolean; done: boolean; deps: string[]; blocked: boolean; peopleNames: string[] };
+
+const AVATAR_COLORS = ['#579bfc', '#e2445c', '#00a25b', '#fdab3d', '#a25ddc', '#00d6c5', '#ff8a65'];
 
 export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => void }) {
   const { items, columns, groups } = useItems();
+  const users = useCompanyUsers();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // P1-5：拖拽中的条目（本地预览偏移，天）+ 提示
   const [dragging, setDragging] = useState<{ id: string; dStart: number; dEnd: number } | null>(null);
@@ -27,6 +31,7 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
 
   const dateCols = useMemo(() => columns.filter((c: any) => c.type === 'date'), [columns]);
   const depCol = useMemo(() => columns.find((c: any) => c.type === 'dependency'), [columns]);
+  const peopleCol = useMemo(() => columns.find((c: any) => c.type === 'people'), [columns]);
   const startCol = dateCols[0];
   const endCol = dateCols[1] ?? null;
 
@@ -42,11 +47,12 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
       const e = endCol ? it.values?.[endCol.id] : null;
       const end = e ? startOfDay(new Date(String(e).slice(0, 10))).getTime() : start;
       const [a, b] = start <= end ? [start, end] : [end, start];
+      const names = peopleCol ? personNames(it.values?.[peopleCol.id], users, membersOf(peopleCol)) : [];
       out.push({ id: it.id, name: it.name, start: a, end: b, overdue: b < today,
-        done: isItemDone(columns as any[], it.values), deps: [], blocked: false });
+        done: isItemDone(columns as any[], it.values), deps: [], blocked: false, peopleNames: names });
     }
     return out.sort((x, y) => x.start - y.start);
-  }, [items, startCol, endCol, columns]);
+  }, [items, startCol, endCol, columns, peopleCol, users]);
 
   /** P3-1 依赖解析：deps = 前置条目 id；blocked = 前置未完成 */
   const depEdges = useMemo(() => {
@@ -209,6 +215,20 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
     );
   };
 
+  /** 人员头像组（真实姓名解析后，UUID 不会漏出） */
+  const peopleAvatars = (r: GRow) => r.peopleNames.length ? (
+    <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center', marginLeft: 6 }} data-gantt-people={r.peopleNames.join(',')}>
+      {r.peopleNames.slice(0, 3).map((n, i) => (
+        <span key={n} title={n}
+          style={{ width: 18, height: 18, borderRadius: '50%', background: AVATAR_COLORS[i % AVATAR_COLORS.length],
+            color: '#fff', fontSize: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>
+          {n[0]?.toUpperCase()}
+        </span>
+      ))}
+      {r.peopleNames.length > 3 && <span style={{ fontSize: 9, color: '#7a7f8c' }}>+{r.peopleNames.length - 3}</span>}
+    </span>
+  ) : null;
+
   /** 行：组头可折叠，条目行带时间条 */
   const renderRow = (label: string, isGroup: boolean, key: string, list: GRow[]) => {
     const isCollapsed = isGroup && !!collapsed[key];
@@ -230,7 +250,10 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
             <div style={{ display: 'flex', alignItems: 'center', height: ROW_H, background: '#fff',
               borderBottom: '1px solid #eef0f5' }}>
               <div style={{ width: LABEL_W, flexShrink: 0, padding: '0 10px', fontSize: 13, color: '#444452',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                display: 'flex', alignItems: 'center' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                {peopleAvatars(r)}
+              </div>
               <div style={{ position: 'relative', width: timelineWidth, height: '100%' }}>{bar(r)}</div>
             </div>
           );
@@ -239,7 +262,10 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
           <div key={r.id} style={{ display: 'flex', alignItems: 'center', height: ROW_H, background: '#fff',
             borderBottom: '1px solid #eef0f5' }}>
             <div style={{ width: LABEL_W, flexShrink: 0, padding: '0 10px 0 26px', fontSize: 13, color: '#444452',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+              display: 'flex', alignItems: 'center' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              {peopleAvatars(r)}
+            </div>
             <div style={{ position: 'relative', width: timelineWidth, height: '100%' }}>{bar(r)}</div>
           </div>
         ))}

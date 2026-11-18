@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { soften } from '../theme';
+import { useCompanyUsers, personNames, membersOf } from '../people';
 
 const AVATAR_COLORS = ['#579bfc', '#e2445c', '#00a25b', '#fdab3d', '#a25ddc', '#00d6c5', '#ff8a65'];
 
@@ -17,6 +18,7 @@ const AVATAR_COLORS = ['#579bfc', '#e2445c', '#00a25b', '#fdab3d', '#a25ddc', '#
 function Card({ itemId }: { itemId: string }) {
   const item = useItems((s) => s.items[itemId]);
   const columns = useItems((s) => s.columns);
+  const users = useCompanyUsers();
   if (!item) return null;
 
   const peopleCol = columns.find((c: any) => c.type === 'people');
@@ -27,9 +29,7 @@ function Card({ itemId }: { itemId: string }) {
   const numCol = columns.find((c: any) => c.type === 'number');
 
   const people = peopleCol ? (item as any).values?.[peopleCol.id] : null;
-  const peopleNames: string[] = Array.isArray(people)
-    ? people.map((p: any) => p?.name ?? String(p)).filter(Boolean)
-    : people ? [typeof people === 'string' ? people : (people as any)?.name ?? ''].filter(Boolean) : [];
+  const peopleNames: string[] = peopleCol ? personNames(people, users, membersOf(peopleCol)) : [];
 
   const dateVal = dateCol ? (item as any).values?.[dateCol.id] : null;
   const overdue = dateVal && new Date(String(dateVal)) < new Date(new Date().toDateString());
@@ -160,6 +160,7 @@ function BucketColumn({ id, name, color, items, wipLimit, collapsed, onToggle }:
 export function Kanban({ groups, boardId }: { groups: { id: string; name: string }[]; boardId?: string }) {
   const columns = useItems((s) => s.columns);
   const allItems = useItems((s) => s.items);
+  const users = useCompanyUsers();
   const statusCol = columns.find((c: any) => c.type === 'status');
   const [mode, setMode] = useState<'group' | 'status' | 'column'>('group');
   const [groupByColId, setGroupByColId] = useState<string>('');
@@ -243,7 +244,7 @@ export function Kanban({ groups, boardId }: { groups: { id: string; name: string
         if (v == null || v === '') key = '__empty__';
         else if (col.type === 'checkbox') key = v === true || v === 'true' ? 'true' : 'false';
         else if (col.type === 'people') {
-          const names = Array.isArray(v) ? v.map((p: any) => p?.name ?? String(p)) : [typeof v === 'string' ? v : (v as any)?.name ?? ''];
+          const names = personNames(v, users, membersOf(col));
           key = names[0] || '__empty__';
         } else key = String(v);
         if (!map.has(key)) map.set(key, { name: key === '__empty__' ? '无值' : key, items: [] });
@@ -252,7 +253,7 @@ export function Kanban({ groups, boardId }: { groups: { id: string; name: string
       return Array.from(map.entries()).map(([id, b]) => ({ id, ...b }));
     }
     return [];
-  }, [mode, groupByColId, groups, allItems, columns, statusCol, statusLanes]);
+  }, [mode, groupByColId, groups, allItems, columns, statusCol, statusLanes, users]);
 
   async function onDragEnd(e: DragEndEvent) {
     const itemId = String(e.active.id);

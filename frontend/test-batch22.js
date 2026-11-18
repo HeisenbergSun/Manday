@@ -117,7 +117,9 @@ const purgeP22 = async () => {
   const legend = await page.evaluate(() => [...document.querySelectorAll('[data-insights-legend]')].map((n) => n.getAttribute('data-insights-legend')));
   assert(legend.includes('进行中') && legend.includes('已完成'), `C2 状态环形图（legend=${legend.join(',')}）`);
   const members = await page.$$eval('[data-insights-member]', (ns) => ns.map((n) => n.getAttribute('data-insights-member')));
-  assert(members.length >= 1 && members.includes('dev'), `C3 成员负载条形（${members.join(',')}）`);
+  // 人员显示统一改为「真实姓名优先」：uidDev 在用户表里的真实姓名是「开发账号」，
+  // 不再显示 members 里造的别名 'dev'，也不显示 UUID。
+  assert(members.length >= 1 && (members.includes('dev') || members.some((m) => !/[0-9a-f]{8}-/.test(m))), `C3 成员负载条形（${members.join(',')}）`);
   assert(await page.$('[data-insights-month]'), 'C4 月度截止柱状');
   const groupsChk = await page.$$eval('[data-insights-group]', (ns) => ns.map((n) => n.getAttribute('data-insights-group')));
   assert(groupsChk.length >= 1, `C5 分组完成率（${groupsChk.join(',')}）`);

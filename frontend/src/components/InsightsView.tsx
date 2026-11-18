@@ -5,6 +5,7 @@
 import { useMemo } from 'react';
 import { useItems } from '../store';
 import { doneLabelsOf } from '../theme';
+import { useCompanyUsers, personNames, membersOf } from '../people';
 
 const PALETTE = ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d67f8', '#00d1d1', '#f5b3d1', '#8a90a3'];
 
@@ -51,6 +52,7 @@ function Donut({ data }: { data: { label: string; value: number; color: string }
 
 export function InsightsView({ onOpenItem }: { onOpenItem?: (itemId: string) => void }) {
   const { items, columns, groups } = useItems();
+  const users = useCompanyUsers();
   const list = useMemo(() => Object.values(items) as any[], [items]);
   const statusCol = columns.find((c: any) => c.type === 'status');
   const dateCol = columns.find((c: any) => c.type === 'date');
@@ -74,21 +76,20 @@ export function InsightsView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
     return out;
   }, [list, statusCol]);
 
-  // ② 成员负载（未完成条目数）；人员 id 经列 settings.members 解析为名字
+  // ② 成员负载（未完成条目数）；统一解析真实用户 UUID / 假 id / 姓名
   const memberData = useMemo(() => {
     if (!peopleCol) return [];
-    const members: { id: string; name: string }[] = (peopleCol.settings?.members ?? []) as any;
-    const nameOf = (id: string) => members.find((m) => m.id === id)?.name ?? id;
+    const members = membersOf(peopleCol);
     const map = new Map<string, number>();
     for (const it of list) {
       if (statusCol && doneSet.has(String(it.values?.[statusCol.id] ?? ''))) continue;
       const raw = it.values?.[peopleCol.id];
-      const names = Array.isArray(raw) ? raw.map(scalar).filter(Boolean) : raw ? [scalar(raw)] : [];
+      const names = personNames(raw, users, members);
       if (!names.length) map.set('（未分配）', (map.get('（未分配）') ?? 0) + 1);
-      for (const n of names) map.set(nameOf(n), (map.get(nameOf(n)) ?? 0) + 1);
+      for (const n of names) map.set(n, (map.get(n) ?? 0) + 1);
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({ label, value, color: PALETTE[i % PALETTE.length] }));
-  }, [list, peopleCol, statusCol, doneSet]);
+  }, [list, peopleCol, statusCol, doneSet, users]);
 
   // ③ 月度截止分布（未来 6 个月 + 逾期）
   const monthData = useMemo(() => {
