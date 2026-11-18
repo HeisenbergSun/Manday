@@ -22,7 +22,8 @@ const pg = new Pool({ connectionString: 'postgresql://neondb_owner:npg_7BnQ5ysHk
 const purge = async () => { const r = await pg.query("DELETE FROM boards WHERE name LIKE 'B26-%' RETURNING name"); return r.rowCount; };
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new',
+    require('./e2e-profile-cleanup')('manday-batch26');
+const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch26-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'] });
   const page = await browser.newPage();

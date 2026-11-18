@@ -29,7 +29,8 @@ function hslOf(hex) {
 }
 
 (async () => {
-  const browser = await puppeteer.launch({
+    require('./e2e-profile-cleanup')('manday-batch13');
+const browser = await puppeteer.launch({
     executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch13-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'],

@@ -24,7 +24,8 @@ const req = async (auth, method, path, body) => {
 const dayStr = (offset) => { const d = new Date(new Date().toDateString()); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10); };
 
 (async () => {
-  const browser = await puppeteer.launch({
+    require('./e2e-profile-cleanup')('manday-batch18');
+const browser = await puppeteer.launch({
     executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch18-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'],

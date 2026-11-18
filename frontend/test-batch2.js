@@ -5,7 +5,8 @@ const BASE = 'http://localhost:3003';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const browser = await puppeteer.launch({
+    require('./e2e-profile-cleanup')('manday-batch2');
+const browser = await puppeteer.launch({
     executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch2-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'],

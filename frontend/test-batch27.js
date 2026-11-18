@@ -25,7 +25,8 @@ const req = async (auth, method, path, body) => {
 const isUuid = (s) => /[0-9a-f]{8}-[0-9a-f]{4}-/.test(String(s));
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new',
+    require('./e2e-profile-cleanup')('manday-batch27');
+const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch27-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'] });
   const page = await browser.newPage();

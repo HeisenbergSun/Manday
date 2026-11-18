@@ -34,7 +34,8 @@ const purgeB23b = async () => {
 };
 
 (async () => {
-  const browser = await puppeteer.launch({
+    require('./e2e-profile-cleanup')('manday-batch23b');
+const browser = await puppeteer.launch({
     executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch23b-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'],

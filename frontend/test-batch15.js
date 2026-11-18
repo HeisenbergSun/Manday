@@ -23,7 +23,8 @@ const req = async (auth, method, path, body) => {
 };
 
 (async () => {
-  const browser = await puppeteer.launch({
+    require('./e2e-profile-cleanup')('manday-batch15');
+const browser = await puppeteer.launch({
     executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch15-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'],

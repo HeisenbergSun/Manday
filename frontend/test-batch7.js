@@ -28,7 +28,8 @@ async function login(page) {
 }
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new',
+    require('./e2e-profile-cleanup')('manday-batch7');
+const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new',
     userDataDir: 'C:/Users/RSU06X/AppData/Local/Temp/manday-batch7-' + Date.now(),
     args: ['--no-sandbox', '--disable-gpu'] });
   const page = await browser.newPage();
