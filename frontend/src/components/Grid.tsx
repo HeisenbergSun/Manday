@@ -238,10 +238,22 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         return dir * av.localeCompare(bv, 'zh-Hans-CN');
       });
     } else {
-      arr.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      // 有分组时先按 groups 数组顺序排分组，再按 position 排组内条目；
+      // 无分组或 group_id 不在 groups 中的条目放最后（未分组）
+      if (groups?.length) {
+        const groupIdx = new Map(groups.map((g, i) => [g.id, i]));
+        arr.sort((a, b) => {
+          const ga = a.group_id ? (groupIdx.get(a.group_id) ?? 99999) : 99999;
+          const gb = b.group_id ? (groupIdx.get(b.group_id) ?? 99999) : 99999;
+          if (ga !== gb) return ga - gb;
+          return (a.position ?? 0) - (b.position ?? 0);
+        });
+      } else {
+        arr.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      }
     }
     return arr;
-  }, [filteredRows, localOrder, sortBy, sortDir, columns]);
+  }, [filteredRows, localOrder, sortBy, sortDir, columns, groups]);
 
   const allChecked = sortedRows.length > 0 && sortedRows.every((r) => selected.has(r.id));
 

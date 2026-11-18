@@ -53,13 +53,35 @@ const purge = async () => { const r = await pg.query("DELETE FROM boards WHERE n
   await sleep(500);
 
   // ── 导航到测试板 ──
-  // 通过左侧 WorkspaceNav 点击对应 board
-  await page.evaluate((boardName) => {
+  await sleep(1000);
+  const navResult = await page.evaluate((boardName) => {
     const items = [...document.querySelectorAll('span,div,a,button')];
     const target = items.find((el) => el.textContent.trim() === boardName && el.offsetParent !== null);
-    if (target) target.click();
+    if (target) { target.click(); return true; }
+    return false;
   }, 'B24-Interact');
-  await sleep(2500);
+  if (!navResult) {
+    await sleep(2000);
+    await page.evaluate((boardName) => {
+      const items = [...document.querySelectorAll('span,div,a,button')];
+      const target = items.find((el) => el.textContent.trim() === boardName && el.offsetParent !== null);
+      if (target) target.click();
+    }, 'B24-Interact');
+  }
+  await sleep(3000);
+  // 确认进入了正确的板
+  const onCorrectBoard = await page.evaluate(() => document.body.innerText.includes('测试条目A'));
+  if (!onCorrectBoard) {
+    await page.reload();
+    await sleep(2000);
+    await sleep(1000);
+    await page.evaluate((boardName) => {
+      const items = [...document.querySelectorAll('span,div,a,button')];
+      const target = items.find((el) => el.textContent.trim() === boardName && el.offsetParent !== null);
+      if (target) target.click();
+    }, 'B24-Interact');
+    await sleep(3000);
+  }
 
   // ════════════════════════════════════════
   // 需求1：行点击不自动打开详情
