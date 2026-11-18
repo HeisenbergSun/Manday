@@ -59,7 +59,7 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
   const candidates = users.filter((u) => !memberIds.has(u.id));
 
   return (
-    <div style={{ position: 'absolute', top: 52, left: 12, zIndex: 60, background: '#fff', borderRadius: 12,
+    <div data-members-panel="1" style={{ position: 'absolute', top: 52, left: 12, zIndex: 60, background: '#fff', borderRadius: 12,
       boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 380 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
         <b style={{ fontSize: 14 }}>👥 成员与权限</b>
@@ -141,6 +141,22 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   }, [boardId]);
 
   useEffect(() => { loadViews(); setActiveViewId(null); setSortBy(null); setSortDir('asc'); }, [boardId]);
+
+  /** 需求2：点击弹窗外部区域自动关闭所有上部弹窗面板 */
+  useEffect(() => {
+    if (!mgrOpen && !viewsOpen && !autoOpen && !membersOpen) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-mgr-panel],[data-views-panel],[data-auto-panel],[data-members-panel],[data-mgr-trigger],[data-views-trigger],[data-auto-trigger],[data-members-trigger]')) return;
+      setMgrOpen(false);
+      setViewsOpen(false);
+      setAutoOpen(false);
+      setMembersOpen(false);
+    };
+    // 用 setTimeout 确保当前点击事件先冒泡完再挂监听，避免打开按钮的同一个 click 触发关闭
+    const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => { clearTimeout(id); document.removeEventListener('mousedown', handler); };
+  }, [mgrOpen, viewsOpen, autoOpen, membersOpen]);
 
   /** 应用视图：写入本地排序态；若视图声明了非 table 类型则跳转到对应视图（第二十二批） */
   const applyView = (v: any) => {
@@ -251,7 +267,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     try {
       const it: any = await api.createItem(boardId, '新条目');
       addItem({ id: it.id, group_id: it.group_id, name: it.name, version: it.version, values: {} });
-      flash('已新建条目，双击"条目"单元格重命名');
+      flash('已新建条目，单击"条目"单元格重命名');
     } catch (e) {
       flash(`新建失败：${(e as Error).message}`);
     } finally {
@@ -445,19 +461,19 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             cursor: 'pointer', fontSize: 13, color: '#e2445c' }}>
           🗑 删除选中
         </button>
-        <button onClick={() => setMembersOpen(true)}
+        <button data-members-trigger="1" onClick={() => setMembersOpen(true)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
           👥 成员
         </button>
         {membersOpen && <MembersModal boardId={boardId} onClose={() => setMembersOpen(false)} flash={flash} />}
-        <button onClick={() => setMgrOpen(!mgrOpen)}
+        <button data-mgr-trigger="1" onClick={() => setMgrOpen(!mgrOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#eef1fe' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
           ⚙ 列与分组
         </button>
         {mgrOpen && (
-          <div style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
+          <div data-mgr-panel="1" style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
             boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 440, maxHeight: '70vh', overflow: 'auto' }}>
             {!isOwner && (
               <div style={{ marginBottom: 10, padding: '8px 12px', background: '#fff8e6', borderRadius: 8, fontSize: 12, color: '#b8860b' }}>
@@ -589,18 +605,18 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             🧹 删除 {sampleIds.length} 条示例
           </button>
         )}
-        <button onClick={() => setAutoOpen(!autoOpen)}
+        <button data-auto-trigger="1" onClick={() => setAutoOpen(!autoOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: autoOpen ? '#eef1fe' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
           ⚡ 自动化
         </button>
-        {autoOpen && <AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} />}
+        {autoOpen && <div data-auto-panel="1"><AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} /></div>}
         <button data-export-csv onClick={exportCSV}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
             cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
           📥 导出 CSV
         </button>
-        <button onClick={() => setViewsOpen(!viewsOpen)}
+        <button data-views-trigger="1" onClick={() => setViewsOpen(!viewsOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
           ⧉ 视图{activeViewId ? `：${views.find((v) => v.id === activeViewId)?.name ?? ''}${views.find((v) => v.id === activeViewId)?.locked ? ' 🔒' : ''}` : ''}
@@ -647,7 +663,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           </div>
         )}
         <span style={{ fontSize: 12, color: '#7a7f8c', marginLeft: 'auto' }}>
-          {gridRows.length} 条目 · 双击编辑 · 拖 ⠿ 排序 · ↑↓/Enter/Space 快捷键 · 勾选 3 行以上出批量工具条
+          {gridRows.length} 条目 · 单击编辑 · 拖 ⠿ 排序 · ↑↓/Enter/Space 快捷键 · 勾选 3 行以上出批量工具条
         </span>
       </div>
       {/* toast 统一走右下角全局 ToastHost（第二十批） */}      {/* 底部浮动批量工具条（P0-4）：勾选 ≥3 行浮出 */}

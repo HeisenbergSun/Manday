@@ -99,7 +99,7 @@ const req = async (auth, method, path, body) => {
     await sleep(1000);
   }
   assert(chips.some((t) => t.includes('需求说明.txt')), `A6a 附件 chip 渲染（${chips.join('|')}）`);
-  await page.evaluate(() => document.querySelector('[data-attach-cell]').closest('td').dispatchEvent(new Event('dblclick', { bubbles: true })));
+  await page.evaluate(() => document.querySelector('[data-attach-cell]').closest('td').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await sleep(600);
   const editorOk = await page.evaluate(() => !!document.querySelector('input[data-attach-input][type="file"]'));
   assert(editorOk, 'A6b 双击附件格出现文件选择器');

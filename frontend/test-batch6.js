@@ -51,7 +51,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert(l1.agLeftovers === 0, '仍有 AG Grid 残留 DOM');
   console.log('L1 自研表格渲染 PASS');
 
-  // ---- L2: 双击编辑落库 ----
+  // ---- L2: 单击编辑落库（需求3：双击改为单击） ----
   const myId = await page.evaluate(() => localStorage.getItem('userId'));
   const bid = await page.evaluate(async (h) => {
     const j = await (await fetch('/api/boards', { headers: h })).json();
@@ -60,11 +60,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const NAME = 'L2编辑' + Date.now();
   await page.evaluate(() => {
     const cell = document.querySelector('[data-grid-cell][data-col="name"]');
-    cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
   await sleep(400);
   const editor = await page.$('[data-grid-editor]');
-  assert(editor, '双击后没有出现编辑输入框');
+  assert(editor, '单击后没有出现编辑输入框');
   await page.evaluate((el, v) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     setter.call(el, v);
@@ -78,7 +78,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }, bid, headers, NAME);
   console.log('L2 rename persisted:', renamed);
   assert(renamed, '改名未落库');
-  console.log('L2 双击编辑落库 PASS');
+  console.log('L2 单击编辑落库 PASS');
 
   // ---- L3: 勾选 + 批量删除（新建一条专属条目）----
   const created = await page.evaluate(async (id, h) => {

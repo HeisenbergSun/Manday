@@ -57,11 +57,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert(sub.body.parent_item_id === sub.parentId, 'parent_item_id 不对');
   console.log('H1 创建子任务 API PASS');
 
-  // 打开详情面板看子任务 tab
+  // 打开详情面板看子任务 tab —— 需求1后改为点击 Open 按钮
   await page.evaluate((n) => {
-    const cells = [...document.querySelectorAll('[data-grid-cell][data-col="name"]')];
-    const target = cells.find((c) => c.textContent.includes(n.slice(0, 8)));
-    if (target) target.click();
+    const rows = [...document.querySelectorAll('[data-grid-row]')];
+    const targetRow = rows.find((r) => r.textContent.includes(n.slice(0, 8)));
+    if (targetRow) {
+      const openBtn = targetRow.querySelector('[data-grid-open]');
+      if (openBtn) openBtn.click();
+    }
   }, parentName);
   await sleep(1200);
   await page.evaluate(() => {

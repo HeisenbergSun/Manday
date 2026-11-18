@@ -137,7 +137,7 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
   }
 
   return (
-    <aside style={{ width: 420, background: '#fff', borderLeft: '1px solid #e6e8ef', display: 'flex', flexDirection: 'column' }}>
+    <aside data-item-detail="1" style={{ width: 420, background: '#fff', borderLeft: '1px solid #e6e8ef', display: 'flex', flexDirection: 'column' }}>
       <header style={{ padding: '12px 16px', borderBottom: '1px solid #e6e8ef' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {(['updates', 'subitems', 'history'] as Tab[]).map((t) => (

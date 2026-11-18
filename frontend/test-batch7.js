@@ -170,11 +170,11 @@ async function login(page) {
       chip?.click();
     }, statusCol.id);
     await sleep(800);
-    // 双击单元格打开 status 编辑器，确认「进行中」不在选项里（dispatchEvent 方式，与 batch12/14/15 一致；ElementHandle.click 在 headless 下偶发 CDP 冻结）
+    // 单击单元格打开 status 编辑器（需求3：双击改为单击），确认「进行中」不在选项里
     const dblOk = await page.evaluate((colId) => {
       const cell = document.querySelector(`[data-grid-cell][data-col="${colId}"]`);
       if (!cell) return false;
-      cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       return true;
     }, statusCol.id);
     if (!dblOk) throw new Error('status cell not found');
@@ -183,7 +183,7 @@ async function login(page) {
     check('T5-2 停用标签不出现在编辑下拉', !hasInactive);
     await page.keyboard.press('Escape');
     await sleep(300);
-    // 若编辑器仍开着（dispatchEvent dblclick 后焦点可能不在编辑器上），dispatch blur 关闭
+    // 若编辑器仍开着（dispatchEvent click 后焦点可能不在编辑器上），dispatch blur 关闭
     const stillOpen = await page.evaluate(() => document.querySelectorAll('[data-grid-editor]').length);
     if (stillOpen) {
       await page.evaluate(() => { const ed = document.querySelector('[data-grid-editor]'); if (ed) ed.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); });

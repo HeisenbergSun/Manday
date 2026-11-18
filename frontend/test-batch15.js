@@ -86,7 +86,7 @@ const req = async (auth, method, path, body) => {
   assert(depCells.some((t) => t.includes('⤴') && t.includes('前置任务A')), `D3 Grid 前置格渲染（${depCells.join('|')}）`);
 
   // D4 双击出现选择编辑器
-  await page.evaluate(() => document.querySelector('[data-dep-cell]').closest('td').dispatchEvent(new Event('dblclick', { bubbles: true })));
+  await page.evaluate(() => document.querySelector('[data-dep-cell]').closest('td').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await sleep(600);
   const editorOk = await page.evaluate(() => {
     const ed = document.querySelector('[data-grid-editor]');

@@ -921,13 +921,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 onDrop={(e) => { e.preventDefault(); drop(row.id); }}
                 onClick={(e) => {
                   const t = e.target as HTMLElement;
-                  if (t.closest('[data-grid-check],[data-grid-drag],[data-grid-editor],input,select')) return;
+                  if (t.closest('[data-grid-check],[data-grid-drag],[data-grid-editor],input,select,[data-row-menu-trigger],[data-row-menu]')) return;
                   if (editing) return;
-                  onOpenItem?.(row.id);
-                }}
-                onDoubleClick={(e) => {
-                  const t = e.target as HTMLElement;
-                  if (t.closest('[data-grid-check],[data-grid-drag],input,select')) return;
+                  // 不自动打开详情，只有点击 Open 按钮才打开
                 }}
               >
               <td style={tdStyle}>
@@ -963,7 +959,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 )}
               </td>
               <td style={{ ...tdStyle, fontWeight: 500 }} data-col="name" data-grid-cell={row.id}
-                onDoubleClick={() => startEdit(row.id, 'name', row.name)}>
+                onClick={() => !editing && startEdit(row.id, 'name', row.name)}>
                 {editing?.rowId === row.id && editing.field === 'name'
                   ? <input data-grid-editor autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
                       onBlur={commit}
@@ -973,7 +969,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               </td>
               {visibleColumns.map((c) => (
                 <td key={c.id} data-col={c.id} data-grid-cell={row.id} style={{ ...tdStyle, width: colWidth(c.id) }}
-                  onDoubleClick={() => !c.restricted && startEdit(row.id, c.id, c.type === 'checkbox' ? String(row.values[c.id] === true) : c.type === 'tags' ? JSON.stringify(row.values[c.id] ?? []) : scalar(row.values[c.id]))}>
+                  onClick={() => !c.restricted && !editing && startEdit(row.id, c.id, c.type === 'checkbox' ? String(row.values[c.id] === true) : c.type === 'tags' ? JSON.stringify(row.values[c.id] ?? []) : scalar(row.values[c.id]))}>
                   {renderCell(row, c)}
                 </td>
               ))}

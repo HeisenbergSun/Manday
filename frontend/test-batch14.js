@@ -105,7 +105,7 @@ const req = async (auth, method, path, body) => {
   }
   assert(cells.some((t) => t.includes('源任务X') && t.includes('进行中')), `M5 镜像单元格渲染（${cells.slice(0, 4).join('|')}）`);
   // 镜像列可点击选择（编辑器下拉出现）
-  await page.evaluate(() => document.querySelector('[data-mirror-cell]').closest('td').dispatchEvent(new Event('dblclick', { bubbles: true })));
+  await page.evaluate(() => document.querySelector('[data-mirror-cell]').closest('td').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await sleep(600);
   // MirrorEditor 需先拉源板（Neon 延迟会显示「加载中…」），轮询等待下拉出现
   let editorOk = false;
