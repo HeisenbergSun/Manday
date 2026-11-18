@@ -709,6 +709,91 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             onEdit={saveCell}
             onOrderChange={saveOrder}
             onSelectionChange={setSelectedIds}
+            boardId={boardId}
+            onAddColumn={async (name, type, settings) => {
+              try {
+                await api.addColumn(boardId, name, type, settings);
+                await reloadBoard();
+                flash(`已添加列「${name}」`);
+              } catch (e) { flash(`添加列失败：${(e as Error).message}`); }
+            }}
+            onRenameColumn={async (colId, name) => {
+              try {
+                await api.renameColumn(boardId, colId, name);
+                await reloadBoard();
+                flash(`已重命名为「${name}」`);
+              } catch (e) { flash(`重命名失败：${(e as Error).message}`); }
+            }}
+            onChangeColumnType={async (colId, type, settings) => {
+              try {
+                await api.changeColumnType(boardId, colId, type, settings);
+                await reloadBoard();
+                flash(`列类型已更改为「${type}」`);
+              } catch (e) { flash(`更改类型失败：${(e as Error).message}`); }
+            }}
+            onDeleteColumn={async (colId) => {
+              try {
+                await api.deleteColumn(boardId, colId);
+                await reloadBoard();
+                flash('列已删除');
+              } catch (e) { flash(`删除列失败：${(e as Error).message}`); }
+            }}
+            onDuplicateColumn={async (colId) => {
+              try {
+                await api.duplicateColumn(boardId, colId);
+                await reloadBoard();
+                flash('列已复制');
+              } catch (e) { flash(`复制列失败：${(e as Error).message}`); }
+            }}
+            onRenameGroup={async (gid, name) => {
+              try {
+                await api.renameGroup(boardId, gid, name);
+                await reloadBoard();
+                flash(`分组已重命名为「${name}」`);
+              } catch (e) { flash(`重命名分组失败：${(e as Error).message}`); }
+            }}
+            onAddGroup={async (name) => {
+              try {
+                await api.addGroup(boardId, name);
+                await reloadBoard();
+                flash(`已添加分组「${name}」`);
+              } catch (e) { flash(`添加分组失败：${(e as Error).message}`); }
+            }}
+            onDeleteGroup={async (gid) => {
+              try {
+                await api.deleteGroup(boardId, gid);
+                await reloadBoard();
+                flash('分组已删除，条目已移至未分组');
+              } catch (e) { flash(`删除分组失败：${(e as Error).message}`); }
+            }}
+            onDuplicateGroup={async (gid) => {
+              try {
+                await api.duplicateGroup(boardId, gid);
+                await reloadBoard();
+                flash('分组已复制（含条目）');
+              } catch (e) { flash(`复制分组失败：${(e as Error).message}`); }
+            }}
+            onDuplicateItem={async (itemId) => {
+              try {
+                await api.duplicateItem(itemId);
+                await reloadBoard();
+                flash('行已复制');
+              } catch (e) { flash(`复制行失败：${(e as Error).message}`); }
+            }}
+            onDeleteItem={async (itemId) => {
+              try {
+                await api.softDelete([itemId]);
+                await reloadBoard();
+                flash('行已移至回收站');
+              } catch (e) { flash(`删除行失败：${(e as Error).message}`); }
+            }}
+            onMoveItem={async (itemId, groupId) => {
+              try {
+                await api.updateItem(itemId, { groupId: groupId ?? undefined });
+                await reloadBoard();
+                flash('行已移动');
+              } catch (e) { flash(`移动行失败：${(e as Error).message}`); }
+            }}
           />
         </>
       )}

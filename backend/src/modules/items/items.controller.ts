@@ -127,4 +127,10 @@ export class ItemsController {
     const { role } = await this.resolveRoleForItem(b.itemIds[0], req.user.id);
     return this.items.softDelete(b.itemIds, role, req.user.id);
   }
+
+  @Post(':id/duplicate')
+  async duplicateItem(@Req() req: any, @Param('id') id: string) {
+    const { role } = await this.resolveRoleForItem(id, req.user.id);
+    return this.items.duplicateItem(id, role, req.user.id);
+  }
 }

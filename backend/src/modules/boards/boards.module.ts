@@ -173,7 +173,7 @@ export class BoardsService {
     return rows[0];
   }
 
-  async renameColumn(boardId: string, colId: string, userId: string, dto: { name?: string; settings?: any }) {
+  async renameColumn(boardId: string, colId: string, userId: string, dto: { name?: string; type?: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
     if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可修改列设置');
     // P1-2 列权限互斥：限制查看与限制编辑不能同时生效（否则没人能编辑）
@@ -185,14 +185,40 @@ export class BoardsService {
       if (editLocked && viewLocked) throw new ForbiddenException('限制查看与限制编辑互斥，请二选一');
       dto = { ...dto, settings: s };
     }
+    // 列类型变更校验
+    if (dto.type && !['text', 'status', 'people', 'date', 'number', 'checkbox', 'dropdown', 'formula', 'mirror', 'dependency', 'attachment', 'rating', 'tags', 'longtext'].includes(dto.type)) throw new Error('BAD_TYPE');
+    if (dto.type === 'formula' && dto.settings?.formula !== undefined) {
+      if (typeof dto.settings.formula !== 'string' || !dto.settings.formula.trim()) throw new Error('BAD_FORMULA');
+      if (!validateFormula(dto.settings.formula)) throw new Error('BAD_FORMULA');
+    }
     const { rows } = await this.pg.query(
       `UPDATE board_columns SET
          name = COALESCE($3, name),
-         settings = COALESCE($4::jsonb, settings)
+         type = COALESCE($4, type),
+         settings = COALESCE($5::jsonb, settings)
        WHERE id = $2 AND board_id = $1 RETURNING *`,
-      [boardId, colId, dto.name ?? null, dto.settings ? JSON.stringify(dto.settings) : null]);
+      [boardId, colId, dto.name ?? null, dto.type ?? null, dto.settings ? JSON.stringify(dto.settings) : null]);
     if (!rows.length) throw new Error('NOT_FOUND');
     return rows[0];
+  }
+
+  async duplicateColumn(boardId: string, colId: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可复制列');
+    const col = (await this.pg.query(`SELECT * FROM board_columns WHERE id = $1 AND board_id = $2`, [colId, boardId])).rows[0];
+    if (!col) throw new Error('NOT_FOUND');
+    const maxPos = (await this.pg.query(`SELECT COALESCE(MAX(position), 0) AS m FROM board_columns WHERE board_id = $1`, [boardId])).rows[0].m;
+    const newCol = (await this.pg.query(
+      `INSERT INTO board_columns (board_id, type, name, settings, position) VALUES ($1, $2, $3, $4::jsonb, $5) RETURNING *`,
+      [boardId, col.type, col.name + ' (副本)', JSON.stringify(col.settings ?? {}), maxPos + 100],
+    )).rows[0];
+    // 复制列值
+    await this.pg.query(
+      `INSERT INTO item_values (item_id, column_id, board_id, value)
+       SELECT iv.item_id, $2, iv.board_id, iv.value FROM item_values iv WHERE iv.column_id = $1`,
+      [colId, newCol.id],
+    );
+    return newCol;
   }
 
   async deleteColumn(boardId: string, colId: string, userId: string) {
@@ -232,6 +258,32 @@ export class BoardsService {
     await this.pg.query(`UPDATE items SET group_id = NULL WHERE group_id = $1`, [gid]);
     await this.pg.query(`DELETE FROM board_groups WHERE id = $1 AND board_id = $2`, [gid, boardId]);
     return { deleted: true };
+  }
+
+  async duplicateGroup(boardId: string, gid: string, userId: string) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可复制分组');
+    const grp = (await this.pg.query(`SELECT * FROM board_groups WHERE id = $1 AND board_id = $2`, [gid, boardId])).rows[0];
+    if (!grp) throw new Error('NOT_FOUND');
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM board_groups WHERE board_id = $1`, [boardId])).rows[0].p;
+    const newGrp = (await this.pg.query(
+      `INSERT INTO board_groups (board_id, name, color, position) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [boardId, grp.name + ' (副本)', grp.color, pos])).rows[0];
+    // 复制分组内的条目
+    const items = (await this.pg.query(`SELECT * FROM items WHERE group_id = $1 AND board_id = $2 ORDER BY position`, [gid, boardId])).rows;
+    for (const it of items) {
+      const newItem = (await this.pg.query(
+        `INSERT INTO items (board_id, group_id, name, position) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [boardId, newGrp.id, it.name, it.position])).rows[0];
+      // 复制条目值
+      const vals = (await this.pg.query(`SELECT * FROM item_values WHERE item_id = $1`, [it.id])).rows;
+      for (const v of vals) {
+        await this.pg.query(
+          `INSERT INTO item_values (item_id, column_id, board_id, value) VALUES ($1,$2,$3,$4::jsonb)`,
+          [newItem.id, v.column_id, boardId, JSON.stringify(v.value ?? null)]);
+      }
+    }
+    return newGrp;
   }
 
   /** —— 成员与权限 —— */
@@ -400,8 +452,11 @@ export class BoardsController {
   @Post(':id/columns') addColumn(@Req() req, @Param('id') id: string, @Body() b: { name: string; type: string; settings?: any }) {
     return this.svc.addColumn(id, req.user.id, b);
   }
-  @Patch(':id/columns/:colId') renameColumn(@Req() req, @Param('id') id: string, @Param('colId') colId: string, @Body() b: { name?: string; settings?: any }) {
+  @Patch(':id/columns/:colId') renameColumn(@Req() req, @Param('id') id: string, @Param('colId') colId: string, @Body() b: { name?: string; type?: string; settings?: any }) {
     return this.svc.renameColumn(id, colId, req.user.id, b);
+  }
+  @Post(':id/columns/:colId/duplicate') duplicateColumn(@Req() req, @Param('id') id: string, @Param('colId') colId: string) {
+    return this.svc.duplicateColumn(id, colId, req.user.id);
   }
   @Delete(':id/columns/:colId') deleteColumn(@Req() req, @Param('id') id: string, @Param('colId') colId: string) {
     return this.svc.deleteColumn(id, colId, req.user.id);
@@ -414,6 +469,9 @@ export class BoardsController {
   }
   @Delete(':id/groups/:gid') deleteGroup(@Req() req, @Param('id') id: string, @Param('gid') gid: string) {
     return this.svc.deleteGroup(id, gid, req.user.id);
+  }
+  @Post(':id/groups/:gid/duplicate') duplicateGroup(@Req() req, @Param('id') id: string, @Param('gid') gid: string) {
+    return this.svc.duplicateGroup(id, gid, req.user.id);
   }
   @Get(':id/members') listMembers(@Req() req, @Param('id') id: string) {
     return this.svc.listMembers(id, req.user.id);

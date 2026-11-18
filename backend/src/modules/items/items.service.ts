@@ -239,6 +239,27 @@ export class ItemsService {
     return { moved: itemIds.length };
   }
 
+  async duplicateItem(itemId: string, userRole: BoardRole | null, userId: string) {
+    if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
+    const item = (await this.pg.query(`SELECT * FROM items WHERE id = $1 AND deleted_at IS NULL`, [itemId])).rows[0];
+    if (!item) throw new Error('NOT_FOUND');
+    const newItem = (await this.pg.query(
+      `INSERT INTO items (board_id, group_id, name, position) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [item.board_id, item.group_id, item.name + ' (副本)', item.position + 0.5],
+    )).rows[0];
+    // 复制条目值
+    const vals = (await this.pg.query(`SELECT * FROM item_values WHERE item_id = $1`, [itemId])).rows;
+    for (const v of vals) {
+      await this.pg.query(
+        `INSERT INTO item_values (item_id, column_id, board_id, value) VALUES ($1,$2,$3,$4::jsonb)`,
+        [newItem.id, v.column_id, item.board_id, JSON.stringify(v.value ?? null)]);
+    }
+    await this.pg.query(
+      `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'item.duplicate',$2,'ui')`,
+      [userId, newItem.id]);
+    return newItem;
+  }
+
   /** 批量编辑（P0 刚需）：一次事务内批量 upsert 列值；P1-2 补列权限校验（原漏洞：批量绕过列限制） */
   async batchUpdate(
     changes: { itemId: string; columnId: string; value: unknown }[],

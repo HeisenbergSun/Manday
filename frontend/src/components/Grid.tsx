@@ -17,6 +17,28 @@ export type GridColumn = { id: string; name: string; type: string; settings: any
 
 const LABEL_W = 260;
 
+// ── 列类型定义（菜单/内联建列共用） ──
+const COL_TYPES = [
+  { value: 'text', label: '文本' },
+  { value: 'status', label: '状态' },
+  { value: 'people', label: '人员' },
+  { value: 'date', label: '日期' },
+  { value: 'number', label: '数字' },
+  { value: 'checkbox', label: '勾选' },
+  { value: 'formula', label: '公式' },
+  { value: 'mirror', label: '镜像' },
+  { value: 'dependency', label: '前置任务' },
+  { value: 'attachment', label: '附件' },
+  { value: 'rating', label: '星级' },
+  { value: 'tags', label: '标签' },
+  { value: 'longtext', label: '长文本' },
+];
+const COL_TYPE_LABELS: Record<string, string> = Object.fromEntries(COL_TYPES.map((t) => [t.value, t.label]));
+const menuBtnStyle: React.CSSProperties = {
+  display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px',
+  border: 'none', background: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12,
+};
+
 // ── 第二十三批：筛选 / 列状态 / 汇总 类型 ──
 export type FilterOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals' | 'gt' | 'lt' | 'gte' | 'lte' | 'empty' | 'not_empty';
 export type FilterCondition = { id: string; columnId: string; operator: FilterOperator; value: string };
@@ -48,9 +70,22 @@ type Props = {
   sortDir?: 'asc' | 'desc';
   onSortChange?: (field: string) => void;
   groups?: { id: string; name: string; color?: string | null }[];
+  boardId?: string;
+  onAddColumn?: (name: string, type: string, settings?: any) => Promise<void>;
+  onRenameColumn?: (colId: string, name: string) => Promise<void>;
+  onChangeColumnType?: (colId: string, type: string, settings?: any) => Promise<void>;
+  onDeleteColumn?: (colId: string) => Promise<void>;
+  onDuplicateColumn?: (colId: string) => Promise<void>;
+  onRenameGroup?: (gid: string, name: string) => Promise<void>;
+  onAddGroup?: (name: string) => Promise<void>;
+  onDeleteGroup?: (gid: string) => Promise<void>;
+  onDuplicateGroup?: (gid: string) => Promise<void>;
+  onDuplicateItem?: (itemId: string) => Promise<void>;
+  onDeleteItem?: (itemId: string) => Promise<void>;
+  onMoveItem?: (itemId: string, groupId: string | null) => Promise<void>;
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -78,6 +113,26 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   // ── 分组折叠 ──
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
+  // ── 列头菜单增强（改名/改类型/删除/复制） ──
+  const [renamingCol, setRenamingCol] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [changingTypeCol, setChangingTypeCol] = useState<string | null>(null);
+
+  // ── 内联建列 ──
+  const [addingCol, setAddingCol] = useState(false);
+  const [newColNameDraft, setNewColNameDraft] = useState('');
+  const [newColTypeDraft, setNewColTypeDraft] = useState('text');
+
+  // ── 分组头增强 ──
+  const [groupMenuFor, setGroupMenuFor] = useState<string | null>(null);
+  const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
+  const [groupRenameDraft, setGroupRenameDraft] = useState('');
+  const [addingGroup, setAddingGroup] = useState(false);
+  const [newGroupNameDraft, setNewGroupNameDraft] = useState('');
+
+  // ── 行菜单 ──
+  const [rowMenuFor, setRowMenuFor] = useState<string | null>(null);
+
   useEffect(() => { setLocalOrder(null); setItemsVersion((v) => v + 1); }, [rows]);
   useEffect(() => { onSelectionChange?.(selected); }, [selected]);
 
@@ -91,6 +146,28 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     setTimeout(() => window.addEventListener('click', close), 0);
     return () => window.removeEventListener('click', close);
   }, [colMenuFor]);
+
+  // 分组菜单外部点击关闭
+  useEffect(() => {
+    if (!groupMenuFor) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('[data-group-menu]') && !t.closest('[data-group-menu-trigger]')) setGroupMenuFor(null);
+    };
+    setTimeout(() => window.addEventListener('click', close), 0);
+    return () => window.removeEventListener('click', close);
+  }, [groupMenuFor]);
+
+  // 行菜单外部点击关闭
+  useEffect(() => {
+    if (!rowMenuFor) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('[data-row-menu]') && !t.closest('[data-row-menu-trigger]')) setRowMenuFor(null);
+    };
+    setTimeout(() => window.addEventListener('click', close), 0);
+    return () => window.removeEventListener('click', close);
+  }, [rowMenuFor]);
 
   // 列宽拖拽（始终挂载，内部检查 ref）
   useEffect(() => {
@@ -301,6 +378,41 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     setCollapsedGroups((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
   };
   const isGroupCollapsed = (gid: string | null) => collapsedGroups.has(gid ?? '__none__');
+
+  // ── 列操作 ──
+  const startRenameCol = (colId: string, curName: string) => {
+    setRenamingCol(colId); setRenameDraft(curName);
+  };
+  const commitRenameCol = async () => {
+    const id = renamingCol; const name = renameDraft.trim();
+    setRenamingCol(null);
+    if (id && name && onRenameColumn) await onRenameColumn(id, name);
+  };
+  const startChangeType = (colId: string) => {
+    setChangingTypeCol(colId);
+  };
+  const commitChangeType = async (colId: string, newType: string) => {
+    setChangingTypeCol(null);
+    if (onChangeColumnType) {
+      const settings = newType === 'formula' ? { formula: prompt('输入公式（如 {数字} * 2）') ?? '' } : undefined;
+      await onChangeColumnType(colId, newType, settings);
+    }
+  };
+  const handleAddColumn = async () => {
+    const name = newColNameDraft.trim();
+    if (!name || !onAddColumn) { setAddingCol(false); return; }
+    await onAddColumn(name, newColTypeDraft);
+    setNewColNameDraft(''); setNewColTypeDraft('text'); setAddingCol(false);
+  };
+  const handleDeleteCol = async (colId: string, colName: string) => {
+    setColMenuFor(null);
+    if (!confirm(`删除列「${colName}」？该列所有数据会一并删除，不可恢复。`)) return;
+    if (onDeleteColumn) await onDeleteColumn(colId);
+  };
+  const handleDuplicateCol = async (colId: string) => {
+    setColMenuFor(null);
+    if (onDuplicateColumn) await onDuplicateColumn(colId);
+  };
 
   const startEdit = (rowId: string, field: string, current: string) => {
     if (!editable) return;
@@ -637,30 +749,111 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                     resizeColRef.current = { id: c.id, startX: e.clientX, startW: th.offsetWidth || 220 };
                   }}
                   style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize' }} />
-                {/* 列右键菜单 */}
+                {/* 列右键菜单 — Monday.com 风格完整菜单 */}
                 {colMenuFor === c.id && (
                   <div data-col-menu style={{ position: 'absolute', top: '100%', right: 0, background: '#fff', borderRadius: 8,
-                    boxShadow: '0 6px 20px rgba(0,0,0,.12)', padding: 6, zIndex: 10, minWidth: 160, fontSize: 12 }}
+                    boxShadow: '0 6px 20px rgba(0,0,0,.12)', padding: 6, zIndex: 10, minWidth: 200, fontSize: 12 }}
                     onClick={(e) => e.stopPropagation()}>
-                    <button data-col-freeze onClick={() => toggleColumnFrozen(c.id)}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12 }}>
-                      {columnStates[c.id]?.frozen ? '取消冻结' : '📌 冻结列'}
+                    {/* 排序 */}
+                    <button data-col-sort onClick={() => { onSortChange?.(c.id); setColMenuFor(null); }}
+                      style={menuBtnStyle}>
+                      ↕ 按此列排序{sortBy === c.id ? (sortDir === 'desc' ? '（降序）' : '（升序）') : ''}
+                    </button>
+                    {/* 按此列筛选 */}
+                    <button data-col-filter onClick={() => {
+                      setFilterBarOpen(true);
+                      if (!filters.some((f) => f.columnId === c.id)) {
+                        setFilters((f) => [...f, { id: newFilterId(), columnId: c.id, operator: 'contains', value: '' }]);
+                      }
+                      setColMenuFor(null);
+                    }} style={menuBtnStyle}>
+                      🔍 按此列筛选
+                    </button>
+                    <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
+                    {/* 改名 */}
+                    {renamingCol === c.id ? (
+                      <div style={{ padding: '4px 10px' }}>
+                        <input autoFocus value={renameDraft} onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') commitRenameCol(); if (e.key === 'Escape') setRenamingCol(null); }}
+                          onBlur={commitRenameCol}
+                          style={{ width: '100%', padding: '4px 6px', borderRadius: 6, border: '2px solid #4f6ef7', fontSize: 12, boxSizing: 'border-box' }} />
+                      </div>
+                    ) : (
+                      <button data-col-rename onClick={() => startRenameCol(c.id, c.name)} style={menuBtnStyle}>
+                        ✏️ 重命名列
+                      </button>
+                    )}
+                    {/* 改类型 */}
+                    {changingTypeCol === c.id ? (
+                      <div style={{ padding: '4px 10px' }}>
+                        <select autoFocus value="" onChange={(e) => { if (e.target.value) commitChangeType(c.id, e.target.value); }}
+                          onBlur={() => setChangingTypeCol(null)}
+                          style={{ width: '100%', padding: '4px 6px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12, boxSizing: 'border-box' }}>
+                          <option value="">选择新类型…</option>
+                          {COL_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                      </div>
+                    ) : (
+                      <button data-col-changetype onClick={() => startChangeType(c.id)} style={menuBtnStyle}>
+                        🔄 更改列类型（当前：{COL_TYPE_LABELS[c.type] ?? c.type}）
+                      </button>
+                    )}
+                    {/* 复制列 */}
+                    <button data-col-duplicate onClick={() => handleDuplicateCol(c.id)} style={menuBtnStyle}>
+                      📋 复制列
+                    </button>
+                    <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
+                    {/* 冻结/隐藏 */}
+                    <button data-col-freeze onClick={() => toggleColumnFrozen(c.id)} style={menuBtnStyle}>
+                      {columnStates[c.id]?.frozen ? '📌 取消冻结' : '📌 冻结列'}
                     </button>
                     <button data-col-hide onClick={() => toggleColumnHidden(c.id)}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#e2445c' }}>
+                      style={{ ...menuBtnStyle, color: '#e2445c' }}>
                       隐藏列
                     </button>
                     {columnStates[c.id]?.width && (
-                      <button onClick={() => resetColumnWidth(c.id)}
-                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12 }}>
+                      <button onClick={() => resetColumnWidth(c.id)} style={menuBtnStyle}>
                         重置列宽
                       </button>
+                    )}
+                    {/* 删除列 */}
+                    {isOwner && (
+                      <>
+                        <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
+                        <button data-col-delete onClick={() => handleDeleteCol(c.id, c.name)}
+                          style={{ ...menuBtnStyle, color: '#e2445c' }}>
+                          🗑 删除列
+                        </button>
+                      </>
                     )}
                   </div>
                 )}
               </th>
             ))}
-            <th style={{ ...thStyle, width: 60 }}></th>
+            {/* 内联新建列按钮 */}
+            <th style={{ ...thStyle, width: 100, textAlign: 'center' }}>
+              {isOwner && onAddColumn && (
+                addingCol ? (
+                  <div data-addcol-inline style={{ display: 'flex', gap: 3, alignItems: 'center', justifyContent: 'center' }}>
+                    <input autoFocus value={newColNameDraft} onChange={(e) => setNewColNameDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddColumn(); if (e.key === 'Escape') setAddingCol(false); }}
+                      onBlur={() => { if (!newColNameDraft.trim()) setAddingCol(false); }}
+                      placeholder="列名" style={{ width: 60, padding: '3px 4px', borderRadius: 4, border: '1px solid #4f6ef7', fontSize: 11 }} />
+                    <select value={newColTypeDraft} onChange={(e) => setNewColTypeDraft(e.target.value)}
+                      style={{ padding: '3px 2px', borderRadius: 4, border: '1px solid #e6e8ef', fontSize: 11 }}>
+                      {COL_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                    <button data-addcol-confirm onClick={handleAddColumn} disabled={!newColNameDraft.trim()}
+                      style={{ padding: '2px 6px', borderRadius: 4, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 11 }}>✓</button>
+                  </div>
+                ) : (
+                  <button data-addcol-trigger onClick={() => setAddingCol(true)}
+                    title="添加新列"
+                    style={{ border: '1px dashed #b5bac8', background: '#f6f7fb', color: '#7a7f8c',
+                      cursor: 'pointer', fontSize: 16, borderRadius: 6, padding: '2px 12px', lineHeight: 1 }}>＋</button>
+                )
+              )}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -685,13 +878,37 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 out.push(<tr key={'band:' + (gid ?? 'none')} data-group-band={gid ?? ''}
                   style={{ background: `${bandColor}14`, cursor: 'pointer' }}
                   onClick={() => toggleGroupCollapse(gid)}>
-                  <td colSpan={visibleColumns.length + 4} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, color: '#5a6072' }}>
+                  <td colSpan={visibleColumns.length + 5} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, color: '#5a6072', position: 'relative' }}>
                     <span style={{ display: 'inline-block', marginRight: 5, fontSize: 10 }}>{collapsed ? '▶' : '▼'}</span>
                     <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: bandColor, marginRight: 7 }} />
-                    {g?.name ?? '未分组'}
+                    {renamingGroup === gid ? (
+                      <input autoFocus value={groupRenameDraft}
+                        onChange={(e) => setGroupRenameDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { if (gid && onRenameGroup && groupRenameDraft.trim()) { onRenameGroup(gid, groupRenameDraft.trim()); } setRenamingGroup(null); } if (e.key === 'Escape') setRenamingGroup(null); }}
+                        onBlur={() => { if (gid && onRenameGroup && groupRenameDraft.trim()) onRenameGroup(gid, groupRenameDraft.trim()); setRenamingGroup(null); }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ fontSize: 12, fontWeight: 600, padding: '2px 6px', borderRadius: 4, border: '2px solid #4f6ef7', color: '#333' }} />
+                    ) : (
+                      <span data-group-name={gid ?? ''} onDoubleClick={(e) => { e.stopPropagation(); if (gid && isOwner && onRenameGroup) { setRenamingGroup(gid); setGroupRenameDraft(g?.name ?? ''); } }}>{g?.name ?? '未分组'}</span>
+                    )}
                     {!collapsed && <span style={{ marginLeft: 8, fontSize: 11, color: '#a0a4b1', fontWeight: 400 }}>
                       ({sortedRows.filter((r) => (r.group_id ?? null) === gid).length})
                     </span>}
+                    {isOwner && gid && (
+                      <span data-group-menu-trigger onClick={(e) => { e.stopPropagation(); setGroupMenuFor(groupMenuFor === gid ? null : gid); }}
+                        style={{ cursor: 'pointer', marginLeft: 8, fontSize: 10, color: '#a0a4b1', padding: '1px 4px', borderRadius: 3 }}>▾</span>
+                    )}
+                    {groupMenuFor === gid && (
+                      <div data-group-menu style={{ position: 'absolute', top: '100%', left: 14, background: '#fff', borderRadius: 8,
+                        boxShadow: '0 6px 20px rgba(0,0,0,.12)', padding: 6, zIndex: 20, minWidth: 180, fontSize: 12 }}
+                        onClick={(e) => e.stopPropagation()}>
+                        <button data-group-rename onClick={() => { setRenamingGroup(gid); setGroupRenameDraft(g?.name ?? ''); setGroupMenuFor(null); }} style={menuBtnStyle}>✏️ 重命名分组</button>
+                        <button data-group-duplicate onClick={() => { if (gid && onDuplicateGroup) onDuplicateGroup(gid); setGroupMenuFor(null); }} style={menuBtnStyle}>📋 复制分组</button>
+                        <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
+                        <button data-group-delete onClick={() => { if (gid && confirm(`删除分组「${g?.name}」？分组内条目将移至未分组。`)) { if (onDeleteGroup) onDeleteGroup(gid); } setGroupMenuFor(null); }}
+                          style={{ ...menuBtnStyle, color: '#e2445c' }}>🗑 删除分组</button>
+                      </div>
+                    )}
                   </td>
                 </tr>);
               }
@@ -723,6 +940,27 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                   onDragEnd={() => { dragId.current = null; setOverId(null); }}
                   title="拖拽排序"
                   style={{ cursor: 'grab', color: '#b5bac8', userSelect: 'none', fontSize: 14 }}>⠿</span>
+                {editable && (
+                  <span data-row-menu-trigger onClick={(e) => { e.stopPropagation(); setRowMenuFor(rowMenuFor === row.id ? null : row.id); }}
+                    style={{ cursor: 'pointer', marginLeft: 2, fontSize: 10, color: '#b5bac8' }}>▾</span>
+                )}
+                {rowMenuFor === row.id && (
+                  <div data-row-menu style={{ position: 'absolute', zIndex: 30, background: '#fff', borderRadius: 8,
+                    boxShadow: '0 6px 20px rgba(0,0,0,.12)', padding: 6, minWidth: 170, fontSize: 12 }}
+                    onClick={(e) => e.stopPropagation()}>
+                    {onDuplicateItem && <button data-row-duplicate onClick={() => { onDuplicateItem(row.id); setRowMenuFor(null); }} style={menuBtnStyle}>📋 复制行</button>}
+                    {onMoveItem && groups?.length ? (
+                      <>
+                        <div style={{ padding: '3px 10px', color: '#a0a4b1', fontSize: 11 }}>移动到分组：</div>
+                        {groups.map((g) => (
+                          <button key={g.id} data-row-move={g.id} onClick={() => { onMoveItem(row.id, g.id); setRowMenuFor(null); }} style={menuBtnStyle}>{g.name}</button>
+                        ))}
+                        <button data-row-move="" onClick={() => { onMoveItem(row.id, null); setRowMenuFor(null); }} style={menuBtnStyle}>未分组</button>
+                      </>
+                    ) : null}
+                    {onDeleteItem && <><div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} /><button data-row-delete onClick={() => { if (confirm(`删除「${row.name}」？可从回收站恢复。`)) onDeleteItem(row.id); setRowMenuFor(null); }} style={{ ...menuBtnStyle, color: '#e2445c' }}>🗑 删除行</button></>}
+                  </div>
+                )}
               </td>
               <td style={{ ...tdStyle, fontWeight: 500 }} data-col="name" data-grid-cell={row.id}
                 onDoubleClick={() => startEdit(row.id, 'name', row.name)}>
@@ -751,7 +989,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
             return out;
           })()}
           {sortedRows.length === 0 && (
-            <tr><td colSpan={visibleColumns.length + 4} style={{ padding: 40, color: '#7a7f8c', fontSize: 14, textAlign: 'center' }}>
+            <tr><td colSpan={visibleColumns.length + 5} style={{ padding: 40, color: '#7a7f8c', fontSize: 14, textAlign: 'center' }}>
               {filters.length > 0 ? '没有匹配筛选条件的行——调整筛选或清除条件' : '还没有条目——点「＋ 新建条目」开始（快捷键：↑↓ 导航 · Enter 打开 · Space 勾选 · Esc 清除）'}
             </td></tr>
           )}
@@ -776,10 +1014,31 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 );
               })}
               <td style={tdStyle}></td>
+              <td style={{ ...tdStyle, width: 100 }}></td>
             </tr>
           </tfoot>
         )}
       </table>
+      {/* ── 新建分组 ── */}
+      {isOwner && onAddGroup && !!groups?.length && (
+        <div style={{ marginTop: 8, padding: '0 14px' }}>
+          {addingGroup ? (
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <input autoFocus value={newGroupNameDraft} onChange={(e) => setNewGroupNameDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && newGroupNameDraft.trim()) { onAddGroup(newGroupNameDraft.trim()); setNewGroupNameDraft(''); setAddingGroup(false); } if (e.key === 'Escape') setAddingGroup(false); }}
+                onBlur={() => { if (!newGroupNameDraft.trim()) setAddingGroup(false); }}
+                placeholder="新分组名称" style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid #4f6ef7', fontSize: 12 }} />
+              <button data-addgroup-confirm onClick={() => { if (newGroupNameDraft.trim()) { onAddGroup(newGroupNameDraft.trim()); setNewGroupNameDraft(''); setAddingGroup(false); } }}
+                style={{ padding: '3px 10px', borderRadius: 4, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 12 }}>✓ 添加</button>
+            </span>
+          ) : (
+            <button data-addgroup-trigger onClick={() => setAddingGroup(true)}
+              style={{ border: '1px dashed #b5bac8', background: '#f6f7fb', color: '#7a7f8c', borderRadius: 6, padding: '4px 14px', cursor: 'pointer', fontSize: 12 }}>
+              + 新建分组
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

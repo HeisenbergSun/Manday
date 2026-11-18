@@ -68,6 +68,10 @@ export const api = {
     request(`/boards/${boardId}/columns/${colId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   updateColumnSettings: (boardId: string, colId: string, settings: unknown) =>
     request(`/boards/${boardId}/columns/${colId}`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
+  changeColumnType: (boardId: string, colId: string, type: string, settings?: any) =>
+    request(`/boards/${boardId}/columns/${colId}`, { method: 'PATCH', body: JSON.stringify({ type, settings }) }),
+  duplicateColumn: (boardId: string, colId: string) =>
+    request(`/boards/${boardId}/columns/${colId}/duplicate`, { method: 'POST' }),
   deleteColumn: (boardId: string, colId: string) =>
     request(`/boards/${boardId}/columns/${colId}`, { method: 'DELETE' }),
   addGroup: (boardId: string, name: string) =>
@@ -76,6 +80,8 @@ export const api = {
     request(`/boards/${boardId}/groups/${gid}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteGroup: (boardId: string, gid: string) =>
     request(`/boards/${boardId}/groups/${gid}`, { method: 'DELETE' }),
+  duplicateGroup: (boardId: string, gid: string) =>
+    request(`/boards/${boardId}/groups/${gid}/duplicate`, { method: 'POST' }),
   // 视图（P1-3）
   listViews: (boardId: string) => request(`/boards/${boardId}/views`),
   // 附件（P3-2）：multipart 上传不走 JSON request
@@ -135,6 +141,8 @@ export const api = {
     request('/items/batch', { method: 'POST', body: JSON.stringify({ changes }) }),
   softDelete: (itemIds: string[]) =>
     request('/items/soft-delete', { method: 'POST', body: JSON.stringify({ itemIds }) }),
+  duplicateItem: (itemId: string) =>
+    request(`/items/${itemId}/duplicate`, { method: 'POST' }),
   importExcel: (boardId: string, formData: FormData) =>
     fetch(`${BASE}/boards/${boardId}/import`, {
       method: 'POST', body: formData, credentials: 'include', headers: authHeaders(),
