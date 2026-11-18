@@ -1,7 +1,7 @@
 /**
  * Boards 服务 — Board/Group/Column CRUD + 可见性过滤 + 回收站
  */
-import { Injectable, Controller, Get, Post, Patch, Put, Delete, Body, Param, Req, Module, ForbiddenException } from '@nestjs/common';
+import { Injectable, Controller, Get, Post, Patch, Put, Delete, Body, Param, Req, Module, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { can, canEditStructure } from './acl';
 import { applyViewPermission } from '../items/items.service';
@@ -146,14 +146,14 @@ export class BoardsService {
   async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
     if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加列');
-    if (!['text', 'status', 'people', 'date', 'number', 'checkbox', 'dropdown', 'formula', 'mirror', 'dependency', 'attachment', 'rating', 'tags', 'longtext'].includes(dto.type)) throw new Error('BAD_TYPE');
-    if (dto.type === 'formula' && !(typeof dto.settings?.formula === 'string' && dto.settings.formula.trim())) throw new Error('BAD_FORMULA');
+    if (!['text', 'status', 'people', 'date', 'number', 'checkbox', 'dropdown', 'formula', 'mirror', 'dependency', 'attachment', 'rating', 'tags', 'longtext'].includes(dto.type)) throw new BadRequestException('BAD_TYPE');
+    if (dto.type === 'formula' && !(typeof dto.settings?.formula === 'string' && dto.settings.formula.trim())) throw new BadRequestException('BAD_FORMULA');
     if (dto.type === 'formula') {
       // 语法预检（引用值缺失不算错）
-      if (!validateFormula(dto.settings.formula)) throw new Error('BAD_FORMULA');
+      if (!validateFormula(dto.settings.formula)) throw new BadRequestException('BAD_FORMULA');
     }
     if (dto.type === 'mirror') {
-      if (!dto.settings?.connectBoardId) throw new Error('BAD_MIRROR'); // 需指定连接的看板
+      if (!dto.settings?.connectBoardId) throw new BadRequestException('BAD_MIRROR'); // 需指定连接的看板
       const srcRole = await this.resolveRole(String(dto.settings.connectBoardId), userId);
       if (!can(srcRole, 'read')) throw new ForbiddenException('对被连接看板无查看权限');
     }
@@ -186,10 +186,10 @@ export class BoardsService {
       dto = { ...dto, settings: s };
     }
     // 列类型变更校验
-    if (dto.type && !['text', 'status', 'people', 'date', 'number', 'checkbox', 'dropdown', 'formula', 'mirror', 'dependency', 'attachment', 'rating', 'tags', 'longtext'].includes(dto.type)) throw new Error('BAD_TYPE');
+    if (dto.type && !['text', 'status', 'people', 'date', 'number', 'checkbox', 'dropdown', 'formula', 'mirror', 'dependency', 'attachment', 'rating', 'tags', 'longtext'].includes(dto.type)) throw new BadRequestException('BAD_TYPE');
     if (dto.type === 'formula' && dto.settings?.formula !== undefined) {
-      if (typeof dto.settings.formula !== 'string' || !dto.settings.formula.trim()) throw new Error('BAD_FORMULA');
-      if (!validateFormula(dto.settings.formula)) throw new Error('BAD_FORMULA');
+      if (typeof dto.settings.formula !== 'string' || !dto.settings.formula.trim()) throw new BadRequestException('BAD_FORMULA');
+      if (!validateFormula(dto.settings.formula)) throw new BadRequestException('BAD_FORMULA');
     }
     const { rows } = await this.pg.query(
       `UPDATE board_columns SET
@@ -198,7 +198,7 @@ export class BoardsService {
          settings = COALESCE($5::jsonb, settings)
        WHERE id = $2 AND board_id = $1 RETURNING *`,
       [boardId, colId, dto.name ?? null, dto.type ?? null, dto.settings ? JSON.stringify(dto.settings) : null]);
-    if (!rows.length) throw new Error('NOT_FOUND');
+    if (!rows.length) throw new NotFoundException('NOT_FOUND');
     return rows[0];
   }
 
@@ -248,7 +248,7 @@ export class BoardsService {
       `UPDATE board_groups SET name = COALESCE($3, name), color = COALESCE($4, color)
        WHERE id = $2 AND board_id = $1 RETURNING *`,
       [boardId, gid, dto.name ?? null, dto.color ?? null]);
-    if (!rows.length) throw new Error('NOT_FOUND');
+    if (!rows.length) throw new NotFoundException('NOT_FOUND');
     return rows[0];
   }
 
