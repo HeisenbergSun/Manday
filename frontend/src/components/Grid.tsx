@@ -54,6 +54,83 @@ function scalar(v: unknown): string {
   return String(v);
 }
 
+/** 通用下拉选择器（单击编辑用）：绝对定位面板，点选项即提交，点外部关闭。
+ *  原生 <select> 在单击编辑模式下会因 autoFocus+onBlur+onChange 竞争而错乱，且无法回显不在选项中的值。 */
+function ChipDropdown({ value, options, onPick, onClose, colorOf, placeholder }: {
+  value: string;
+  options: { value: string; label: string; hint?: string }[];
+  onPick: (v: string) => void;
+  onClose: () => void;
+  colorOf?: (o: { value: string; label: string; hint?: string }) => string | null;
+  placeholder?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (ref.current && !ref.current.contains(t)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const id = setTimeout(() => document.addEventListener('mousedown', close), 0);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+  // 若当前值不在选项里，补一个「当前值」项保证回显
+  const extra = value && !options.some((o) => o.value === value);
+  return (
+    <div ref={ref} data-grid-editor data-chip-dropdown style={{
+      position: 'absolute', zIndex: 45, top: '100%', left: 0, minWidth: 160, maxWidth: 260,
+      maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 10,
+      boxShadow: '0 8px 28px rgba(20,30,70,.2)', padding: 6, border: '1px solid #e6e8ef',
+    }}>
+      <div data-chip-opt="" onClick={() => onPick('')}
+        style={{ padding: '6px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', color: '#a0a4b1' }}>
+        {placeholder ?? '— 清空 —'}
+      </div>
+      {extra && (
+        <div data-chip-opt={value} onClick={() => onPick(value)}
+          style={{ padding: '6px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', background: '#eef1fe', color: '#4f6ef7' }}>
+          {value} <span style={{ fontSize: 10, color: '#a0a4b1' }}>（当前值）</span>
+        </div>
+      )}
+      {options.map((o) => {
+        const c = colorOf?.(o) ?? null;
+        return (
+          <div key={o.value} data-chip-opt={o.value} onClick={() => onPick(o.value)}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 7,
+              fontSize: 12, cursor: 'pointer', background: o.value === value ? '#eef1fe' : 'transparent' }}>
+            {c && <span style={{ width: 10, height: 10, borderRadius: '50%', background: c, flexShrink: 0 }} />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+            {o.hint && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#a0a4b1' }}>{o.hint}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 稳定字符串哈希（给人名分配固定颜色） */
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+/** 全公司用户列表（懒加载一次），用于 people 列选项与显示 */
+function useCompanyUsers() {
+  const [users, setUsers] = useState<{ id: string; name: string; email?: string }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api.listUsers().then((u: any) => { if (alive) setUsers(Array.isArray(u) ? u : []); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return users;
+}
+
 let filterIdCounter = 0;
 function newFilterId() { return `f${++filterIdCounter}`; }
 
@@ -132,6 +209,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
   // ── 行菜单 ──
   const [rowMenuFor, setRowMenuFor] = useState<string | null>(null);
+
+  // ── people 列真实用户列表（选项/显示用）──
+  const companyUsers = useCompanyUsers();
 
   useEffect(() => { setLocalOrder(null); setItemsVersion((v) => v + 1); }, [rows]);
   useEffect(() => { onSelectionChange?.(selected); }, [selected]);
@@ -486,11 +566,12 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
     if (isEditing) {
       if (col.type === 'dependency') {
-        return <DependencyEditor rows={rows.filter((r) => r.id !== row.id)}
-          onCommit={(itemId) => { setEditing(null); onEdit(row, col.id, itemId); }} />;
+        return <DependencyEditor rows={rows.filter((r) => r.id !== row.id)} value={draft}
+          onCommit={(itemId) => { setEditing(null); onEdit(row, col.id, itemId); }} onClose={() => setEditing(null)} />;
       }
       if (col.type === 'mirror') {
-        return <MirrorEditor col={col} onCommit={(itemId) => { setEditing(null); if (itemId) onEdit(row, col.id, itemId); }} />;
+        return <MirrorEditor col={col} value={draft}
+          onCommit={(itemId) => { setEditing(null); if (itemId) onEdit(row, col.id, itemId); }} onClose={() => setEditing(null)} />;
       }
       if (col.type === 'attachment') {
         return <AttachmentEditor rowId={row.id} colId={col.id} onDone={() => { setEditing(null); onEdit(row, '__attachments__', null); }} />;
@@ -501,17 +582,25 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
           style={editorStyle} />;
       }
       if (col.type === 'status' || col.type === 'people' || col.type === 'dropdown') {
-        const opts: { value: string; label: string }[] = col.type === 'status'
+        // 选项来源：status=标签 / people=全公司真实用户 / dropdown=自定义选项
+        const opts: { value: string; label: string; hint?: string }[] = col.type === 'status'
           ? (col.settings?.labels ?? []).filter((l: any) => !(col.settings?.inactiveLabels ?? []).includes(l.label))
               .map((l: any) => ({ value: l.label, label: l.label }))
           : col.type === 'people'
-            ? (col.settings?.members ?? []).map((m: any) => ({ value: m.id, label: m.name }))
+            ? companyUsers.map((u) => ({ value: u.id, label: u.name, hint: u.email }))
             : (col.settings?.options ?? []).map((o: any) => ({ value: o.label, label: o.label }));
-        return <select data-grid-editor autoFocus value={draft} onChange={(e) => { setDraft(e.target.value); setTimeout(commit, 0); }}
-          onBlur={commit} style={editorStyle}>
-          <option value="">—</option>
-          {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>;
+        const colorOf = col.type === 'status'
+          ? (o: { value: string }) => soften((col.settings?.labels ?? []).find((l: any) => l.label === o.value)?.color) ?? '#8a90a3'
+          : col.type === 'people'
+            ? (o: { value: string }) => {
+                const u = companyUsers.find((x) => x.id === o.value);
+                return u ? GROUP_PALETTE[Math.abs(hashStr(u.id)) % GROUP_PALETTE.length] : '#579bfc';
+              }
+            : undefined;
+        const pick = (val: string) => { setDraft(val); setEditing(null); onEdit(row, col.id, val); };
+        return <ChipDropdown value={draft} options={opts} colorOf={colorOf} onPick={pick}
+          onClose={() => setEditing(null)}
+          placeholder={col.type === 'status' ? '— 清除状态 —' : col.type === 'people' ? '— 清除负责人 —' : '— 清空 —'} />;
       }
       if (col.type === 'tags') {
         const opts = col.settings?.options ?? [];
@@ -602,16 +691,24 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: chipColor }} />{v}</span>;
     }
     if (col.type === 'people') {
-      const m = (col.settings?.members ?? []).find((u: any) => u.id === v || u.name === v);
       if (!v) return <span style={{ color: '#c3c8d4' }}>—</span>;
+      // v 可能是用户 ID；优先从真实用户列表解析，兼容旧数据里直接存名字的情况
+      const u = companyUsers.find((x) => x.id === v) ?? companyUsers.find((x) => x.name === v);
+      // 兼容旧 settings.members 假数据（name 匹配）
+      const legacy = (col.settings?.members ?? []).find((m: any) => m.id === v || m.name === v);
+      const name = u?.name ?? legacy?.name ?? v;
+      const color = u ? GROUP_PALETTE[Math.abs(hashStr(u.id)) % GROUP_PALETTE.length]
+        : (legacy?.color ?? '#579bfc');
       return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ width: 20, height: 20, borderRadius: '50%', background: m?.color ?? '#579bfc', color: '#fff',
-          fontSize: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{(m?.name ?? v)[0]}</span>
-        {m?.name ?? v}</span>;
+        <span style={{ width: 20, height: 20, borderRadius: '50%', background: color, color: '#fff',
+          fontSize: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{name[0]}</span>
+        {name}</span>;
     }
-    if (col.type === 'dropdown' && Array.isArray(raw)) {
-      if (!raw.length) return <span style={{ color: '#c3c8d4' }}>—</span>;
-      return <span>{raw.map((r: any, i: number) => <span key={i} style={{ display: 'inline-block', background: '#d0d4e026',
+    if (col.type === 'dropdown') {
+      // 兼容数组（多选）和单值字符串
+      const list = Array.isArray(raw) ? raw : (v ? [v] : []);
+      if (!list.length) return <span style={{ color: '#c3c8d4' }}>—</span>;
+      return <span>{list.map((r: any, i: number) => <span key={i} style={{ display: 'inline-block', background: '#d0d4e026',
         color: '#5a6072', padding: '2px 9px', borderRadius: 5, fontSize: 12, marginRight: 4 }}>{scalar(r)}</span>)}</span>;
     }
     if (col.type === 'rating') {
@@ -979,12 +1076,25 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       style={{ ...editorStyle, width: '95%' }} />
                   : <span style={rowDone(row) ? { textDecoration: 'line-through', color: UI.textFaint } : undefined}>{row.name}</span>}
               </td>
-              {visibleColumns.map((c) => (
-                <td key={c.id} data-col={c.id} data-grid-cell={row.id} style={{ ...tdStyle, width: colWidth(c.id) }}
-                  onClick={() => !c.restricted && !editing && startEdit(row.id, c.id, c.type === 'checkbox' ? String(row.values[c.id] === true) : c.type === 'tags' ? JSON.stringify(row.values[c.id] ?? []) : scalar(row.values[c.id]))}>
+              {visibleColumns.map((c) => {
+                const isDropdownEdit = editing?.rowId === row.id && editing.field === c.id
+                  && (c.type === 'status' || c.type === 'people' || c.type === 'dropdown'
+                      || c.type === 'dependency' || c.type === 'mirror');
+                return (
+                <td key={c.id} data-col={c.id} data-grid-cell={row.id}
+                  style={isDropdownEdit
+                    ? { ...tdStyle, width: colWidth(c.id), position: 'relative', overflow: 'visible' }
+                    : { ...tdStyle, width: colWidth(c.id) }}
+                  onClick={() => !c.restricted && !editing && startEdit(row.id, c.id,
+                    c.type === 'checkbox' ? String(row.values[c.id] === true)
+                    : c.type === 'tags' ? JSON.stringify(row.values[c.id] ?? [])
+                    : c.type === 'people' || c.type === 'dependency' ? String(row.values[c.id] ?? '')
+                    : c.type === 'mirror' ? (() => { try { return String(JSON.parse(String(row.values[c.id] ?? '{}')).itemId ?? ''); } catch { return ''; } })()
+                    : scalar(row.values[c.id]))}>
                   {renderCell(row, c)}
                 </td>
-              ))}
+                );
+              })}
               <td style={{ ...tdStyle, width: 60, textAlign: 'right' }}>
                 <button data-grid-open={row.id} onClick={(e) => { e.stopPropagation(); onOpenItem?.(row.id); }}
                   title="打开详情"
@@ -1079,16 +1189,13 @@ function AttachmentEditor({ rowId, colId, onDone }: { rowId: string; colId: stri
 }
 
 /** P3-1 依赖编辑器 */
-function DependencyEditor({ rows, onCommit }: { rows: GridRow[]; onCommit: (itemId: string) => void }) {
-  return <select data-grid-editor autoFocus value="" onChange={(e) => { if (e.target.value) onCommit(e.target.value); }}
-    onBlur={() => onCommit('')} style={editorStyle}>
-    <option value="">— 清除前置 —</option>
-    {rows.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-  </select>;
+function DependencyEditor({ rows, value, onCommit, onClose }: { rows: GridRow[]; value: string; onCommit: (itemId: string) => void; onClose: () => void }) {
+  return <ChipDropdown value={value} options={rows.map((r) => ({ value: r.id, label: r.name }))}
+    placeholder="— 清除前置 —" onPick={onCommit} onClose={onClose} />;
 }
 
 /** P2-4 Mirror 编辑器 */
-function MirrorEditor({ col, onCommit }: { col: GridColumn; onCommit: (itemId: string) => void }) {
+function MirrorEditor({ col, value, onCommit, onClose }: { col: GridColumn; value: string; onCommit: (itemId: string) => void; onClose: () => void }) {
   const [opts, setOpts] = useState<{ id: string; name: string; label: string | null }[] | null>(null);
   useEffect(() => {
     api.getBoard(String(col.settings?.connectBoardId ?? '')).then((d: any) => {
@@ -1098,10 +1205,8 @@ function MirrorEditor({ col, onCommit }: { col: GridColumn; onCommit: (itemId: s
       })));
     }).catch(() => setOpts([]));
   }, [col.id]);
-  if (opts === null) return <span style={{ fontSize: 12, color: '#a0a4b1' }}>加载中…</span>;
-  return <select data-grid-editor autoFocus value="" onChange={(e) => { if (e.target.value) onCommit(e.target.value); }}
-    onBlur={() => onCommit('')} style={editorStyle}>
-    <option value="">— 清除镜像 —</option>
-    {opts.map((o) => <option key={o.id} value={o.id}>{o.name}{o.label ? ` · ${o.label}` : ''}</option>)}
-  </select>;
+  if (opts === null) return <span data-grid-editor style={{ fontSize: 12, color: '#a0a4b1' }}>加载中…</span>;
+  return <ChipDropdown value={value}
+    options={opts.map((o) => ({ value: o.id, label: o.name, hint: o.label ?? undefined }))}
+    placeholder="— 清除镜像 —" onPick={onCommit} onClose={onClose} />;
 }

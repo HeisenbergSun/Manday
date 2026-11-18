@@ -85,15 +85,12 @@ const req = async (auth, method, path, body) => {
   }
   assert(depCells.some((t) => t.includes('⤴') && t.includes('前置任务A')), `D3 Grid 前置格渲染（${depCells.join('|')}）`);
 
-  // D4 双击出现选择编辑器
+  // D4 单击出现选择编辑器（自定义下拉）
   await page.evaluate(() => document.querySelector('[data-dep-cell]').closest('td').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await sleep(600);
-  const editorOk = await page.evaluate(() => {
-    const ed = document.querySelector('[data-grid-editor]');
-    return ed ? ed.tagName === 'SELECT' : false;
-  });
-  assert(editorOk, 'D4 双击前置格出现选择编辑器');
-  await page.keyboard.press('Escape');
+  const editorOk = await page.evaluate(() => !!document.querySelector('[data-chip-dropdown]'));
+  assert(editorOk, 'D4 单击前置格出现选择编辑器');
+  await page.mouse.click(400, 850);
   await sleep(300);
 
   // 切到甘特视图

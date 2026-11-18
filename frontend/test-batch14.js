@@ -107,18 +107,15 @@ const req = async (auth, method, path, body) => {
   // 镜像列可点击选择（编辑器下拉出现）
   await page.evaluate(() => document.querySelector('[data-mirror-cell]').closest('td').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await sleep(600);
-  // MirrorEditor 需先拉源板（Neon 延迟会显示「加载中…」），轮询等待下拉出现
+  // MirrorEditor 需先拉源板（Neon 延迟），轮询等待自定义下拉出现
   let editorOk = false;
   for (let i = 0; i < 10 && !editorOk; i++) {
-    editorOk = await page.evaluate(() => {
-      const ed = document.querySelector('[data-grid-editor]');
-      return ed ? ed.tagName === 'SELECT' : false;
-    });
+    editorOk = await page.evaluate(() => !!document.querySelector('[data-chip-dropdown]'));
     if (!editorOk) await sleep(1000);
   }
-  assert(editorOk, 'M5b 双击镜像格出现选择编辑器');
-  // Esc 关闭
-  await page.keyboard.press('Escape');
+  assert(editorOk, 'M5b 单击镜像格出现选择编辑器');
+  // 点击外部关闭自定义下拉
+  await page.mouse.click(400, 850);
   await sleep(300);
 
   await browser.close();
