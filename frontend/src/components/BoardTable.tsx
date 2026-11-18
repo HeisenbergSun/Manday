@@ -10,7 +10,7 @@ import { UI, TAG, doneLabelsOf, soften } from '../theme';
 import { AutomationPanel } from './AutomationPanel';
 
 /** 列类型的中文展示名 */
-const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像', dependency: '前置', attachment: '附件' } as Record<string, string>)[t] ?? t;
+const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像', dependency: '前置', attachment: '附件', rating: '星级', tags: '标签', longtext: '长文本' } as Record<string, string>)[t] ?? t;
 
 /** 成员与权限管理弹窗：列表 + 改角色 + 移除 + 添加公司内用户 */
 const ROLE_LABEL: Record<string, string> = { owner: '负责人', editor: '可编辑', viewer: '只读', guest: '访客' };
@@ -406,6 +406,31 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     flash(`批量改状态：成功 ${ok}${fail ? `，失败 ${fail}` : ''}`);
   }, [statusCol, gridRows, selectedIds, saveCell]);
 
+  /** CSV 导出（第二十三批）：导出当前看板所有条目和列 */
+  const exportCSV = useCallback(() => {
+    const headers = ['条目', ...columns.map((c: any) => c.name)];
+    const dataRows = gridRows.map((r) => [
+      r.name,
+      ...columns.map((c: any) => {
+        const v = r.values[c.id];
+        if (v == null) return '';
+        if (typeof v === 'object') return JSON.stringify(v);
+        return String(v);
+      }),
+    ]);
+    const csv = [headers, ...dataRows].map((row) =>
+      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','),
+    ).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `manday-export-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    flash('已导出 CSV');
+  }, [gridRows, columns]);
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 工具条：新建 / 批量删除 */}
@@ -451,14 +476,18 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                 <option value="people">人员</option>
                 <option value="date">日期</option>
                 <option value="number">数字</option>
+                <option value="checkbox">勾选</option>
                 <option value="formula">公式</option>
                 <option value="mirror">镜像</option>
                 <option value="dependency">前置任务</option>
                 <option value="attachment">附件</option>
+                <option value="rating">星级</option>
+                <option value="tags">标签</option>
+                <option value="longtext">长文本</option>
               </select>
               {newColType === 'formula' && (
                 <input value={newColFormula} onChange={(e) => setNewColFormula(e.target.value)} data-newcol-formula
-                  placeholder="{列名} 引用列，支持 + - * / 与 SUM()/AVG()/MIN()/MAX()/COUNT()/ROUND()/ABS()"
+                  placeholder="{列名} 引用列，支持 + - * / 比较(> < = !=) IF/AND/OR/SWITCH CONCATENATE/DAYS/FORMAT_DATE SUM/AVG/COUNT/ROUND/ABS"
                   style={{ flex: 1.4, padding: '7px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
               )}
               {newColType === 'mirror' && (
@@ -566,6 +595,11 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           ⚡ 自动化
         </button>
         {autoOpen && <AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} />}
+        <button data-export-csv onClick={exportCSV}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
+          📥 导出 CSV
+        </button>
         <button onClick={() => setViewsOpen(!viewsOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>

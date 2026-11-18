@@ -1,12 +1,12 @@
 /**
  * 自研数据表格（P1：替换 AG Grid Community，体积 -1.2MB、渲染路径可控）
- * 功能对齐 AG Grid 用到的部分：
- * - 双击编辑（text/number=input、date=date input、checkbox=toggle、status/people/dropdown=select）
- * - 行选择（表头全选 + 行首复选框，批量删除用）
- * - 行拖拽排序（HTML5 DnD，拖拽手柄 ⠿，落库 items/reorder）
- * - 单击行打开详情面板；LWW 冲突处理在 BoardTable.saveCell
+ * 第二十三批全面升级：多条件筛选栏 + 列汇总页脚 + 条件格式(数值热力图) +
+ *   列隐藏/冻结/拖拽换序/宽度调整 + Group 折叠展开
+ * 功能对齐 AG Grid 用到的部分 + Monday.com 表格视图核心能力
  * DOM 契约（e2e 依赖）：
  *   [data-grid-cell][data-col="name"]、[data-grid-check]、[data-grid-drag]、[data-grid-row]
+ *   [data-filter-bar] [data-filter-row] [data-filter-add] [data-filter-clear]
+ *   [data-col-summary] [data-col-menu] [data-group-band] [data-col-hide] [data-col-freeze]
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UI, TAG, doneLabelsOf, soften, GROUP_PALETTE } from '../theme';
@@ -17,11 +17,23 @@ export type GridColumn = { id: string; name: string; type: string; settings: any
 
 const LABEL_W = 260;
 
+// ── 第二十三批：筛选 / 列状态 / 汇总 类型 ──
+export type FilterOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals' | 'gt' | 'lt' | 'gte' | 'lte' | 'empty' | 'not_empty';
+export type FilterCondition = { id: string; columnId: string; operator: FilterOperator; value: string };
+export type ColumnState = { hidden?: boolean; frozen?: boolean; width?: number };
+export type SummaryType = 'none' | 'sum' | 'avg' | 'count' | 'min' | 'max';
+
+const SUMMARY_CYCLE: SummaryType[] = ['none', 'sum', 'avg', 'count', 'min', 'max'];
+const SUMMARY_LABEL: Record<SummaryType, string> = { none: '∅', sum: 'Σ', avg: 'x̄', count: '#', min: 'min', max: 'max' };
+
 function scalar(v: unknown): string {
   if (v == null) return '';
   if (typeof v === 'object') { const o = v as any; return String(o.label ?? o.name ?? o.id ?? ''); }
   return String(v);
 }
+
+let filterIdCounter = 0;
+function newFilterId() { return `f${++filterIdCounter}`; }
 
 type Props = {
   rows: GridRow[];
@@ -31,13 +43,10 @@ type Props = {
   onOrderChange: (orders: { id: string; position: number }[]) => Promise<void>;
   onSelectionChange?: (ids: Set<string>) => void;
   editable: boolean;
-  /** 当前用户是否 owner（P1-1/P1-2：结构操作与 owner-only 列编辑的 UI 依据） */
   isOwner?: boolean;
-  /** 视图排序（P1-3）：字段为 'name' 或列 id；点击表头触发 onSortChange */
   sortBy?: string | null;
   sortDir?: 'asc' | 'desc';
   onSortChange?: (field: string) => void;
-  /** P2-5 分组色带：传入 groups 时表格按分组渲染极浅色带（默认排序时） */
   groups?: { id: string; name: string; color?: string | null }[];
 };
 
@@ -47,22 +56,99 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   const [draft, setDraft] = useState('');
   const dragId = useRef<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null); // 快捷键导航焦点行
-  /** 拖拽后的本地顺序覆盖（items 变化时重置） */
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
   const [itemsVersion, setItemsVersion] = useState(0);
+
+  // ── 筛选栏 ──
+  const [filterBarOpen, setFilterBarOpen] = useState(false);
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+
+  // ── 列状态（隐藏/冻结/宽度/顺序） ──
+  const [columnStates, setColumnStates] = useState<Record<string, ColumnState>>({});
+  const [columnOrder, setColumnOrder] = useState<string[] | null>(null);
+  const [colMenuFor, setColMenuFor] = useState<string | null>(null);
+  const resizeColRef = useRef<{ id: string; startX: number; startW: number } | null>(null);
+  const colDragId = useRef<string | null>(null);
+  const [colDragOver, setColDragOver] = useState<string | null>(null);
+
+  // ── 列汇总 ──
+  const [summaries, setSummaries] = useState<Record<string, SummaryType>>({});
+
+  // ── 分组折叠 ──
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => { setLocalOrder(null); setItemsVersion((v) => v + 1); }, [rows]);
   useEffect(() => { onSelectionChange?.(selected); }, [selected]);
 
+  // 列菜单外部点击关闭
+  useEffect(() => {
+    if (!colMenuFor) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('[data-col-menu]') && !t.closest('[data-col-menu-trigger]')) setColMenuFor(null);
+    };
+    setTimeout(() => window.addEventListener('click', close), 0);
+    return () => window.removeEventListener('click', close);
+  }, [colMenuFor]);
+
+  // 列宽拖拽（始终挂载，内部检查 ref）
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const r = resizeColRef.current; if (!r) return;
+      const newW = Math.max(80, Math.min(500, r.startW + (e.clientX - r.startX)));
+      setColumnStates((s) => ({ ...s, [r.id]: { ...s[r.id], width: newW } }));
+    };
+    const onUp = () => { resizeColRef.current = null; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  // ── 可见列（隐藏过滤 + 自定义顺序 + 冻结优先） ──
+  const visibleColumns = useMemo(() => {
+    let cols = columns.filter((c) => !columnStates[c.id]?.hidden);
+    if (columnOrder) {
+      const idx = new Map(columnOrder.map((id, i) => [id, i]));
+      cols = [...cols].sort((a, b) => (idx.get(a.id) ?? 999) - (idx.get(b.id) ?? 999));
+    }
+    return [...cols].sort((a, b) => {
+      const af = columnStates[a.id]?.frozen ? 0 : 1;
+      const bf = columnStates[b.id]?.frozen ? 0 : 1;
+      return af - bf;
+    });
+  }, [columns, columnStates, columnOrder]);
+
+  // ── 筛选行 ──
+  const filteredRows = useMemo(() => {
+    if (filters.length === 0) return rows;
+    return rows.filter((r) => filters.every((f) => {
+      const val = f.columnId === 'name' ? r.name : scalar(r.values[f.columnId]);
+      const num = Number(val);
+      switch (f.operator) {
+        case 'contains': return val.toLowerCase().includes(f.value.toLowerCase());
+        case 'not_contains': return !val.toLowerCase().includes(f.value.toLowerCase());
+        case 'equals': return val === f.value;
+        case 'not_equals': return val !== f.value;
+        case 'gt': return val !== '' && !isNaN(num) && num > Number(f.value);
+        case 'lt': return val !== '' && !isNaN(num) && num < Number(f.value);
+        case 'gte': return val !== '' && !isNaN(num) && num >= Number(f.value);
+        case 'lte': return val !== '' && !isNaN(num) && num <= Number(f.value);
+        case 'empty': return val === '';
+        case 'not_empty': return val !== '';
+        default: return true;
+      }
+    }));
+  }, [rows, filters]);
+
   const sortedRows = useMemo(() => {
+    let arr = [...filteredRows];
     if (localOrder) {
       const idx = new Map(localOrder.map((id, i) => [id, i]));
-      return [...rows].sort((a, b) => (idx.get(a.id) ?? 0) - (idx.get(b.id) ?? 0));
-    }
-    if (sortBy) {
+      arr.sort((a, b) => (idx.get(a.id) ?? 0) - (idx.get(b.id) ?? 0));
+    } else if (sortBy) {
       const dir = sortDir === 'desc' ? -1 : 1;
-      return [...rows].sort((a, b) => {
+      arr.sort((a, b) => {
         if (sortBy === 'name') return dir * a.name.localeCompare(b.name, 'zh-Hans-CN');
         const col = columns.find((c) => c.id === sortBy);
         const av = col?.type === 'checkbox' ? String(a.values[sortBy] === true) : scalar(a.values[sortBy]);
@@ -70,17 +156,64 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         const an = Number(av), bn = Number(bv);
         if (av !== '' && bv !== '' && !Number.isNaN(an) && !Number.isNaN(bn)) return dir * (an - bn);
         if (av === '' && bv === '') return 0;
-        if (av === '') return 1; // 空值恒排后
+        if (av === '') return 1;
         if (bv === '') return -1;
         return dir * av.localeCompare(bv, 'zh-Hans-CN');
       });
+    } else {
+      arr.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     }
-    return [...rows].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-  }, [rows, localOrder, sortBy, sortDir, columns]);
+    return arr;
+  }, [filteredRows, localOrder, sortBy, sortDir, columns]);
 
   const allChecked = sortedRows.length > 0 && sortedRows.every((r) => selected.has(r.id));
 
-  /** 表格快捷键（P0-7）：↑↓ 导航、Enter 开详情、Space 勾选、Esc 清除；输入态不接管 */
+  // ── 数值热力图范围 ──
+  const numericRange = useMemo(() => {
+    const ranges: Record<string, { min: number; max: number }> = {};
+    for (const col of visibleColumns) {
+      if (col.type !== 'number' && col.type !== 'formula') continue;
+      const vals = sortedRows.map((r) => scalar(r.values[col.id]))
+        .filter((v) => v !== '' && !isNaN(Number(v))).map(Number);
+      if (vals.length > 0) ranges[col.id] = { min: Math.min(...vals), max: Math.max(...vals) };
+    }
+    return ranges;
+  }, [visibleColumns, sortedRows]);
+
+  const heatColor = (colId: string, val: string): string | null => {
+    const range = numericRange[colId];
+    if (!range || range.max === range.min) return null;
+    const n = Number(val);
+    if (isNaN(n)) return null;
+    const ratio = (n - range.min) / (range.max - range.min);
+    return `rgba(79, 110, 247, ${(0.06 + ratio * 0.16).toFixed(3)})`;
+  };
+
+  // ── 列汇总计算 ──
+  const computeSummary = (col: GridColumn): string => {
+    const type = summaries[col.id] ?? 'none';
+    if (type === 'none') return '';
+    const vals = sortedRows.map((r) => scalar(r.values[col.id])).filter((v) => v !== '');
+    if (type === 'count') return String(vals.length);
+    const nums = vals.map(Number).filter((n) => !isNaN(n));
+    if (nums.length === 0) return '—';
+    const sum = nums.reduce((a, b) => a + b, 0);
+    switch (type) {
+      case 'sum': return String(Math.round(sum * 100) / 100);
+      case 'avg': return String(Math.round((sum / nums.length) * 100) / 100);
+      case 'min': return String(Math.min(...nums));
+      case 'max': return String(Math.max(...nums));
+      default: return '';
+    }
+  };
+
+  const cycleSummary = (colId: string) => {
+    const cur = summaries[colId] ?? 'none';
+    const next = SUMMARY_CYCLE[(SUMMARY_CYCLE.indexOf(cur) + 1) % SUMMARY_CYCLE.length];
+    setSummaries((s) => ({ ...s, [colId]: next }));
+  };
+
+  // ── 快捷键导航 ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
@@ -102,6 +235,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [editing, sortedRows, activeId, onOpenItem]);
+
   const toggleAll = () => {
     setSelected(allChecked ? new Set() : new Set(sortedRows.map((r) => r.id)));
   };
@@ -109,11 +243,71 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
+  // ── 筛选操作 ──
+  const addFilter = () => {
+    const firstCol = columns[0]?.id ?? 'name';
+    setFilters((f) => [...f, { id: newFilterId(), columnId: firstCol, operator: 'contains', value: '' }]);
+  };
+  const updateFilter = (id: string, patch: Partial<FilterCondition>) => {
+    setFilters((f) => f.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  };
+  const removeFilter = (id: string) => {
+    setFilters((f) => f.filter((x) => x.id !== id));
+  };
+  const clearFilters = () => { setFilters([]); setFilterBarOpen(false); };
+
+  // ── 列状态操作 ──
+  const toggleColumnHidden = (colId: string) => {
+    setColumnStates((s) => ({ ...s, [colId]: { ...s[colId], hidden: !s[colId]?.hidden } }));
+    setColMenuFor(null);
+  };
+  const toggleColumnFrozen = (colId: string) => {
+    setColumnStates((s) => ({ ...s, [colId]: { ...s[colId], frozen: !s[colId]?.frozen } }));
+    setColMenuFor(null);
+  };
+  const resetColumnWidth = (colId: string) => {
+    setColumnStates((s) => { const n = { ...s }; if (n[colId]) delete n[colId].width; return n; });
+    setColMenuFor(null);
+  };
+  const showAllColumns = () => {
+    setColumnStates((s) => {
+      const n: Record<string, ColumnState> = {};
+      for (const [k, v] of Object.entries(s)) n[k] = { ...v, hidden: false };
+      return n;
+    });
+  };
+
+  // ── 列拖拽换序 ──
+  const onColDragStart = (e: React.DragEvent, colId: string) => {
+    colDragId.current = colId;
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const onColDragOver = (e: React.DragEvent, colId: string) => {
+    if (colDragId.current && colDragId.current !== colId) { e.preventDefault(); setColDragOver(colId); }
+  };
+  const onColDrop = (colId: string) => {
+    const src = colDragId.current; colDragId.current = null; setColDragOver(null);
+    if (!src || src === colId) return;
+    const ids = visibleColumns.map((c) => c.id);
+    const from = ids.indexOf(src); const to = ids.indexOf(colId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ...ids.splice(from, 1));
+    setColumnOrder(ids);
+  };
+
+  // ── 分组折叠 ──
+  const toggleGroupCollapse = (gid: string | null) => {
+    const key = gid ?? '__none__';
+    setCollapsedGroups((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  };
+  const isGroupCollapsed = (gid: string | null) => collapsedGroups.has(gid ?? '__none__');
+
   const startEdit = (rowId: string, field: string, current: string) => {
     if (!editable) return;
     const col = columns.find((c) => c.id === field);
-    if (col?.restricted) return; // P1-2 受限查看列不可编辑
-    if (col?.type === 'formula') return; // P2-3 公式列只读
+    if (col?.restricted) return;
+    if (col?.type === 'formula') return;
+    if (col?.type === 'rating') return; // 星级直接点击编辑，不走双击流程
     setEditing({ rowId, field });
     setDraft(current);
   };
@@ -132,10 +326,10 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     }
     if (col?.type === 'number') value = draft === '' ? null : Number(draft);
     if (col?.type === 'checkbox') value = draft === 'true';
+    if (col?.type === 'tags') { try { value = JSON.parse(draft); } catch { value = []; } }
     await onEdit(row, e.field, value);
   };
 
-  /** 拖拽排序：拖到目标行上方 → 本地重排 + 落库 */
   const drop = async (targetId: string) => {
     const src = dragId.current;
     dragId.current = null;
@@ -154,12 +348,12 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     const raw = row.values[col.id];
     const v = scalar(raw);
     const isEditing = editing?.rowId === row.id && editing.field === col.id;
-    // P1-2：editPermission='owner'（兼容旧 editable）非 owner 不可编辑；restricted 列整体锁定
     const ep = col.settings?.editPermission ?? col.settings?.editable;
     const locked = editable && !col.restricted && (isOwner || ep !== 'owner');
+    const heat = heatColor(col.id, v);
+    const cellBg = heat ? { background: heat } : undefined;
 
     if (col.restricted) {
-      // 无权查看：模糊占位（保留列宽，不泄漏内容）
       return <span data-grid-restricted={col.id} title="该列仅负责人可见"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#a0a4b1', fontSize: 12 }}>
         <span style={{ display: 'inline-block', width: 52, height: 13, borderRadius: 7,
@@ -175,7 +369,6 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         return <MirrorEditor col={col} onCommit={(itemId) => { setEditing(null); if (itemId) onEdit(row, col.id, itemId); }} />;
       }
       if (col.type === 'attachment') {
-        // P3-2：选文件即上传，成功后触发刷新（不走 updateCell，cell 由附件端点维护）
         return <AttachmentEditor rowId={row.id} colId={col.id} onDone={() => { setEditing(null); onEdit(row, '__attachments__', null); }} />;
       }
       if (col.type === 'date') {
@@ -196,6 +389,32 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
           {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>;
       }
+      if (col.type === 'tags') {
+        const opts = col.settings?.options ?? [];
+        let current: string[] = [];
+        try { const p = JSON.parse(draft); if (Array.isArray(p)) current = p; } catch { if (draft) current = [draft]; }
+        return <div data-grid-editor data-tags-editor style={{ ...editorStyle, padding: 4, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+          {opts.map((o: any) => {
+            const sel = current.includes(o.label);
+            return <span key={o.label} data-tag-toggle={o.label}
+              onClick={() => {
+                const next = sel ? current.filter((t) => t !== o.label) : [...current, o.label];
+                setDraft(JSON.stringify(next));
+              }}
+              style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, cursor: 'pointer',
+                background: sel ? `${soften(o.color) ?? '#4f6ef7'}22` : '#f0f1f5',
+                color: sel ? soften(o.color) ?? '#4f6ef7' : '#7a7f8c' }}>
+              {o.label}
+            </span>;
+          })}
+          <button onClick={commit} style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 6, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 11 }}>✓</button>
+        </div>;
+      }
+      if (col.type === 'longtext') {
+        return <textarea data-grid-editor autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit(); if (e.key === 'Escape') setEditing(null); }}
+          style={{ ...editorStyle, minHeight: 60, resize: 'vertical' }} />;
+      }
       return <input data-grid-editor autoFocus type={col.type === 'number' ? 'number' : 'text'} value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(null); }}
@@ -204,10 +423,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
     if (col.type === 'formula') {
       if (v === undefined || v === null || v === '') return <span data-formula-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
-      return <span data-formula-cell={col.id} title={`ƒx ${col.settings?.formula ?? ''}`} style={{ color: '#5b6c8f', fontSize: 13 }}>{v}</span>;
+      return <span data-formula-cell={col.id} title={`ƒx ${col.settings?.formula ?? ''}`} style={{ ...cellBg, color: '#5b6c8f', fontSize: 13, padding: '2px 6px', borderRadius: 4, display: 'inline-block' }}>{v}</span>;
     }
     if (col.type === 'dependency') {
-      // P3-1：cell 存前置条目 id（JSON 数组或裸 id），渲染为 ⤴ 前置条目名
       let depIds: string[] = [];
       try {
         const p = JSON.parse(String(v));
@@ -221,9 +439,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         <span style={{ color: '#b5bac8' }}>⤴</span>{names.join('、')}</span>;
     }
     if (col.type === 'mirror') {
-      // P2-4：后端注入 JSON 文本 { itemId, name, label, color }
       let m: any = null;
-      try { m = JSON.parse(String(v)); } catch { /* 非法值当空 */ }
+      try { m = JSON.parse(String(v)); } catch { }
       if (!m || (!m.name && !m.label)) return <span data-mirror-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
       return <span data-mirror-cell={col.id} title={`镜像自：${m.name ?? ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontSize: 13 }}>{m.name}</span>
@@ -232,9 +449,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       </span>;
     }
     if (col.type === 'attachment') {
-      // P3-2：cell 存附件元数据 JSON 数组 [{id,name,size,mime}]，chip 点击下载
       let list: any[] = [];
-      try { const p = JSON.parse(String(v)); if (Array.isArray(p)) list = p; } catch { /* 非法值当空 */ }
+      try { const p = JSON.parse(String(v)); if (Array.isArray(p)) list = p; } catch { }
       if (!list.length) return <span data-attach-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
       return <span data-attach-cell={col.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {list.map((a) => (
@@ -254,7 +470,6 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     }
     if (col.type === 'status') {
       const opt = (col.settings?.labels ?? []).find((l: any) => l.label === v);
-      const doneSet = doneLabelsOf(col.settings);
       const chipColor = soften(opt?.color) ?? '#d0d4e0';
       if (!v) return <span style={{ color: TAG.gray }}>—</span>;
       return <span data-status-chip={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -275,11 +490,42 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       return <span>{raw.map((r: any, i: number) => <span key={i} style={{ display: 'inline-block', background: '#d0d4e026',
         color: '#5a6072', padding: '2px 9px', borderRadius: 5, fontSize: 12, marginRight: 4 }}>{scalar(r)}</span>)}</span>;
     }
+    if (col.type === 'rating') {
+      const max = col.settings?.max ?? 5;
+      const n = Number(v) || 0;
+      return <span data-rating-cell={col.id} style={{ display: 'inline-flex', gap: 1 }}>
+        {Array.from({ length: max }, (_, i) => (
+          <span key={i} data-rating-star={i + 1}
+            onClick={(e) => { e.stopPropagation(); if (locked) onEdit(row, col.id, i + 1 === n ? 0 : i + 1); }}
+            style={{ fontSize: 14, cursor: locked ? 'pointer' : 'default', color: i < n ? '#f5a623' : '#d5d9e3', userSelect: 'none' }}>★</span>
+        ))}
+      </span>;
+    }
+    if (col.type === 'tags') {
+      let selected: string[] = [];
+      try { const p = JSON.parse(String(v)); if (Array.isArray(p)) selected = p; } catch { if (v) selected = [v]; }
+      if (!selected.length) return <span style={{ color: '#c3c8d4' }}>—</span>;
+      const opts = col.settings?.options ?? [];
+      return <span data-tags-cell={col.id} style={{ display: 'inline-flex', gap: 3, flexWrap: 'wrap' }}>
+        {selected.map((tag, i) => {
+          const opt = opts.find((o: any) => o.label === tag);
+          const color = soften(opt?.color) ?? '#7a7f8c';
+          return <span key={i} style={{ background: `${color}22`, color, padding: '1px 8px', borderRadius: 10, fontSize: 11 }}>{tag}</span>;
+        })}
+      </span>;
+    }
+    if (col.type === 'longtext') {
+      if (!v) return <span style={{ color: '#c3c8d4' }}>—</span>;
+      const truncated = v.length > 50 ? v.slice(0, 50) + '…' : v;
+      return <span data-longtext-cell={col.id} title={v} style={{ fontSize: 13, color: '#5a6072' }}>{truncated}</span>;
+    }
     if (!v) return <span style={{ color: '#c3c8d4' }}>—</span>;
+    if (cellBg && (col.type === 'number' || col.type === 'formula')) {
+      return <span style={{ ...cellBg, fontSize: 13, padding: '2px 6px', borderRadius: 4, display: 'inline-block' }}>{v}</span>;
+    }
     return <span style={{ fontSize: 13 }}>{v}</span>;
   };
 
-  /** 行是否完成（第一个 status 列值为 done 标签）→ 条目名删除线 + 弱化 */
   const rowDone = (row: GridRow) => {
     const c = columns.find((x) => x.type === 'status');
     if (!c) return false;
@@ -287,14 +533,65 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     return v != null && doneLabelsOf(c.settings).has(String(v));
   };
 
+  const colWidth = (colId: string): number | undefined => columnStates[colId]?.width;
+  const hiddenCount = columns.filter((c) => columnStates[c.id]?.hidden).length;
+
   return (
     <div style={{ flex: 1, overflow: 'auto', background: '#fff' }} data-grid-root>
-      {/* hover 行时显示 Open 按钮（P0-5）+ 焦点行高亮 */}
       <style>{`
         [data-grid-row] [data-grid-open]{opacity:0;transition:opacity .12s}
         [data-grid-row]:hover [data-grid-open]{opacity:1}
         tr[data-active="1"] td{background:${UI.primarySoft}}
+        [data-col-resize]{cursor:col-resize;user-select:none}
+        [data-col-drag-over]{background:#eef1fe!important}
       `}</style>
+
+      {/* ── 筛选栏 ── */}
+      <div data-filter-bar style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderBottom: '1px solid #eef0f5', flexWrap: 'wrap', background: '#fafbfe' }}>
+        <button data-filter-toggle onClick={() => setFilterBarOpen((v) => !v)}
+          style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #e6e8ef', background: filterBarOpen ? '#eef1fe' : '#fff', cursor: 'pointer', fontSize: 12, color: '#4f6ef7' }}>
+          {'\u{1F50D}'} 筛选{filters.length ? ` (${filters.length})` : ''}
+        </button>
+        {filterBarOpen && (
+          <>
+            {filters.map((f) => (
+              <div key={f.id} data-filter-row style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <select data-filter-col value={f.columnId} onChange={(e) => updateFilter(f.id, { columnId: e.target.value })} style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid #e6e8ef' }}>
+                  <option value="name">条目</option>
+                  {columns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select data-filter-op value={f.operator} onChange={(e) => updateFilter(f.id, { operator: e.target.value as FilterOperator })} style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid #e6e8ef' }}>
+                  <option value="contains">包含</option>
+                  <option value="not_contains">不包含</option>
+                  <option value="equals">等于</option>
+                  <option value="not_equals">不等于</option>
+                  <option value="gt">大于</option>
+                  <option value="lt">小于</option>
+                  <option value="gte">≥</option>
+                  <option value="lte">≤</option>
+                  <option value="empty">为空</option>
+                  <option value="not_empty">非空</option>
+                </select>
+                {f.operator !== 'empty' && f.operator !== 'not_empty' && (
+                  <input data-filter-val value={f.value} onChange={(e) => updateFilter(f.id, { value: e.target.value })}
+                    placeholder="值" style={{ width: 100, fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid #e6e8ef' }} />
+                )}
+                <button data-filter-remove onClick={() => removeFilter(f.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#e2445c', fontSize: 14 }}>✕</button>
+              </div>
+            ))}
+            <button data-filter-add onClick={addFilter} style={{ padding: '3px 10px', borderRadius: 6, border: '1px dashed #4f6ef7', background: '#f5f7ff', color: '#4f6ef7', cursor: 'pointer', fontSize: 12 }}>＋ 条件</button>
+            {filters.length > 0 && <button data-filter-clear onClick={clearFilters} style={{ padding: '3px 10px', borderRadius: 6, border: 'none', background: 'none', color: '#7a7f8c', cursor: 'pointer', fontSize: 12 }}>清除全部</button>}
+            <span style={{ fontSize: 11, color: '#a0a4b1' }}>匹配 {filteredRows.length}/{rows.length} 行</span>
+          </>
+        )}
+        {hiddenCount > 0 && (
+          <button data-col-show-all onClick={showAllColumns} title={`${hiddenCount} 列已隐藏`}
+            style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#b8860b' }}>
+            {'\u{1F441}'} 显示隐藏列 ({hiddenCount})
+          </button>
+        )}
+      </div>
+
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ position: 'sticky', top: 0, background: '#f6f7fb', zIndex: 2 }}>
@@ -307,25 +604,67 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               title="点击排序">
               条目{sortBy === 'name' ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
             </th>
-            {columns.map((c) => (
-              <th key={c.id} style={{ ...thStyle, textAlign: 'left', cursor: onSortChange && !c.restricted ? 'pointer' : undefined }}
-                onClick={() => !c.restricted && onSortChange?.(c.id)} title={c.restricted ? undefined : '点击排序'}>
+            {visibleColumns.map((c) => (
+              <th key={c.id}
+                draggable
+                onDragStart={(e) => onColDragStart(e, c.id)}
+                onDragOver={(e) => onColDragOver(e, c.id)}
+                onDrop={() => onColDrop(c.id)}
+                onDragEnd={() => { colDragId.current = null; setColDragOver(null); }}
+                style={{ ...thStyle, textAlign: 'left', cursor: 'pointer', width: colWidth(c.id),
+                  background: colDragOver === c.id ? '#eef1fe' : undefined,
+                  borderLeft: columnStates[c.id]?.frozen ? '2px solid #4f6ef7' : undefined }}
+                onClick={() => !c.restricted && onSortChange?.(c.id)}
+                onContextMenu={(e) => { e.preventDefault(); setColMenuFor(c.id); }}
+                title="点击排序 · 右键列菜单 · 拖拽换序 · 右边缘拖拽调宽">
+                <span data-col-menu-trigger onClick={(e) => { e.stopPropagation(); setColMenuFor(c.id === colMenuFor ? null : c.id); }}
+                  style={{ cursor: 'pointer', marginRight: 4, fontSize: 10, color: '#a0a4b1' }}>▾</span>
                 {c.name}
                 {sortBy === c.id ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
+                {columnStates[c.id]?.frozen && <span title="已冻结" style={{ marginLeft: 3 }}>{'\u{1F4CC}'}</span>}
                 {c.restricted
-                  ? <span title="仅负责人可见" style={{ marginLeft: 4 }}>👁🔒</span>
+                  ? <span title="仅负责人可见" style={{ marginLeft: 4 }}>{'\u{1F441}'}🔒</span>
                   : (c.settings?.editPermission ?? c.settings?.editable) === 'owner'
                     ? <span title="仅负责人可编辑" style={{ marginLeft: 4 }}>✏️🔒</span>
                     : null}
-              {c.type === 'formula' && <span title={c.settings?.formula} style={{ marginLeft: 4, fontSize: 10,
-                background: '#eef1fe', color: '#5b6c8f', borderRadius: 4, padding: '1px 5px' }}>ƒx</span>}
+                {c.type === 'formula' && <span title={c.settings?.formula} style={{ marginLeft: 4, fontSize: 10,
+                  background: '#eef1fe', color: '#5b6c8f', borderRadius: 4, padding: '1px 5px' }}>ƒx</span>}
+                {/* 列宽拖拽手柄 */}
+                <span data-col-resize
+                  onMouseDown={(e) => {
+                    e.stopPropagation(); e.preventDefault();
+                    const th = (e.currentTarget.parentElement as HTMLElement);
+                    resizeColRef.current = { id: c.id, startX: e.clientX, startW: th.offsetWidth || 220 };
+                  }}
+                  style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize' }} />
+                {/* 列右键菜单 */}
+                {colMenuFor === c.id && (
+                  <div data-col-menu style={{ position: 'absolute', top: '100%', right: 0, background: '#fff', borderRadius: 8,
+                    boxShadow: '0 6px 20px rgba(0,0,0,.12)', padding: 6, zIndex: 10, minWidth: 160, fontSize: 12 }}
+                    onClick={(e) => e.stopPropagation()}>
+                    <button data-col-freeze onClick={() => toggleColumnFrozen(c.id)}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12 }}>
+                      {columnStates[c.id]?.frozen ? '取消冻结' : '📌 冻结列'}
+                    </button>
+                    <button data-col-hide onClick={() => toggleColumnHidden(c.id)}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#e2445c' }}>
+                      隐藏列
+                    </button>
+                    {columnStates[c.id]?.width && (
+                      <button onClick={() => resetColumnWidth(c.id)}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12 }}>
+                        重置列宽
+                      </button>
+                    )}
+                  </div>
+                )}
               </th>
             ))}
+            <th style={{ ...thStyle, width: 60 }}></th>
           </tr>
         </thead>
         <tbody>
           {(() => {
-            // P2-5 分组色带：默认顺序（无列排序、无拖拽重排）时按分组插入极浅色带行
             const showBands = !!groups?.length && !sortBy && !localOrder;
             const colorOf = (gid?: string) => {
               if (!gid || !groups?.length) return null;
@@ -342,13 +681,21 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 lastGid = gid;
                 const g = groups!.find((x) => x.id === gid);
                 const bandColor = (colorOf(gid ?? undefined) ?? '#b5bac8') as string;
-                out.push(<tr key={'band:' + (gid ?? 'none')} data-group-band={gid ?? ''} style={{ background: `${bandColor}14` }}>
-                  <td colSpan={columns.length + 3} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, color: '#5a6072' }}>
+                const collapsed = isGroupCollapsed(gid);
+                out.push(<tr key={'band:' + (gid ?? 'none')} data-group-band={gid ?? ''}
+                  style={{ background: `${bandColor}14`, cursor: 'pointer' }}
+                  onClick={() => toggleGroupCollapse(gid)}>
+                  <td colSpan={visibleColumns.length + 4} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, color: '#5a6072' }}>
+                    <span style={{ display: 'inline-block', marginRight: 5, fontSize: 10 }}>{collapsed ? '▶' : '▼'}</span>
                     <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: bandColor, marginRight: 7 }} />
                     {g?.name ?? '未分组'}
+                    {!collapsed && <span style={{ marginLeft: 8, fontSize: 11, color: '#a0a4b1', fontWeight: 400 }}>
+                      ({sortedRows.filter((r) => (r.group_id ?? null) === gid).length})
+                    </span>}
                   </td>
                 </tr>);
               }
+              if (showBands && isGroupCollapsed(row.group_id ?? null)) continue;
               const rowTint = colorOf(showBands ? row.group_id : undefined);
               out.push(<tr key={row.id + ':' + itemsVersion} data-grid-row={row.id} data-active={activeId === row.id ? '1' : '0'}
                 draggable={false}
@@ -386,9 +733,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       style={{ ...editorStyle, width: '95%' }} />
                   : <span style={rowDone(row) ? { textDecoration: 'line-through', color: UI.textFaint } : undefined}>{row.name}</span>}
               </td>
-              {columns.map((c) => (
-                <td key={c.id} data-col={c.id} data-grid-cell={row.id} style={tdStyle}
-                  onDoubleClick={() => !c.restricted && startEdit(row.id, c.id, c.type === 'checkbox' ? String(row.values[c.id] === true) : scalar(row.values[c.id]))}>
+              {visibleColumns.map((c) => (
+                <td key={c.id} data-col={c.id} data-grid-cell={row.id} style={{ ...tdStyle, width: colWidth(c.id) }}
+                  onDoubleClick={() => !c.restricted && startEdit(row.id, c.id, c.type === 'checkbox' ? String(row.values[c.id] === true) : c.type === 'tags' ? JSON.stringify(row.values[c.id] ?? []) : scalar(row.values[c.id]))}>
                   {renderCell(row, c)}
                 </td>
               ))}
@@ -404,11 +751,34 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
             return out;
           })()}
           {sortedRows.length === 0 && (
-            <tr><td colSpan={columns.length + 4} style={{ padding: 40, color: '#7a7f8c', fontSize: 14, textAlign: 'center' }}>
-              还没有条目——点「＋ 新建条目」开始（快捷键：↑↓ 导航 · Enter 打开 · Space 勾选 · Esc 清除）
+            <tr><td colSpan={visibleColumns.length + 4} style={{ padding: 40, color: '#7a7f8c', fontSize: 14, textAlign: 'center' }}>
+              {filters.length > 0 ? '没有匹配筛选条件的行——调整筛选或清除条件' : '还没有条目——点「＋ 新建条目」开始（快捷键：↑↓ 导航 · Enter 打开 · Space 勾选 · Esc 清除）'}
             </td></tr>
           )}
         </tbody>
+        {/* ── 列汇总页脚 ── */}
+        {sortedRows.length > 0 && (
+          <tfoot>
+            <tr style={{ background: '#f6f7fb', borderTop: '2px solid #e6e8ef' }}>
+              <td style={tdStyle} colSpan={3}>
+                <span style={{ fontSize: 11, color: '#a0a4b1' }}>汇总 · 点击列底部切换</span>
+              </td>
+              {visibleColumns.map((c) => {
+                const type = summaries[c.id] ?? 'none';
+                const val = computeSummary(c);
+                return (
+                  <td key={c.id} data-col-summary={c.id} data-summary-type={type}
+                    onClick={() => cycleSummary(c.id)}
+                    title="点击切换：无 → 求和 → 均值 → 计数 → 最小 → 最大"
+                    style={{ ...tdStyle, cursor: 'pointer', fontWeight: type !== 'none' ? 600 : 400, color: type !== 'none' ? '#4f6ef7' : '#c3c8d4' }}>
+                    {type !== 'none' ? `${SUMMARY_LABEL[type]} ${val}` : '∅'}
+                  </td>
+                );
+              })}
+              <td style={tdStyle}></td>
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );
@@ -416,7 +786,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
 const thStyle: React.CSSProperties = {
   padding: '8px 10px', fontSize: 12, color: '#7a7f8c', fontWeight: 600,
-  borderBottom: '1px solid #e6e8ef', whiteSpace: 'nowrap',
+  borderBottom: '1px solid #e6e8ef', whiteSpace: 'nowrap', position: 'relative',
 };
 const tdStyle: React.CSSProperties = {
   padding: '6px 10px', borderBottom: '1px solid #eef0f5', whiteSpace: 'nowrap',
@@ -427,7 +797,7 @@ const editorStyle: React.CSSProperties = {
   fontSize: 13, outline: 'none', boxSizing: 'border-box',
 };
 
-/** P3-1 依赖编辑器：从本看板其他条目中选前置任务，提交条目 id */
+/** P3-2 附件编辑器 */
 function AttachmentEditor({ rowId, colId, onDone }: { rowId: string; colId: string; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   return <input data-attach-input type="file" disabled={busy} autoFocus
@@ -435,12 +805,13 @@ function AttachmentEditor({ rowId, colId, onDone }: { rowId: string; colId: stri
       const f = e.target.files?.[0];
       if (!f) { onDone(); return; }
       setBusy(true);
-      try { await api.uploadAttachment(rowId, colId, f); } catch { /* 提示由上层 reload 呈现 */ }
+      try { await api.uploadAttachment(rowId, colId, f); } catch { }
       onDone();
     }}
     style={{ fontSize: 13, padding: '4px 8px', borderRadius: 8, border: '1px solid #e6e8ef' }} />;
 }
 
+/** P3-1 依赖编辑器 */
 function DependencyEditor({ rows, onCommit }: { rows: GridRow[]; onCommit: (itemId: string) => void }) {
   return <select data-grid-editor autoFocus value="" onChange={(e) => { if (e.target.value) onCommit(e.target.value); }}
     onBlur={() => onCommit('')} style={editorStyle}>
@@ -449,7 +820,7 @@ function DependencyEditor({ rows, onCommit }: { rows: GridRow[]; onCommit: (item
   </select>;
 }
 
-/** P2-4 Mirror 编辑器：从连接的看板选条目，提交源条目 id（状态由后端读取时镜像注入） */
+/** P2-4 Mirror 编辑器 */
 function MirrorEditor({ col, onCommit }: { col: GridColumn; onCommit: (itemId: string) => void }) {
   const [opts, setOpts] = useState<{ id: string; name: string; label: string | null }[] | null>(null);
   useEffect(() => {
