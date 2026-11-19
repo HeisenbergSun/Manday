@@ -168,11 +168,18 @@ export class DashboardService {
     return { ...rows[0], config: rows[0].config ?? {} };
   }
 
-  async updateWidget(userId: string, dashboardId: string, widgetId: string, dto: { title?: string; config?: any }) {
+  async updateWidget(userId: string, dashboardId: string, widgetId: string, dto: { title?: string; type?: string; config?: any }) {
     await this.pg.query(
-      `UPDATE widgets SET title=COALESCE($1,title), config=COALESCE($2::jsonb,config)
-       WHERE id=$3 AND dashboard_id=$4`,
-      [dto.title ?? null, dto.config ? JSON.stringify(dto.config) : null, widgetId, dashboardId]);
+      `UPDATE widgets SET title=COALESCE($1,title), type=COALESCE($2,type), config=COALESCE($3::jsonb,config)
+       WHERE id=$4 AND dashboard_id=$5`,
+      [dto.title ?? null, dto.type ?? null, dto.config ? JSON.stringify(dto.config) : null, widgetId, dashboardId]);
+    return { ok: true };
+  }
+
+  async reorderWidgets(userId: string, dashboardId: string, order: string[]) {
+    for (let i = 0; i < order.length; i++) {
+      await this.pg.query(`UPDATE widgets SET position=$1 WHERE id=$2 AND dashboard_id=$3`, [i, order[i], dashboardId]);
+    }
     return { ok: true };
   }
 
@@ -191,17 +198,22 @@ export class DashboardService {
     if (!boardIds.length) return [];
 
     if (widget.type === 'number') {
-      const agg = ['sum', 'avg', 'count', 'min', 'max'].includes(cfg.agg) ? cfg.agg : 'sum';
-      const sel = agg === 'count' ? 'count(*)' : `${agg}((v.value #>> '{}')::numeric)`;
+      // 多指标：一次查 sum/avg/count/min/max，前端按 aggs 挑选
       const { rows } = await this.pg.query(
-        `SELECT ${sel} AS value FROM item_values v
+        `SELECT sum((v.value #>> '{}')::numeric) AS s, avg((v.value #>> '{}')::numeric) AS a,
+                count(*) AS c, min((v.value #>> '{}')::numeric) AS mn, max((v.value #>> '{}')::numeric) AS mx
+         FROM item_values v
          JOIN board_columns c ON c.id = v.column_id AND c.type = 'number' AND c.name = $3
          JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
          JOIN boards b ON b.id = i.board_id
          WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
          AND (v.value #>> '{}') ~ '^-?[0-9.]+$'`,
         [boardIds, userId, cfg.column]);
-      return { value: Number(rows[0]?.value) || 0, label: cfg.label ?? '合计', agg };
+      const r = rows[0] ?? {};
+      const aggs: string[] = Array.isArray(cfg.aggs) && cfg.aggs.length ? cfg.aggs : ['sum'];
+      const map: Record<string, number> = { sum: Number(r.s) || 0, avg: Number(r.a) || 0, count: Number(r.c) || 0, min: Number(r.mn) || 0, max: Number(r.mx) || 0 };
+      const items = aggs.map((a) => ({ label: ({ sum: '合计', avg: '平均', count: '计数', min: '最小', max: '最大' } as any)[a] ?? a, value: map[a] ?? 0, agg: a }));
+      return { value: items[0]?.value ?? 0, items };
     }
 
     if (widget.type === 'bar' || widget.type === 'pie') {
@@ -232,7 +244,7 @@ export class DashboardService {
       return rows.map((r) => ({ label: r.label ?? '（空）', value: Number(r.value) || 0 }));
     }
 
-    if (widget.type === 'line') {
+    if (widget.type === 'line' || widget.type === 'area') {
       const { rows } = await this.pg.query(
         `SELECT v.value #>> '{}' AS date, count(*) AS value
          FROM item_values v
@@ -243,6 +255,41 @@ export class DashboardService {
          GROUP BY date ORDER BY date`,
         [boardIds, userId, cfg.dateColumn]);
       return rows.map((r) => ({ date: String(r.date).slice(0, 10), value: Number(r.value) || 0 }));
+    }
+
+    if (widget.type === 'combo') {
+      // 双轴：柱=按 groupBy 计数，线=按 metricColumn 求和
+      const { rows } = await this.pg.query(
+        `SELECT v.value #>> '{}' AS label, count(*) AS bar,
+                COALESCE(sum((mv.value #>> '{}')::numeric), 0) AS line
+         FROM item_values v
+         JOIN board_columns c ON c.id = v.column_id AND c.name = $3
+         JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
+         JOIN boards b ON b.id = i.board_id
+         LEFT JOIN item_values mv ON mv.item_id = i.id
+         LEFT JOIN board_columns mc ON mc.id = mv.column_id AND mc.type = 'number' AND mc.name = $4
+         WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
+         GROUP BY label ORDER BY bar DESC LIMIT 20`,
+        [boardIds, userId, cfg.groupBy, cfg.metricColumn]);
+      return rows.map((r) => ({ label: r.label ?? '（空）', bar: Number(r.bar) || 0, line: Number(r.line) || 0 }));
+    }
+
+    if (widget.type === 'gantt') {
+      const { rows } = await this.pg.query(
+        `SELECT i.id, i.name, b.name AS board,
+                (sv.value #>> '{}') AS start,
+                (ev.value #>> '{}') AS end
+         FROM items i
+         JOIN boards b ON b.id = i.board_id
+         JOIN board_columns sc ON sc.board_id = b.id AND sc.type = 'date' AND sc.name = $3
+         JOIN item_values sv ON sv.item_id = i.id AND sv.column_id = sc.id
+         LEFT JOIN board_columns ec ON ec.board_id = b.id AND ec.type = 'date' AND ec.name = $4
+         LEFT JOIN item_values ev ON ev.item_id = i.id AND ev.column_id = ec.id
+         WHERE i.board_id = ANY($1::uuid[]) AND i.deleted_at IS NULL AND ${VISIBLE_SQL}
+           AND (sv.value #>> '{}') <> ''
+         ORDER BY start LIMIT 30`,
+        [boardIds, userId, cfg.startColumn, cfg.endColumn]);
+      return rows.map((r) => ({ id: r.id, name: r.name, board: r.board, start: String(r.start).slice(0, 10), end: r.end ? String(r.end).slice(0, 10) : String(r.start).slice(0, 10) }));
     }
 
     if (widget.type === 'table') {
@@ -314,7 +361,8 @@ export class DashboardController {
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameDashboard(req.user.id, id, b.name); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteDashboard(req.user.id, id); }
   @Post(':id/widgets') addWidget(@Req() req, @Param('id') id: string, @Body() b: { type: string; title?: string; config?: any }) { return this.svc.addWidget(req.user.id, id, b); }
-  @Patch(':id/widgets/:wid') updateWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string, @Body() b: { title?: string; config?: any }) { return this.svc.updateWidget(req.user.id, id, wid, b); }
+  @Post(':id/widgets/reorder') reorderWidgets(@Req() req, @Param('id') id: string, @Body() b: { order: string[] }) { return this.svc.reorderWidgets(req.user.id, id, b.order ?? []); }
+  @Patch(':id/widgets/:wid') updateWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string, @Body() b: { title?: string; type?: string; config?: any }) { return this.svc.updateWidget(req.user.id, id, wid, b); }
   @Delete(':id/widgets/:wid') deleteWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string) { return this.svc.deleteWidget(req.user.id, id, wid); }
   @Get(':id/widgets/:wid/data') widgetData(@Req() req, @Param('id') id: string, @Param('wid') wid: string) {
     return this.svc.getDashboard(req.user.id, id).then((d) => {

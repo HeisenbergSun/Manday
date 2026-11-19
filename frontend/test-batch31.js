@@ -40,21 +40,32 @@ const req = async (h, method, path, body) => {
   await sleep(2000);
   const token = await page.evaluate(() => localStorage.getItem('manday_token'));
 
+  // 清理残留 dashboard（同名累加会导致点击进入旧 dashboard）
+  try {
+    const pg = require('pg'); require('dotenv').config({ path: '../backend/.env' });
+    const pc = new pg.Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    await pc.connect();
+    await pc.query(`DELETE FROM dashboards WHERE name LIKE 'B31-Dash %'`);
+    await pc.end();
+  } catch {}
+
   // 准备：2 个 board，各带「预算」number 列 + 条目
   const mk = async (name, vals) => {
     const b = await req(token, 'POST', '/boards', { name, visibility: 'company' });
     const bid = b.body.id;
     const col = await req(token, 'POST', `/boards/${bid}/columns`, { name: '预算', type: 'number' });
-    const statusCol = await req(token, 'POST', `/boards/${bid}/columns`, { name: '状态', type: 'status' });
+    await req(token, 'POST', `/boards/${bid}/columns`, { name: '状态', type: 'status' });
+    const dcol = await req(token, 'POST', `/boards/${bid}/columns`, { name: '截止日期', type: 'date' });
     for (const v of vals) {
       const it = await req(token, 'POST', `/boards/${bid}/items`, { name: v.name });
       const fresh = await req(token, 'GET', `/items/${it.body.id}`);
       await req(token, 'PATCH', `/items/${it.body.id}/cell`, { columnId: col.body.id, value: v.val, version: fresh.body.version });
+      await req(token, 'PATCH', `/items/${it.body.id}/cell`, { columnId: dcol.body.id, value: v.date, version: fresh.body.version });
     }
     return bid;
   };
-  const bidA = await mk(NAME, [{ name: 'A1', val: 100 }, { name: 'A2', val: 50 }]);
-  const bidB = await mk(NAME2, [{ name: 'B1', val: 200 }]);
+  const bidA = await mk(NAME, [{ name: 'A1', val: 100, date: '2026-11-20' }, { name: 'A2', val: 50, date: '2026-11-22' }]);
+  const bidB = await mk(NAME2, [{ name: 'B1', val: 200, date: '2026-11-25' }]);
   assert(!!bidA && !!bidB, 'S-prep 建 2 个 board（各带预算列）');
 
   // ---- S1 移动到分组 ----
@@ -78,20 +89,26 @@ const req = async (h, method, path, body) => {
   await page.click('[data-workspace-plus]');
   await sleep(400);
   assert(await page.$('[data-workspace-plus-menu]'), 'S2 加号菜单出现');
-  const dash = await req(token, 'POST', '/dashboards', { name: 'B31-Dashboard' });
+  const DASH_NAME = NAME + '-Dash';
+  const dash = await req(token, 'POST', '/dashboards', { name: DASH_NAME });
   assert(!!dash.body.id, 'S2 建 dashboard');
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(2000);
-  assert(await page.evaluate((n) => !!document.querySelector(`[data-dashboard-item="${n}"]`), 'B31-Dashboard'), 'S2 Dashboard 显示在导航');
+  assert(await page.evaluate((n) => !!document.querySelector(`[data-dashboard-item="${n}"]`), DASH_NAME), 'S2 Dashboard 显示在导航');
 
   // ---- S3 number widget 关联 2 board ----
-  await page.evaluate((n) => document.querySelector(`[data-dashboard-item="${n}"]`)?.click(), 'B31-Dashboard');
+  await page.evaluate((n) => document.querySelector(`[data-dashboard-item="${n}"]`)?.click(), DASH_NAME);
   await sleep(2000);
   await page.click('[data-add-widget]');
   await sleep(400);
   await page.evaluate(() => document.querySelector('[data-widget-type="number"]')?.click());
   await sleep(300);
-  // 勾选 2 个 board（按 data-board-option 精确匹配）
+  // 勾选 2 个 board（轮询等待选项渲染，board 列表较大时加载慢）
+  for (let i = 0; i < 20; i++) {
+    const ok = await page.evaluate((ns) => ns.every((n) => !!document.querySelector(`[data-board-option="${n}"]`)), [NAME, NAME2]);
+    if (ok) break;
+    await sleep(500);
+  }
   await page.evaluate((names) => {
     for (const n of names) {
       const lb = document.querySelector(`[data-board-option="${n}"]`);
@@ -99,11 +116,19 @@ const req = async (h, method, path, body) => {
       if (cb && !cb.checked) cb.click();
     }
   }, [NAME, NAME2]);
-  await sleep(1200); // 等跨板列名加载
-  // 选「预算」数值列（number 类型第一个 select）
+  await sleep(500);
+  // 等待数值列选项「预算」出现（首个 widget 冷启动 getBoard 较慢）
+  for (let i = 0; i < 20; i++) {
+    const has = await page.evaluate(() => {
+      const sel = document.querySelector('[data-widget-modal] select');
+      return sel ? [...sel.options].some((o) => o.value === '预算') : false;
+    });
+    if (has) break;
+    await sleep(500);
+  }
+  // 选「预算」数值列
   await page.evaluate(() => {
-    const sels = [...document.querySelectorAll('[data-widget-modal] select')];
-    const sel = sels[0];
+    const sel = document.querySelector('[data-widget-modal] select');
     const opt = [...sel.options].find((o) => o.value === '预算');
     if (opt) { sel.value = '预算'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
   });
@@ -134,6 +159,79 @@ const req = async (h, method, path, body) => {
   await sleep(1500);
   const titleShown = await page.evaluate(() => document.querySelector('[data-widget="number"]')?.textContent?.includes('总预算') ?? false);
   assert(titleShown, 'S4 编辑后标题更新为「总预算」');
+
+  // ---- S5 类型切换：编辑 number → 改为柱状图 ----
+  await page.evaluate(() => document.querySelector('[data-widget="number"] [data-widget-edit]')?.click());
+  await sleep(400);
+  await page.evaluate(() => document.querySelector('[data-widget-type="bar"]')?.click());
+  await sleep(600);
+  // 选分组列「状态」
+  await page.evaluate(() => {
+    const sels = [...document.querySelectorAll('[data-widget-modal] select')];
+    const sel = sels.find((s) => [...s.options].some((o) => o.value === '状态'));
+    if (sel) { sel.value = '状态'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+  });
+  await sleep(300);
+  await page.click('[data-widget-save]');
+  await sleep(2500);
+  const barWidget = await page.$('[data-widget="bar"]');
+  assert(!!barWidget, 'S5 类型切换：number → bar 生效');
+
+  // ---- S6 gantt 图表 ----
+  await page.click('[data-add-widget]');
+  await sleep(400);
+  await page.evaluate(() => document.querySelector('[data-widget-type="gantt"]')?.click());
+  await sleep(300);
+  // 勾选 2 个 board
+  await page.evaluate((names) => {
+    for (const n of names) {
+      const lb = document.querySelector(`[data-board-option="${n}"]`);
+      const cb = lb?.querySelector('input[type="checkbox"]');
+      if (cb && !cb.checked) cb.click();
+    }
+  }, [NAME, NAME2]);
+  await sleep(1200);
+  await page.evaluate(() => {
+    const sels = [...document.querySelectorAll('[data-widget-modal] select')];
+    const sel = sels.find((s) => [...s.options].some((o) => o.value === '截止日期'));
+    if (sel) { sel.value = '截止日期'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+  });
+  await sleep(300);
+  await page.click('[data-widget-save]');
+  await sleep(2000);
+  const ganttWidget = await page.$('[data-widget="gantt"]');
+  assert(!!ganttWidget, 'S6 gantt 图表渲染');
+
+  // ---- S7 多指标数字卡 ----
+  await page.click('[data-add-widget]');
+  await sleep(400);
+  await page.evaluate(() => document.querySelector('[data-widget-type="number"]')?.click());
+  await sleep(300);
+  await page.evaluate((names) => {
+    for (const n of names) {
+      const lb = document.querySelector(`[data-board-option="${n}"]`);
+      const cb = lb?.querySelector('input[type="checkbox"]');
+      if (cb && !cb.checked) cb.click();
+    }
+  }, [NAME, NAME2]);
+  await sleep(1200);
+  await page.evaluate(() => {
+    const sels = [...document.querySelectorAll('[data-widget-modal] select')];
+    const sel = sels.find((s) => [...s.options].some((o) => o.value === '预算'));
+    if (sel) { sel.value = '预算'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+  });
+  await sleep(300);
+  // 勾选「平均」多指标
+  await page.evaluate(() => {
+    const lb = [...document.querySelectorAll('[data-widget-modal] label')].find((x) => x.textContent.includes('平均'));
+    const cb = lb?.querySelector('input[type="checkbox"]');
+    if (cb && !cb.checked) cb.click();
+  });
+  await sleep(300);
+  await page.click('[data-widget-save]');
+  await sleep(2000);
+  const multiNum = await page.evaluate(() => [...document.querySelectorAll('[data-widget="number"]')].some((w) => w.textContent.includes('平均')));
+  assert(multiNum, 'S7 多指标数字卡（含平均）');
 
   // 清理
   await req(token, 'DELETE', `/dashboards/${dash.body.id}`);

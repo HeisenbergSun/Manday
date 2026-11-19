@@ -178,8 +178,10 @@ export const api = {
   getDashboard: (id: string) => request(`/dashboards/${id}`),
   addWidget: (dashboardId: string, dto: { type: string; title?: string; config?: any }) =>
     request(`/dashboards/${dashboardId}/widgets`, { method: 'POST', body: JSON.stringify(dto) }),
-  updateWidget: (dashboardId: string, widgetId: string, patch: { title?: string; config?: any }) =>
+  updateWidget: (dashboardId: string, widgetId: string, patch: { title?: string; type?: string; config?: any }) =>
     request(`/dashboards/${dashboardId}/widgets/${widgetId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  reorderWidgets: (dashboardId: string, order: string[]) =>
+    request(`/dashboards/${dashboardId}/widgets/reorder`, { method: 'POST', body: JSON.stringify({ order }) }),
   deleteWidget: (dashboardId: string, widgetId: string) =>
     request(`/dashboards/${dashboardId}/widgets/${widgetId}`, { method: 'DELETE' }),
   widgetData: (dashboardId: string, widgetId: string) => request(`/dashboards/${dashboardId}/widgets/${widgetId}/data`),
