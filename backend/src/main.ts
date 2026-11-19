@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { DomainExceptionFilter } from './common/http-exception.filter';
 import * as path from 'path';
 import * as express from 'express';
+import compressionFn from 'compression';
 import * as fs from 'fs';
 
 async function ensureSchema() {
@@ -84,7 +85,11 @@ async function ensureMinorSchema() {
         created_by  UUID REFERENCES users(id),
         created_at  TIMESTAMPTZ DEFAULT now()
       );
-      CREATE INDEX IF NOT EXISTS idx_item_attachments_item ON item_attachments(item_id);`);
+      CREATE INDEX IF NOT EXISTS idx_item_attachments_item ON item_attachments(item_id);
+      CREATE INDEX IF NOT EXISTS idx_items_board_live ON items(board_id, deleted_at, parent_item_id, position);
+      CREATE INDEX IF NOT EXISTS idx_board_columns_board ON board_columns(board_id, position);
+      CREATE INDEX IF NOT EXISTS idx_board_groups_board ON board_groups(board_id, position);
+      CREATE INDEX IF NOT EXISTS idx_board_views_board ON board_views(board_id, position);`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {
     console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);
@@ -100,6 +105,7 @@ async function bootstrap() {
   fs.mkdirSync(path.resolve(process.cwd(), 'uploads'), { recursive: true });
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.use(compressionFn({ threshold: 16 * 1024 })); // 大板 JSON（MB 级）gzip 后传输量降 ~90%
   app.useGlobalFilters(new DomainExceptionFilter());
   app.enableCors({ origin: process.env.CORS_ORIGIN ?? true, credentials: true });
 

@@ -322,6 +322,20 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     }));
   }, [rows, filters]);
   useEffect(() => { filteredRowsCb.current?.(filteredRows); }, [filteredRows]);
+
+  // 大板性能：分块渲染（初始 150 行，滚近底部增量 +200，IntersectionObserver 触发）
+  const gridRootRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(150);
+  useEffect(() => { setVisibleCount(150); }, [filteredRows.length]);
+  useEffect(() => {
+    const root = gridRootRef.current;
+    const sentinel = root?.querySelector('[data-grid-sentinel]');
+    if (!root || !sentinel) return;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setVisibleCount((c) => c + 200); },
+      { root, rootMargin: '600px' });
+    io.observe(sentinel);
+    return () => io.disconnect();
+  });
   // #61：恢复带筛选的视图时自动展开筛选栏
   const prevFilterCount = useRef(0);
   useEffect(() => {
@@ -825,7 +839,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   const hiddenCount = columns.filter((c) => columnStates[c.id]?.hidden).length;
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', background: '#fff' }} data-grid-root>
+    <div ref={gridRootRef} style={{ flex: 1, overflow: 'auto', background: '#fff' }} data-grid-root>
       <style>{`
         [data-grid-row] [data-grid-open]{opacity:0;transition:opacity .12s}
         [data-grid-row]:hover [data-grid-open]{opacity:1}
@@ -1044,7 +1058,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
             };
             let lastGid: string | undefined | null = '__none__';
             const out: any[] = [];
-            for (const row of sortedRows) {
+            for (const row of sortedRows.slice(0, visibleCount)) {
               const gid = showBands ? row.group_id ?? null : null;
               if (showBands && gid !== lastGid) {
                 lastGid = gid;
@@ -1180,6 +1194,11 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
             </tr>
             );
             }
+            if (visibleCount < sortedRows.length) out.push(
+              <tr key="__sentinel" data-grid-sentinel="1"><td colSpan={visibleColumns.length + 5}
+                style={{ padding: 10, textAlign: 'center', color: '#a0a4b1', fontSize: 12 }}>
+                已显示 {visibleCount} / {sortedRows.length} 行，滚动加载更多…
+              </td></tr>);
             return out;
           })()}
           {sortedRows.length === 0 && (

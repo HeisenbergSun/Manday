@@ -39,36 +39,30 @@ export class ItemsService {
   /** 读取整个 Board（含动态列值）——一次查询拉平，免 N+1 */
   async getBoardItems(boardId: string, userRole: BoardRole | null, userId?: string) {
     if (!can(userRole, 'read')) throw new Error('FORBIDDEN');
-    const { rows } = await this.pg.query(
-      `SELECT i.id, i.group_id, i.name, i.position, i.version,
-              jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
+    // 性能：三查询互不依赖，并行（Neon 往返延迟显著）
+    const [{ rows }, { rows: columns }, { rows: childItems }] = await Promise.all([
+      this.pg.query(
+        `SELECT i.id, i.group_id, i.name, i.position, i.version,
+              coalesce(jsonb_object_agg(iv.column_id, iv.value #>> '{}') FILTER (WHERE iv.column_id IS NOT NULL), '{}'::jsonb) AS values
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
        WHERE i.board_id = $1 AND i.deleted_at IS NULL AND i.parent_item_id IS NULL
        GROUP BY i.id
        ORDER BY i.position`,
-      [boardId],
-    );
-    const itemRows = rows.map((r) => {
-      const values: Record<string, unknown> = {};
-      for (const kv of r.kv ?? []) values[kv.k] = kv.v;
-      return { ...r, values };
-    });
-    // P2-3：Formula 列读取时注入计算值
-    const { rows: columns } = await this.pg.query(
-      `SELECT id, name, type, settings FROM board_columns WHERE board_id = $1 ORDER BY position`, [boardId]);
-    const { rows: childItems } = await this.pg.query(
-      `SELECT i.id, i.parent_item_id, i.done,
-              jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
+        [boardId],
+      ),
+      this.pg.query(`SELECT id, name, type, settings FROM board_columns WHERE board_id = $1 ORDER BY position`, [boardId]),
+      this.pg.query(
+        `SELECT i.id, i.parent_item_id, i.done,
+              coalesce(jsonb_object_agg(iv.column_id, iv.value #>> '{}') FILTER (WHERE iv.column_id IS NOT NULL), '{}'::jsonb) AS values
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
        WHERE i.board_id = $1 AND i.deleted_at IS NULL AND i.parent_item_id IS NOT NULL
-       GROUP BY i.id`, [boardId]);
-    const childRows: FormulaRow[] = childItems.map((r) => {
-      const values: Record<string, string | null> = {};
-      for (const kv of r.kv ?? []) values[kv.k] = kv.v;
-      return { id: r.id, parentItemId: r.parent_item_id, values };
-    });
+       GROUP BY i.id`, [boardId]),
+    ]);
+    const itemRows = rows.map((r) => ({ ...r, values: r.values ?? {} }));
+    // P2-3：Formula 列读取时注入计算值
+    const childRows: FormulaRow[] = childItems.map((r) => ({ id: r.id, parentItemId: r.parent_item_id, values: r.values ?? {} }));
     injectFormulaValues(columns, itemRows, childRows);
     // #62 子任务进度徽章：按父条目聚合子任务完成数（total/done）
     const subStats: Record<string, { total: number; done: number }> = {};
