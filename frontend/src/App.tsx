@@ -230,7 +230,8 @@ export function App() {
         {/* #65 移动端抽屉式侧边栏 */}
         <div data-sidenav-overlay className={mobileNavOpen ? 'open' : ''}
           onClick={() => setMobileNavOpen(false)} />
-        <div data-sidenav className={mobileNavOpen ? 'open' : ''}>
+        <div data-sidenav className={mobileNavOpen ? 'open' : ''}
+          style={{ display: 'flex', height: '100%', overflow: 'hidden', flexShrink: 0 }}>
           <WorkspaceNav activeId={activeBoard?.id} dashboardActive={workspaceDashboard} activeDashboardId={activeDashboardId}
             onOpen={(b) => { setActiveBoard(b); setWorkspaceDashboard(false); setActiveDashboardId(null); setView('table'); setMobileNavOpen(false); }}
             onOpenDashboard={() => { setWorkspaceDashboard(true); setActiveBoard(null); setActiveDashboardId(null); setMobileNavOpen(false); }}
@@ -238,13 +239,14 @@ export function App() {
             onNewDashboard={() => {
               const name = prompt('Dashboard 名称');
               if (!name || !name.trim()) return;
-              api.createDashboard(name.trim()).then((d: any) => { setActiveDashboardId(d.id); setWorkspaceDashboard(false); setActiveBoard(null); }).catch((e) => alert(`创建失败：${(e as Error).message}`));
+              const team = confirm('设为团队共享 Dashboard？\n\n点「确定」= 团队共享（部门成员可见可编辑）\n点「取消」= 仅个人');
+              api.createDashboard(name.trim(), team ? 'team' : 'personal').then((d: any) => { setActiveDashboardId(d.id); setWorkspaceDashboard(false); setActiveBoard(null); }).catch((e) => alert(`创建失败：${(e as Error).message}`));
             }}
             onNewBoard={() => setNewBoardOpen(true)} />
         </div>
         <main style={{ flex: 1, overflow: 'auto' }}>
           {activeDashboardId ? (
-            <DashboardEditor dashboardId={activeDashboardId} onBack={() => setActiveDashboardId(null)} />
+            <DashboardEditor dashboardId={activeDashboardId} onBack={() => setActiveDashboardId(null)} onOpenItem={setDetailId} />
           ) : workspaceDashboard || !activeBoard ? (
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 17, fontWeight: 800, color: '#25272c', margin: '4px 4px 16px' }}>

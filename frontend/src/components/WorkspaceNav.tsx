@@ -9,7 +9,7 @@ import { api } from '../api';
 
 interface BoardItem { id: string; name: string; my_role: string; department_name?: string; visibility: string; }
 interface Folder { id: string; name: string; position: number; boardIds: string[]; }
-interface DashItem { id: string; name: string; }
+interface DashItem { id: string; name: string; is_team?: boolean; is_owner?: boolean; }
 
 export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onOpen, onNewBoard, onNewDashboard, onOpenDashboard, onOpenCustomDashboard }: {
   activeId?: string; dashboardActive?: boolean; activeDashboardId?: string | null;
@@ -115,7 +115,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
 
   return (
     <nav style={{
-      width: collapsed ? 52 : 232, background: '#fafbfd', borderRight: '1px solid #e6e8ef',
+      width: collapsed ? 52 : 232, height: '100%', minHeight: 0, background: '#fafbfd', borderRight: '1px solid #e6e8ef',
       padding: 10, flexShrink: 0, transition: 'width .2s', display: 'flex', flexDirection: 'column', gap: 2,
     }}>
       {/* 标题 + 加号 + 折叠 */}
@@ -149,7 +149,8 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
               background: activeDashboardId === d.id ? '#eef1fe' : 'transparent',
               color: activeDashboardId === d.id ? '#4f6ef7' : '#25272c', fontWeight: activeDashboardId === d.id ? 600 : 400,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>📈</span>{!collapsed && <span>{d.name}</span>}
+            <span>{d.is_team ? '👥' : '📈'}</span>{!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>}
+            {!collapsed && d.is_team && <span style={{ fontSize: 10, color: '#a0a4b1' }}>团队</span>}
           </div>
         ))}
 

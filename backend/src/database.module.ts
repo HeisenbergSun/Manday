@@ -10,12 +10,16 @@ import { Pool } from 'pg';
   providers: [
     {
       provide: Pool,
-      useFactory: () =>
-        new Pool({
+      useFactory: () => {
+        const pool = new Pool({
           connectionString: process.env.DATABASE_URL || 'postgres://manday:manday@localhost:5432/manday',
           max: Number(process.env.PG_POOL_MAX || 20),
           idleTimeoutMillis: 30000,
-        }),
+        });
+        // 远端 Neon 偶发 ECONNRESET：挂 error handler 防 unhandled error 拖垮进程（pool 会自动重连）
+        pool.on('error', (err) => console.warn('[pg] idle client error:', (err as Error).message));
+        return pool;
+      },
     },
   ],
   exports: [Pool],

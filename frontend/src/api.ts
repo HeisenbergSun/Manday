@@ -172,7 +172,7 @@ export const api = {
 
   // ---- 自定义 Dashboard（BI）----
   listDashboards: () => request('/dashboards'),
-  createDashboard: (name: string) => request('/dashboards', { method: 'POST', body: JSON.stringify({ name }) }),
+  createDashboard: (name: string, scope: 'personal' | 'team' = 'personal') => request('/dashboards', { method: 'POST', body: JSON.stringify({ name, scope }) }),
   renameDashboard: (id: string, name: string) => request(`/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteDashboard: (id: string) => request(`/dashboards/${id}`, { method: 'DELETE' }),
   getDashboard: (id: string) => request(`/dashboards/${id}`),

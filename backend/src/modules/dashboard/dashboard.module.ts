@@ -128,30 +128,51 @@ export class DashboardService {
 
   // ================= 自定义 Dashboard（BI 图表）=================
 
+  /** 是否有权访问该 dashboard：本人创建，或同部门团队共享 */
+  private async canAccess(userId: string, dashboardId: string): Promise<boolean> {
+    const { rows } = await this.pg.query(
+      `SELECT 1 FROM dashboards d
+       WHERE d.id = $1 AND (d.created_by = $2
+         OR d.department_id IN (SELECT department_id FROM user_departments WHERE user_id = $2))`,
+      [dashboardId, userId]);
+    return rows.length > 0;
+  }
+
   async listDashboards(userId: string) {
     const { rows } = await this.pg.query(
-      `SELECT id, name, created_at FROM dashboards WHERE created_by = $1 ORDER BY created_at`, [userId]);
+      `SELECT d.id, d.name, d.created_at, d.created_by = $1 AS is_owner,
+              (d.department_id IS NOT NULL) AS is_team
+       FROM dashboards d
+       WHERE d.created_by = $1
+          OR d.department_id IN (SELECT department_id FROM user_departments WHERE user_id = $1)
+       ORDER BY d.created_at`, [userId]);
     return rows;
   }
 
-  async createDashboard(userId: string, name: string) {
+  async createDashboard(userId: string, name: string, scope: 'personal' | 'team' = 'personal') {
+    const deptId = scope === 'team'
+      ? (await this.pg.query(`SELECT department_id FROM user_departments WHERE user_id = $1 LIMIT 1`, [userId])).rows[0]?.department_id ?? null
+      : null;
     const { rows } = await this.pg.query(
-      `INSERT INTO dashboards (name, created_by) VALUES ($1,$2) RETURNING id, name, created_at`, [name, userId]);
-    return rows[0];
+      `INSERT INTO dashboards (name, created_by, department_id) VALUES ($1,$2,$3) RETURNING id, name, created_at`, [name, userId, deptId]);
+    return { ...rows[0], is_team: scope === 'team' };
   }
 
   async renameDashboard(userId: string, id: string, name: string) {
-    await this.pg.query(`UPDATE dashboards SET name=$1 WHERE id=$2 AND created_by=$3`, [name, id, userId]);
+    if (!(await this.canAccess(userId, id))) throw new Error('NOT_FOUND');
+    await this.pg.query(`UPDATE dashboards SET name=$1 WHERE id=$2`, [name, id]);
     return { ok: true };
   }
 
   async deleteDashboard(userId: string, id: string) {
-    await this.pg.query(`DELETE FROM dashboards WHERE id=$1 AND created_by=$2`, [id, userId]);
+    if (!(await this.canAccess(userId, id))) throw new Error('NOT_FOUND');
+    await this.pg.query(`DELETE FROM dashboards WHERE id=$1`, [id]);
     return { ok: true };
   }
 
   async getDashboard(userId: string, id: string) {
-    const d = (await this.pg.query(`SELECT id, name FROM dashboards WHERE id=$1 AND created_by=$2`, [id, userId])).rows[0];
+    if (!(await this.canAccess(userId, id))) return null;
+    const d = (await this.pg.query(`SELECT id, name, created_by, department_id FROM dashboards WHERE id=$1`, [id])).rows[0];
     if (!d) return null;
     const { rows: widgets } = await this.pg.query(
       `SELECT id, type, title, config, position FROM widgets WHERE dashboard_id=$1 ORDER BY position, created_at`, [id]);
@@ -159,8 +180,7 @@ export class DashboardService {
   }
 
   async addWidget(userId: string, dashboardId: string, dto: { type: string; title?: string; config?: any }) {
-    const own = await this.pg.query(`SELECT 1 FROM dashboards WHERE id=$1 AND created_by=$2`, [dashboardId, userId]);
-    if (!own.rowCount) throw new Error('NOT_FOUND');
+    if (!(await this.canAccess(userId, dashboardId))) throw new Error('NOT_FOUND');
     const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM widgets WHERE dashboard_id=$1`, [dashboardId])).rows[0].p;
     const { rows } = await this.pg.query(
       `INSERT INTO widgets (dashboard_id, type, title, config, position) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING id, type, title, config, position`,
@@ -169,6 +189,7 @@ export class DashboardService {
   }
 
   async updateWidget(userId: string, dashboardId: string, widgetId: string, dto: { title?: string; type?: string; config?: any }) {
+    if (!(await this.canAccess(userId, dashboardId))) throw new Error('NOT_FOUND');
     await this.pg.query(
       `UPDATE widgets SET title=COALESCE($1,title), type=COALESCE($2,type), config=COALESCE($3::jsonb,config)
        WHERE id=$4 AND dashboard_id=$5`,
@@ -177,6 +198,7 @@ export class DashboardService {
   }
 
   async reorderWidgets(userId: string, dashboardId: string, order: string[]) {
+    if (!(await this.canAccess(userId, dashboardId))) throw new Error('NOT_FOUND');
     for (let i = 0; i < order.length; i++) {
       await this.pg.query(`UPDATE widgets SET position=$1 WHERE id=$2 AND dashboard_id=$3`, [i, order[i], dashboardId]);
     }
@@ -184,6 +206,7 @@ export class DashboardService {
   }
 
   async deleteWidget(userId: string, dashboardId: string, widgetId: string) {
+    if (!(await this.canAccess(userId, dashboardId))) throw new Error('NOT_FOUND');
     await this.pg.query(`DELETE FROM widgets WHERE id=$1 AND dashboard_id=$2`, [widgetId, dashboardId]);
     return { ok: true };
   }
@@ -356,7 +379,7 @@ export class DashboardController {
 
   // ---- 自定义 Dashboard CRUD ----
   @Get() list(@Req() req) { return this.svc.listDashboards(req.user.id); }
-  @Post() create(@Req() req, @Body() b: { name: string }) { return this.svc.createDashboard(req.user.id, b.name); }
+  @Post() create(@Req() req, @Body() b: { name: string; scope?: 'personal' | 'team' }) { return this.svc.createDashboard(req.user.id, b.name, b.scope ?? 'personal'); }
   @Get(':id') get(@Req() req, @Param('id') id: string) { return this.svc.getDashboard(req.user.id, id); }
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameDashboard(req.user.id, id, b.name); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteDashboard(req.user.id, id); }

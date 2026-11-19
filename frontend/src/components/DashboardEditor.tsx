@@ -23,6 +23,36 @@ const WIDGET_TYPES: { type: string; label: string; icon: string; desc: string }[
   { type: 'activity', label: '动态流', icon: '🕒', desc: '近期操作' },
 ];
 
+/** 仪表盘模板：一键生成一组 widget（列名按模板约定，创建时绑定用户选定的 board） */
+const TEMPLATES: { name: string; icon: string; desc: string; widgets: { type: string; title: string; config: any }[] }[] = [
+  {
+    name: '项目总览', icon: '📋', desc: '进度 + 状态分布 + 预算 + 甘特 + 表格',
+    widgets: [
+      { type: 'battery', title: '完成进度', config: {} },
+      { type: 'bar', title: '状态分布', config: { groupBy: '状态', metric: 'count' } },
+      { type: 'number', title: '预算', config: { column: '预算', aggs: ['sum', 'avg', 'count'] } },
+      { type: 'gantt', title: '时间安排', config: { startColumn: '开始日期', endColumn: '截止日期' } },
+      { type: 'table', title: '条目列表', config: { limit: 20 } },
+    ],
+  },
+  {
+    name: '团队负载', icon: '👥', desc: '成员排行 + 动态 + 逾期',
+    widgets: [
+      { type: 'rank', title: '成员负载排行', config: {} },
+      { type: 'activity', title: '近期动态', config: {} },
+      { type: 'bar', title: '状态分布', config: { groupBy: '状态', metric: 'count' } },
+    ],
+  },
+  {
+    name: '销售漏斗', icon: '🥧', desc: '按阶段占比 + 金额汇总 + 趋势',
+    widgets: [
+      { type: 'pie', title: '阶段占比', config: { groupBy: '阶段' } },
+      { type: 'number', title: '金额', config: { column: '金额', aggs: ['sum', 'avg'] } },
+      { type: 'line', title: '成交趋势', config: { dateColumn: '成交日期' } },
+    ],
+  },
+];
+
 interface Widget { id: string; type: string; title: string; config: any; }
 
 function BarChart({ data, valueKey = 'value' }: { data: any[]; valueKey?: string }) {
@@ -111,7 +141,7 @@ function ComboChart({ data }: { data: { label: string; bar: number; line: number
   );
 }
 
-function GanttChart({ data }: { data: { id: string; name: string; board: string; start: string; end: string }[] }) {
+function GanttChart({ data, onOpenItem }: { data: { id: string; name: string; board: string; start: string; end: string }[]; onOpenItem?: (id: string) => void }) {
   data = Array.isArray(data) ? data : [];
   const days = data.map((d) => ({ s: new Date(d.start).getTime(), e: new Date(d.end).getTime() }));
   const min = Math.min(...days.map((d) => d.s), Date.now() - 7 * 86400000);
@@ -121,7 +151,8 @@ function GanttChart({ data }: { data: { id: string; name: string; board: string;
   return (
     <div>
       {data.map((d, i) => (
-        <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+        <div key={d.id} onClick={() => onOpenItem?.(d.id)} title="点击打开条目详情"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, cursor: 'pointer' }}>
           <span style={{ width: 90, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
           <div style={{ flex: 1, height: 12, background: '#f0f1f5', borderRadius: 6, position: 'relative' }}>
             <div style={{ position: 'absolute', left: `${((days[i].s - min) / span) * 100}%`, width: `${Math.max(((days[i].e - days[i].s) / span) * 100, 3)}%`, height: '100%', background: COLORS[i % COLORS.length], borderRadius: 6 }} />
@@ -134,8 +165,9 @@ function GanttChart({ data }: { data: { id: string; name: string; board: string;
   );
 }
 
-function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize }: {
-  dashboardId: string; widget: Widget; onDelete: () => void; onEdit: () => void; onResize: (w: number, h: number) => void;
+function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenItem }: {
+  dashboardId: string; widget: Widget; onDelete: () => void; onEdit: () => void;
+  onResize: (w: number, h: number) => void; onOpenItem?: (id: string) => void;
 }) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState('');
@@ -203,10 +235,11 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize }: {
         {data && widget.type === 'line' && <LineChart data={data} />}
         {data && widget.type === 'area' && <LineChart data={data} fill />}
         {data && widget.type === 'combo' && <ComboChart data={data} />}
-        {data && widget.type === 'gantt' && <GanttChart data={data} />}
+        {data && widget.type === 'gantt' && <GanttChart data={data} onOpenItem={onOpenItem} />}
         {data && widget.type === 'table' && (
           <div>{data.map((r: any) => (
-            <div key={r.id} style={{ display: 'flex', gap: 8, fontSize: 12, padding: '4px 0', borderBottom: '1px solid #f5f6fa' }}>
+            <div key={r.id} onClick={() => onOpenItem?.(r.id)} title="点击打开条目详情"
+              style={{ display: 'flex', gap: 8, fontSize: 12, padding: '4px 0', borderBottom: '1px solid #f5f6fa', cursor: 'pointer' }}>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
               <span style={{ color: '#a0a4b1', fontSize: 11 }}>{r.board}</span>
             </div>
@@ -235,16 +268,27 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize }: {
   );
 }
 
-export function DashboardEditor({ dashboardId, onBack }: { dashboardId: string; onBack: () => void }) {
+export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboardId: string; onBack: () => void; onOpenItem?: (id: string) => void }) {
   const [dash, setDash] = useState<{ id: string; name: string; widgets: Widget[] } | null>(null);
   const [boards, setBoards] = useState<any[]>([]);
   const [editing, setEditing] = useState<Widget | null | 'new'>(null);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const [err, setErr] = useState('');
 
   const load = useCallback(() => {
     api.getDashboard(dashboardId).then((d) => setDash(d)).catch((e) => setErr((e as Error).message));
   }, [dashboardId]);
   useEffect(() => { load(); api.getBoards().then((d) => setBoards(Array.isArray(d) ? d : [])).catch(() => {}); }, [load]);
+
+  const applyTemplate = async (template: { widgets: { type: string; title: string; config: any }[] }, boardId: string) => {
+    for (const w of template.widgets) {
+      const config = { ...w.config };
+      if (boardId) config.boardIds = [boardId];
+      await api.addWidget(dashboardId, { type: w.type, title: w.title, config }).catch(() => {});
+    }
+    setTemplateOpen(false);
+    load();
+  };
 
   const removeWidget = async (wid: string) => {
     if (!confirm('删除这个图表？')) return;
@@ -288,7 +332,13 @@ export function DashboardEditor({ dashboardId, onBack }: { dashboardId: string; 
       </div>
       {err && <div style={{ color: '#e2445c', fontSize: 12, marginBottom: 10 }}>{err}</div>}
       {dash?.widgets.length === 0 && (
-        <div style={{ padding: 60, textAlign: 'center', color: '#7a7f8c', fontSize: 14 }}>还没有图表——点「＋ 添加图表」开始搭建你的数据看板</div>
+        <div style={{ padding: 60, textAlign: 'center', color: '#7a7f8c', fontSize: 14 }}>
+          还没有图表——点「＋ 添加图表」手动搭建，或
+          <button data-template-trigger onClick={() => setTemplateOpen(true)}
+            style={{ border: 'none', background: 'none', color: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontWeight: 600, textDecoration: 'underline' }}>
+            从模板快速创建
+          </button>
+        </div>
       )}
       <div data-dash-grid style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 72, gap: 14 }}>
         {(dash?.widgets ?? []).map((w) => (
@@ -298,7 +348,7 @@ export function DashboardEditor({ dashboardId, onBack }: { dashboardId: string; 
             onDrop={(e) => { e.preventDefault(); dropWidget(e.dataTransfer.getData('text/plain'), w.id); }}
             style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}` }}>
             <WidgetCard dashboardId={dashboardId} widget={w}
-              onDelete={() => removeWidget(w.id)} onEdit={() => setEditing(w)} onResize={(nw, nh) => resizeWidget(w, nw, nh)} />
+              onDelete={() => removeWidget(w.id)} onEdit={() => setEditing(w)} onResize={(nw, nh) => resizeWidget(w, nw, nh)} onOpenItem={onOpenItem} />
           </div>
         ))}
       </div>
@@ -306,6 +356,43 @@ export function DashboardEditor({ dashboardId, onBack }: { dashboardId: string; 
         <WidgetConfigModal boards={boards} initial={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)} onSave={saveWidget} />
       )}
+      {templateOpen && (
+        <TemplateModal boards={boards} onClose={() => setTemplateOpen(false)} onCreate={applyTemplate} />
+      )}
+    </div>
+  );
+}
+
+/** 模板选择弹窗：选模板 + 绑定数据源 board，批量生成 widget */
+function TemplateModal({ boards, onClose, onCreate }: {
+  boards: any[]; onClose: () => void; onCreate: (t: { widgets: { type: string; title: string; config: any }[] }, boardId: string) => void;
+}) {
+  const [boardId, setBoardId] = useState('');
+  return (
+    <div data-template-modal onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,18,30,.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 560, maxHeight: '88vh', overflow: 'auto', background: '#fff', borderRadius: 14, padding: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <b style={{ fontSize: 15 }}>从模板创建</b>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
+        </div>
+        <div style={{ fontSize: 12, color: '#5a6072', marginBottom: 6 }}>数据源 Board（模板图表将绑定到这个 Board）</div>
+        <select value={boardId} onChange={(e) => setBoardId(e.target.value)}
+          style={{ width: '100%', padding: '9px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13, marginBottom: 16 }}>
+          <option value="">选择 Board…</option>
+          {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        {TEMPLATES.map((t) => (
+          <div key={t.name} data-template={t.name} onClick={() => { if (boardId) onCreate(t, boardId); }}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, border: '1px solid #e6e8ef', borderRadius: 10, cursor: boardId ? 'pointer' : 'not-allowed', marginBottom: 10, opacity: boardId ? 1 : 0.55 }}>
+            <span style={{ fontSize: 24 }}>{t.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{t.name}</div>
+              <div style={{ fontSize: 12, color: '#7a7f8c' }}>{t.desc}</div>
+            </div>
+            <span style={{ color: '#4f6ef7', fontSize: 13 }}>创建 →</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
