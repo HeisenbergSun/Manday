@@ -45,6 +45,13 @@ export const api = {
 
   getBoards: () => request('/boards'),
   getBoard: (boardId: string) => request(`/boards/${boardId}`),
+  // 工作区自定义分组
+  listFolders: () => request('/board-folders'),
+  createFolder: (name: string) => request('/board-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameFolder: (folderId: string, name: string) => request(`/board-folders/${folderId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteFolder: (folderId: string) => request(`/board-folders/${folderId}`, { method: 'DELETE' }),
+  addBoardToFolder: (folderId: string, boardId: string) => request(`/board-folders/${folderId}/boards`, { method: 'POST', body: JSON.stringify({ boardId }) }),
+  removeBoardFromFolder: (folderId: string, boardId: string) => request(`/board-folders/${folderId}/boards/${boardId}`, { method: 'DELETE' }),
   createItem: (boardId: string, name: string, groupId?: string) =>
     request(`/boards/${boardId}/items`, { method: 'POST', body: JSON.stringify({ name, groupId }) }),
   updateItem: (itemId: string, patch: { name?: string; groupId?: string; done?: boolean }) =>

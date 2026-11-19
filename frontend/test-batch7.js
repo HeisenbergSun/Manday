@@ -64,7 +64,7 @@ const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new',
   await sleep(800);
   // 左侧导航点击测试 board
   const opened = await page.evaluate((name) => {
-    const el = [...document.querySelectorAll('div')].find((e) => e.textContent === name && getComputedStyle(e).cursor === 'pointer');
+    const el = document.querySelector(`[data-board-item="${name}"]`);
     if (el) { el.click(); return true; }
     return false;
   }, BOARD_NAME);

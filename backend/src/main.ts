@@ -89,7 +89,21 @@ async function ensureMinorSchema() {
       CREATE INDEX IF NOT EXISTS idx_items_board_live ON items(board_id, deleted_at, parent_item_id, position);
       CREATE INDEX IF NOT EXISTS idx_board_columns_board ON board_columns(board_id, position);
       CREATE INDEX IF NOT EXISTS idx_board_groups_board ON board_groups(board_id, position);
-      CREATE INDEX IF NOT EXISTS idx_board_views_board ON board_views(board_id, position);`);
+      CREATE INDEX IF NOT EXISTS idx_board_views_board ON board_views(board_id, position);
+      CREATE TABLE IF NOT EXISTS board_folders (
+        id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name       TEXT NOT NULL,
+        position   INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS board_folder_items (
+        folder_id UUID NOT NULL REFERENCES board_folders(id) ON DELETE CASCADE,
+        board_id  UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+        position  INT DEFAULT 0,
+        PRIMARY KEY (folder_id, board_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_board_folder_items_folder ON board_folder_items(folder_id, position);`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {
     console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);

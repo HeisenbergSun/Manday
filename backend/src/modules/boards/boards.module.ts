@@ -438,12 +438,68 @@ export class BoardsService {
       `SELECT id, name, email FROM users WHERE status = 'active' ORDER BY name LIMIT 200`);
     return rows;
   }
+
+  // ---- 工作区自定义分组（用户级 Board 文件夹）----
+
+  /** 我的分组列表（含每个分组的 board id） */
+  async listFolders(userId: string) {
+    const { rows } = await this.pg.query(
+      `SELECT f.id, f.name, f.position,
+              COALESCE(jsonb_agg(bfi.board_id ORDER BY bfi.position) FILTER (WHERE bfi.board_id IS NOT NULL), '[]'::jsonb) AS board_ids
+       FROM board_folders f
+       LEFT JOIN board_folder_items bfi ON bfi.folder_id = f.id
+       WHERE f.user_id = $1
+       GROUP BY f.id
+       ORDER BY f.position, f.created_at`, [userId]);
+    return rows.map((r) => ({ id: r.id, name: r.name, position: r.position, boardIds: r.board_ids ?? [] }));
+  }
+
+  async createFolder(userId: string, name: string) {
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM board_folders WHERE user_id = $1`, [userId])).rows[0].p;
+    const { rows } = await this.pg.query(
+      `INSERT INTO board_folders (user_id, name, position) VALUES ($1,$2,$3) RETURNING id, name, position`, [userId, name, pos]);
+    return rows[0];
+  }
+
+  async renameFolder(userId: string, folderId: string, name: string) {
+    await this.pg.query(`UPDATE board_folders SET name = $1 WHERE id = $2 AND user_id = $3`, [name, folderId, userId]);
+    return { ok: true };
+  }
+
+  async deleteFolder(userId: string, folderId: string) {
+    await this.pg.query(`DELETE FROM board_folders WHERE id = $1 AND user_id = $2`, [folderId, userId]);
+    return { ok: true };
+  }
+
+  async addBoardToFolder(userId: string, folderId: string, boardId: string) {
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM board_folder_items WHERE folder_id = $1`, [folderId])).rows[0].p;
+    await this.pg.query(
+      `INSERT INTO board_folder_items (folder_id, board_id, position) VALUES ($1,$2,$3)
+       ON CONFLICT (folder_id, board_id) DO NOTHING`, [folderId, boardId, pos]);
+    return { ok: true };
+  }
+
+  async removeBoardFromFolder(userId: string, folderId: string, boardId: string) {
+    await this.pg.query(`DELETE FROM board_folder_items WHERE folder_id = $1 AND board_id = $2`, [folderId, boardId]);
+    return { ok: true };
+  }
 }
 
 @Controller('users')
 export class UsersController {
   constructor(private svc: BoardsService) {}
   @Get() list(@Req() req) { return this.svc.listUsers(); }
+}
+
+@Controller('board-folders')
+export class BoardFoldersController {
+  constructor(private svc: BoardsService) {}
+  @Get() list(@Req() req) { return this.svc.listFolders(req.user.id); }
+  @Post() create(@Req() req, @Body() b: { name: string }) { return this.svc.createFolder(req.user.id, b.name); }
+  @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameFolder(req.user.id, id, b.name); }
+  @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteFolder(req.user.id, id); }
+  @Post(':id/boards') addBoard(@Req() req, @Param('id') id: string, @Body() b: { boardId: string }) { return this.svc.addBoardToFolder(req.user.id, id, b.boardId); }
+  @Delete(':id/boards/:boardId') removeBoard(@Req() req, @Param('id') id: string, @Param('boardId') boardId: string) { return this.svc.removeBoardFromFolder(req.user.id, id, boardId); }
 }
 
 @Controller('boards')
@@ -515,5 +571,5 @@ export class BoardsController {
   }
 }
 
-@Module({ controllers: [BoardsController, UsersController], providers: [BoardsService] })
+@Module({ controllers: [BoardsController, UsersController, BoardFoldersController], providers: [BoardsService] })
 export class BoardsModule {}

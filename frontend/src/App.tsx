@@ -106,6 +106,8 @@ export function App() {
   const { aiOpen, toggleAI } = useUi();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>(null);
+  const [allBoards, setAllBoards] = useState<any[]>([]);
+  const [workspaceDashboard, setWorkspaceDashboard] = useState(false);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   // #65 移动端侧边抽屉
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -123,11 +125,14 @@ export function App() {
   const setLoading = useItems((s) => s.setLoading);
   const groups = useItems((s) => s.groups);
 
-  // 登录后自动打开第一个可见 Board
+  // 登录后加载所有可见 Board + 自动打开第一个
   useEffect(() => {
     if (!user || activeBoard) return;
     api.getBoards().then((bs) => {
-      if (Array.isArray(bs) && bs.length) setActiveBoard({ id: bs[0].id, name: bs[0].name });
+      if (Array.isArray(bs)) {
+        setAllBoards(bs);
+        if (bs.length) setActiveBoard({ id: bs[0].id, name: bs[0].name });
+      }
     }).catch(() => {});
   }, [user?.id, activeBoard?.id]);
 
@@ -186,14 +191,22 @@ export function App() {
             cursor: 'pointer', fontSize: 15, alignItems: 'center' }}>☰</button>
         <div style={{ fontWeight: 800, fontSize: 17, color: '#4f6ef7' }}>Manday</div>
         <nav style={{ display: 'flex', gap: 4 }}>
-          {(['table', 'kanban', 'calendar', 'gantt', 'workload', 'insights', 'dashboard', 'trash'] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)}
+          {workspaceDashboard || !activeBoard ? (
+            <button onClick={() => { setWorkspaceDashboard(true); setActiveBoard(null); }}
               style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-                background: view === v ? '#eef1fe' : 'transparent', color: view === v ? '#4f6ef7' : '#7a7f8c',
-                fontWeight: view === v ? 600 : 400 }}>
-              {v === 'table' ? '▤ 表格' : v === 'kanban' ? '▦ 看板' : v === 'calendar' ? '📅 日历' : v === 'gantt' ? '📈 甘特' : v === 'workload' ? '🧑‍💼 Workload' : v === 'insights' ? '🪭 分析' : v === 'dashboard' ? '📊 Dashboard' : '🗑 回收站'}
+                background: '#eef1fe', color: '#4f6ef7', fontWeight: 600 }}>
+              📊 工作台
             </button>
-          ))}
+          ) : (
+            (['table', 'kanban', 'calendar', 'gantt', 'workload', 'insights', 'dashboard', 'trash'] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)}
+                style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
+                  background: view === v ? '#eef1fe' : 'transparent', color: view === v ? '#4f6ef7' : '#7a7f8c',
+                  fontWeight: view === v ? 600 : 400 }}>
+                {v === 'table' ? '▤ 表格' : v === 'kanban' ? '▦ 看板' : v === 'calendar' ? '📅 日历' : v === 'gantt' ? '📈 甘特' : v === 'workload' ? '🧑‍💼 Workload' : v === 'insights' ? '🪭 分析' : v === 'dashboard' ? '📊 Dashboard' : '🗑 回收站'}
+              </button>
+            ))
+          )}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <span data-desktop-hint style={{ color: '#7a7f8c', fontSize: 12 }}>⌘K 搜索</span>
@@ -210,14 +223,20 @@ export function App() {
         <div data-sidenav-overlay className={mobileNavOpen ? 'open' : ''}
           onClick={() => setMobileNavOpen(false)} />
         <div data-sidenav className={mobileNavOpen ? 'open' : ''}>
-          <WorkspaceNav activeId={activeBoard?.id}
-            onOpen={(b) => { setActiveBoard(b); setView('table'); setMobileNavOpen(false); }}
+          <WorkspaceNav activeId={activeBoard?.id} dashboardActive={workspaceDashboard}
+            onOpen={(b) => { setActiveBoard(b); setWorkspaceDashboard(false); setView('table'); setMobileNavOpen(false); }}
+            onOpenDashboard={() => { setWorkspaceDashboard(true); setActiveBoard(null); setMobileNavOpen(false); }}
             onNewBoard={() => setNewBoardOpen(true)} />
         </div>
         <main style={{ flex: 1, overflow: 'auto' }}>
-          {!activeBoard ? (
-            <div style={{ padding: 48, color: '#7a7f8c', fontSize: 14 }}>← 从左侧选择一个 Board，或新建一个</div>
-          ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} onSwitchView={setView as (v: string) => void} />
+          {workspaceDashboard || !activeBoard ? (
+            <div style={{ padding: 16 }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: '#25272c', margin: '4px 4px 16px' }}>
+                📊 工作台 <span style={{ fontSize: 12, fontWeight: 400, color: '#7a7f8c' }}>· 跨 {allBoards.length} 个 Board 的全局总览</span>
+              </div>
+              <DashboardPage boardIds={allBoards.map((b) => b.id)} onOpenItem={(id) => { /* 跨板条目：打开对应 board 后定位 */ setDetailId(id); }} />
+            </div>
+          ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} onSwitchView={setView as (v: string) => void } />
             : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} boardId={activeBoard.id} />
             : view === 'calendar' ? <CalendarView onOpenItem={setDetailId} />
             : view === 'gantt' ? <GanttView onOpenItem={setDetailId} />

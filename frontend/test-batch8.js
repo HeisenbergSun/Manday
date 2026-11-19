@@ -79,7 +79,7 @@ const browser = await puppeteer.launch({
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(1500);
   const entered = await page.evaluate((name) => {
-    const el = [...document.querySelectorAll('div')].find((d) => d.textContent === name && getComputedStyle(d).cursor === 'pointer');
+    const el = document.querySelector(`[data-board-item="${name}"]`);
     if (el) { el.click(); return true; }
     return false;
   }, NAME);
@@ -170,7 +170,7 @@ const browser = await puppeteer.launch({
   await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 20000 });
   await sleep(1500);
   await page.evaluate((name) => {
-    const el = [...document.querySelectorAll('div')].find((d) => d.textContent === name && getComputedStyle(d).cursor === 'pointer');
+    const el = document.querySelector(`[data-board-item="${name}"]`);
     if (el) el.click();
   }, NAME);
   await sleep(1500);

@@ -245,9 +245,9 @@ const browser = await puppeteer.launch({
   const longtextCell = await page.$('[data-longtext-cell]');
   assert(!!longtextCell, 'G6 LongText 长文本列渲染（data-longtext-cell）');
 
-  // ── G7: CSV 导出按钮 ──
-  const exportBtn = await page.$('[data-export-csv]');
-  assert(!!exportBtn, 'G7 CSV 导出按钮存在（data-export-csv）');
+  // ── G7: CSV 已移除，改验证 Excel 导出按钮存在（保留 Excel 导出）──
+  const exportBtn = await page.$('[data-export-xlsx]');
+  assert(!!exportBtn, 'G7 Excel 导出按钮存在（data-export-xlsx，CSV 已移除）');
 
   // ── K1-K3: 看板视图 ──
   console.log('\n--- 看板视图 ---');

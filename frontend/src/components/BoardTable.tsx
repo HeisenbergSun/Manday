@@ -438,9 +438,43 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     } catch (e) { flash(`修改失败：${(e as Error).message}`); }
   }, [boardId, reloadBoard]);
 
+  /** 自定义选项（status/dropdown/tags）：添加预置选项 */
+  const OPTION_COLORS = ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d3dd7', '#00d1d1', '#ff8a65', '#a25ddc'];
+  const addColumnOption = useCallback(async (col: any, label: string) => {
+    label = label.trim();
+    if (!label) return;
+    const s: any = { ...(col.settings ?? {}) };
+    const key = col.type === 'status' ? 'labels' : 'options';
+    const list: any[] = Array.isArray(s[key]) ? [...s[key]] : [];
+    if (list.some((o) => (o?.label ?? o) === label)) { flash(`选项「${label}」已存在`); return; }
+    list.push(col.type === 'status' ? { label, color: OPTION_COLORS[list.length % OPTION_COLORS.length] } : { label });
+    s[key] = list;
+    try {
+      await api.updateColumnSettings(boardId, col.id, s);
+      await reloadBoard();
+      flash(`已添加选项「${label}」`);
+    } catch (e) { flash(`添加选项失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
+
+  /** 自定义选项：删除预置选项（status 同步清理 doneLabels/inactiveLabels） */
+  const removeColumnOption = useCallback(async (col: any, label: string) => {
+    if (!confirm(`删除选项「${label}」？已使用该选项的单元格会保留原值，但无法再选择。`)) return;
+    const s: any = { ...(col.settings ?? {}) };
+    const key = col.type === 'status' ? 'labels' : 'options';
+    s[key] = (Array.isArray(s[key]) ? s[key] : []).filter((o: any) => (o?.label ?? o) !== label);
+    if (col.type === 'status') {
+      s.inactiveLabels = (s.inactiveLabels ?? []).filter((l: string) => l !== label);
+      s.doneLabels = (s.doneLabels ?? []).filter((l: string) => l !== label);
+    }
+    try {
+      await api.updateColumnSettings(boardId, col.id, s);
+      await reloadBoard();
+      flash(`已删除选项「${label}」`);
+    } catch (e) { flash(`删除选项失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
+
   /** 批量改状态（P0-4）：选中 ≥3 行时底部工具条，逐行 LWW 写入 */
   const statusCol = useMemo(() => columns.find((c: any) => c.type === 'status'), [columns]);
-
   // P2-2：示例条目（名称以「示例：」开头）可一键删除
   const sampleIds = useMemo(() => gridRows.filter((r) => r.name.startsWith('示例：')).map((r) => r.id), [gridRows]);
   const removeSamples = useCallback(async () => {
@@ -479,22 +513,6 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
       return String(v);
     }),
   ];
-
-  const exportCSV = useCallback(() => {
-    const headers = ['条目', ...columns.map((c: any) => c.name)];
-    const dataRows = exportRows().map(rowToCells);
-    const csv = [headers, ...dataRows].map((row) =>
-      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','),
-    ).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `manday-export-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    flash(tableFilters.length ? `已导出 CSV（筛选后 ${dataRows.length} 条）` : '已导出 CSV');
-  }, [exportRows, columns, tableFilters]);
 
   /** #58 Excel 导出（xlsx）：有筛选时仅导出筛选后行 */
   const exportXLSX = useCallback(() => {
@@ -663,6 +681,31 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                           border: isDone ? `1px solid ${TAG.done}` : 'none' }}>
                         {l.label}{isDone ? ' ✓' : ''}</span>;
                     })}
+                    {isOwner && (
+                      <input data-option-input={c.id} placeholder="＋ 新标签" onKeyDown={(e) => {
+                        if (e.key === 'Enter') { addColumnOption(c, (e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; }
+                      }} style={{ width: 66, padding: '1px 6px', borderRadius: 10, border: '1px dashed #b5bac8', fontSize: 11 }} />
+                    )}
+                  </div>
+                )}
+                {['dropdown', 'tags'].includes(c.type) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', maxWidth: 220 }} data-option-editor={c.id}>
+                    {(c.settings?.options ?? []).map((o: any) => {
+                      const label = o?.label ?? o;
+                      return <span key={label} data-option-chip={label}
+                        title={isOwner ? '预置选项（点击 × 删除）' : '预置选项'}
+                        style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: '#eef1fe', color: '#4f6ef7',
+                          display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {label}
+                        {isOwner && <span data-option-remove onClick={() => removeColumnOption(c, label)}
+                          style={{ color: '#a0a4b1', fontWeight: 700, cursor: 'pointer', padding: '0 2px' }}>×</span>}
+                      </span>;
+                    })}
+                    {isOwner && (
+                      <input data-option-input={c.id} placeholder={c.type === 'dropdown' ? '＋ 新选项' : '＋ 新标签'} onKeyDown={(e) => {
+                        if (e.key === 'Enter') { addColumnOption(c, (e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; }
+                      }} style={{ width: 66, padding: '1px 6px', borderRadius: 10, border: '1px dashed #b5bac8', fontSize: 11 }} />
+                    )}
                   </div>
                 )}
                 {isOwner && (
@@ -735,11 +778,6 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           ⚡ 自动化
         </button>
         {autoOpen && <div data-auto-panel="1"><AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} /></div>}
-        <button data-export-csv onClick={exportCSV}
-          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
-          📥 导出 CSV{tableFilters.length ? '（筛选后）' : ''}
-        </button>
         <button data-export-xlsx onClick={exportXLSX}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
             cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
