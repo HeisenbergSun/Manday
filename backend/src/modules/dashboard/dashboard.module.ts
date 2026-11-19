@@ -195,11 +195,12 @@ export class DashboardService {
       const sel = agg === 'count' ? 'count(*)' : `${agg}((v.value #>> '{}')::numeric)`;
       const { rows } = await this.pg.query(
         `SELECT ${sel} AS value FROM item_values v
+         JOIN board_columns c ON c.id = v.column_id AND c.type = 'number' AND c.name = $3
          JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
          JOIN boards b ON b.id = i.board_id
-         WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+         WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
          AND (v.value #>> '{}') ~ '^-?[0-9.]+$'`,
-        [boardIds, userId, cfg.columnId]);
+        [boardIds, userId, cfg.column]);
       return { value: Number(rows[0]?.value) || 0, label: cfg.label ?? '合计', agg };
     }
 
@@ -209,22 +210,23 @@ export class DashboardService {
         const { rows } = await this.pg.query(
           `SELECT v.value #>> '{}' AS label, sum((mv.value #>> '{}')::numeric) AS value
            FROM item_values v
-           JOIN board_columns c ON c.id = v.column_id
+           JOIN board_columns c ON c.id = v.column_id AND c.name = $3
            JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
            JOIN boards b ON b.id = i.board_id
-           JOIN item_values mv ON mv.item_id = i.id AND mv.column_id = $4
-           WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+           JOIN item_values mv ON mv.item_id = i.id
+           JOIN board_columns mc ON mc.id = mv.column_id AND mc.type = 'number' AND mc.name = $4
+           WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
            GROUP BY label ORDER BY value DESC LIMIT 20`,
-          [boardIds, userId, cfg.groupBy, cfg.metricColumnId]);
+          [boardIds, userId, cfg.groupBy, cfg.metricColumn]);
         return rows.map((r) => ({ label: r.label ?? '（空）', value: Number(r.value) || 0 }));
       }
       const { rows } = await this.pg.query(
         `SELECT v.value #>> '{}' AS label, count(*) AS value
          FROM item_values v
-         JOIN board_columns c ON c.id = v.column_id
+         JOIN board_columns c ON c.id = v.column_id AND c.name = $3
          JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
          JOIN boards b ON b.id = i.board_id
-         WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+         WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
          GROUP BY label ORDER BY value DESC LIMIT 20`,
         [boardIds, userId, cfg.groupBy]);
       return rows.map((r) => ({ label: r.label ?? '（空）', value: Number(r.value) || 0 }));
@@ -234,12 +236,12 @@ export class DashboardService {
       const { rows } = await this.pg.query(
         `SELECT v.value #>> '{}' AS date, count(*) AS value
          FROM item_values v
-         JOIN board_columns c ON c.id = v.column_id AND c.type = 'date'
+         JOIN board_columns c ON c.id = v.column_id AND c.type = 'date' AND c.name = $3
          JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
          JOIN boards b ON b.id = i.board_id
-         WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+         WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
          GROUP BY date ORDER BY date`,
-        [boardIds, userId, cfg.dateColumnId]);
+        [boardIds, userId, cfg.dateColumn]);
       return rows.map((r) => ({ date: String(r.date).slice(0, 10), value: Number(r.value) || 0 }));
     }
 

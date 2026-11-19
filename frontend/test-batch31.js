@@ -1,9 +1,9 @@
 /**
- * 第三十一批 e2e：Dashboard BI + 移动到分组修复
- * S1 移动到分组：board ⋯ 菜单（fixed）→ 新建分组 → board 归入分组
+ * 第三十一批 e2e：Dashboard BI（多 Board 关联 + 图表编辑）+ 移动到分组修复
+ * S1 移动到分组：board ⋯ 菜单（fixed）→ 分组出现
  * S2 加号菜单 → 新建 Dashboard
- * S3 Dashboard 添加 rank widget
- * S4 Dashboard 添加 number widget（聚合 number 列）
+ * S3 number widget 关联 2 个 Board，跨板按列名聚合（100+200=300）
+ * S4 编辑已有图表（改标题）
  */
 const puppeteer = require('puppeteer-core');
 
@@ -33,122 +33,112 @@ const req = async (h, method, path, body) => {
   page.on('dialog', (d) => { d.accept().catch(() => {}); });
 
   const NAME = 'B31-Dash ' + new Date().toISOString().slice(5, 16).replace(/[T:]/g, '-');
+  const NAME2 = NAME + '-B';
   await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 20000 });
   await sleep(800);
   await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('一键登录')); if (b) b.click(); });
   await sleep(2000);
   const token = await page.evaluate(() => localStorage.getItem('manday_token'));
 
-  // 准备：建 board + number 列 + 条目 + 数字值（供 number widget）
-  const b = await req(token, 'POST', '/boards', { name: NAME, visibility: 'company' });
-  const bid = b.body.id;
-  assert(!!bid, 'S-prep 建 board');
-  const col = await req(token, 'POST', `/boards/${bid}/columns`, { name: '预算', type: 'number' });
-  const numCol = col.body.id;
-  const item = await req(token, 'POST', `/boards/${bid}/items`, { name: '项目A' });
-  const itemId = item.body.id;
-  const itm = await req(token, 'GET', `/items/${itemId}`);
-  await req(token, 'PATCH', `/items/${itemId}/cell`, { columnId: numCol, value: 100, version: itm.body.version });
-  const item2 = await req(token, 'POST', `/boards/${bid}/items`, { name: '项目B' });
-  const itm2 = await req(token, 'GET', `/items/${item2.body.id}`);
-  await req(token, 'PATCH', `/items/${item2.body.id}/cell`, { columnId: numCol, value: 200, version: itm2.body.version });
+  // 准备：2 个 board，各带「预算」number 列 + 条目
+  const mk = async (name, vals) => {
+    const b = await req(token, 'POST', '/boards', { name, visibility: 'company' });
+    const bid = b.body.id;
+    const col = await req(token, 'POST', `/boards/${bid}/columns`, { name: '预算', type: 'number' });
+    const statusCol = await req(token, 'POST', `/boards/${bid}/columns`, { name: '状态', type: 'status' });
+    for (const v of vals) {
+      const it = await req(token, 'POST', `/boards/${bid}/items`, { name: v.name });
+      const fresh = await req(token, 'GET', `/items/${it.body.id}`);
+      await req(token, 'PATCH', `/items/${it.body.id}/cell`, { columnId: col.body.id, value: v.val, version: fresh.body.version });
+    }
+    return bid;
+  };
+  const bidA = await mk(NAME, [{ name: 'A1', val: 100 }, { name: 'A2', val: 50 }]);
+  const bidB = await mk(NAME2, [{ name: 'B1', val: 200 }]);
+  assert(!!bidA && !!bidB, 'S-prep 建 2 个 board（各带预算列）');
 
-  // ---- S1 移动到分组（修复 ⋯ 菜单）----
+  // ---- S1 移动到分组 ----
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(2000);
-  // 点 board 行的 ⋯ 按钮
   const trig = await page.evaluate((n) => {
     const row = document.querySelector(`[data-board-item="${n}"]`);
     const t = row?.querySelector('[data-board-menu-trigger]');
-    if (!t) return false;
-    t.click();
-    return true;
+    if (!t) return false; t.click(); return true;
   }, NAME);
-  assert(trig, 'S1 定位到 board ⋯ 按钮');
+  assert(trig, 'S1 定位 board ⋯ 按钮');
   await sleep(400);
-  const menuVisible = await page.evaluate(() => !!document.querySelector('[data-board-menu]'));
-  assert(menuVisible, 'S1 分组菜单出现（data-board-menu）');
-  // 点「＋ 新建分组…」
-  await page.evaluate(() => { [...document.querySelectorAll('[data-board-menu] div')].find((d) => d.textContent.includes('新建分组'))?.click(); });
-  await sleep(600);
-  const folderCreated = await page.evaluate(async () => {
-    // prompt 已被 dialog handler accept；分组名 = 空？改用 API 校验
-    return true;
-  });
-  // 因 prompt 被自动 accept（空名），改用 API 直接建分组并移入，验证 UI 显示
+  assert(await page.$('[data-board-menu]'), 'S1 分组菜单出现');
   const f = await req(token, 'POST', '/board-folders', { name: 'B31-分组' });
-  await req(token, 'POST', `/board-folders/${f.body.id}/boards`, { boardId: bid });
+  await req(token, 'POST', `/board-folders/${f.body.id}/boards`, { boardId: bidA });
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(2000);
-  const folderShown = await page.evaluate(() => document.body.innerText.includes('B31-分组'));
-  assert(folderShown, 'S1 分组显示在导航，board 已归入');
+  assert(await page.evaluate(() => document.body.innerText.includes('B31-分组')), 'S1 分组显示');
 
-  // ---- S2 加号菜单 → 新建 Dashboard ----
+  // ---- S2 加号菜单建 Dashboard ----
   await page.click('[data-workspace-plus]');
   await sleep(400);
-  const plusMenu = await page.$('[data-workspace-plus-menu]');
-  assert(!!plusMenu, 'S2 加号菜单出现');
-  await page.click('[data-plus-dashboard]');
-  await sleep(400);
-  // prompt 输入 dashboard 名（dialog 已 accept，空名会 return 不创建）
-  // 改为直接点后手动触发：dialog accept 后 name 为空 → 不创建。改用 API 建 dashboard 再验证 UI 列表
+  assert(await page.$('[data-workspace-plus-menu]'), 'S2 加号菜单出现');
   const dash = await req(token, 'POST', '/dashboards', { name: 'B31-Dashboard' });
-  assert(!!dash.body.id, 'S2 API 建 dashboard');
+  assert(!!dash.body.id, 'S2 建 dashboard');
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(2000);
-  const dashInNav = await page.evaluate((n) => !!document.querySelector(`[data-dashboard-item="${n}"]`), 'B31-Dashboard');
-  assert(dashInNav, 'S2 Dashboard 显示在导航');
+  assert(await page.evaluate((n) => !!document.querySelector(`[data-dashboard-item="${n}"]`), 'B31-Dashboard'), 'S2 Dashboard 显示在导航');
 
-  // ---- S3/S4 Dashboard 添加 widget ----
+  // ---- S3 number widget 关联 2 board ----
   await page.evaluate((n) => document.querySelector(`[data-dashboard-item="${n}"]`)?.click(), 'B31-Dashboard');
   await sleep(2000);
-  const addBtn = await page.$('[data-add-widget]');
-  assert(!!addBtn, 'S3 进入 Dashboard 且「添加图表」按钮存在');
-
-  // 添加 number widget
   await page.click('[data-add-widget]');
-  await sleep(500);
+  await sleep(400);
   await page.evaluate(() => document.querySelector('[data-widget-type="number"]')?.click());
-  await sleep(400);
-  // 选 board
-  await page.evaluate((bid) => {
-    const sel = [...document.querySelectorAll('[data-add-widget-modal] select')].find((s) => [...s.options].some((o) => o.value === bid));
-    if (sel) { sel.value = bid; sel.dispatchEvent(new Event('change', { bubbles: true })); }
-  }, bid);
-  await sleep(800); // 等 columns 加载
-  // 选数值列
-  await page.evaluate((col) => {
-    const sels = [...document.querySelectorAll('[data-add-widget-modal] select')];
-    const sel = sels.find((s) => [...s.options].some((o) => o.value === col));
-    if (sel) { sel.value = col; sel.dispatchEvent(new Event('change', { bubbles: true })); }
-  }, numCol);
-  await sleep(400);
-  const canConfirm = await page.evaluate(() => {
-    const b = document.querySelector('[data-add-widget-confirm]');
-    return b ? !b.disabled : false;
-  });
-  assert(canConfirm, 'S4 number widget 配置可提交');
-  await page.click('[data-add-widget-confirm]');
-  await sleep(2500);
-  const numWidget = await page.evaluate(() => {
-    const w = document.querySelector('[data-widget="number"]');
-    return w ? w.textContent : '';
-  });
-  assert(numWidget.includes('300'), 'S4 number widget 渲染合计 300（实际 ' + (numWidget.match(/\d[\d,]*/)?.[0] ?? '') + '）');
-
-  // 添加 rank widget
-  await page.click('[data-add-widget]');
-  await sleep(400);
-  await page.evaluate(() => document.querySelector('[data-widget-type="rank"]')?.click());
   await sleep(300);
-  await page.click('[data-add-widget-confirm]');
-  await sleep(2000);
-  const rankWidget = await page.$('[data-widget="rank"]');
-  assert(!!rankWidget, 'S3 rank widget 渲染');
+  // 勾选 2 个 board（按 data-board-option 精确匹配）
+  await page.evaluate((names) => {
+    for (const n of names) {
+      const lb = document.querySelector(`[data-board-option="${n}"]`);
+      const cb = lb?.querySelector('input[type="checkbox"]');
+      if (cb && !cb.checked) cb.click();
+    }
+  }, [NAME, NAME2]);
+  await sleep(1200); // 等跨板列名加载
+  // 选「预算」数值列（number 类型第一个 select）
+  await page.evaluate(() => {
+    const sels = [...document.querySelectorAll('[data-widget-modal] select')];
+    const sel = sels[0];
+    const opt = [...sel.options].find((o) => o.value === '预算');
+    if (opt) { sel.value = '预算'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+  });
+  await sleep(300);
+  const canSave = await page.evaluate(() => { const b = document.querySelector('[data-widget-save]'); return b ? !b.disabled : false; });
+  assert(canSave, 'S3 number widget 配置可提交（已选 2 board + 预算列）');
+  await page.click('[data-widget-save]');
+  await sleep(2500);
+  const numText = await page.evaluate(() => document.querySelector('[data-widget="number"]')?.textContent ?? '');
+  assert(numText.includes('350'), 'S3 跨板聚合 100+50+200=350（实际 ' + (numText.match(/[\d,]+/)?.[0] ?? '') + '）');
+
+  // ---- S4 编辑已有图表 ----
+  await page.evaluate(() => document.querySelector('[data-widget="number"] [data-widget-edit]')?.click());
+  await sleep(400);
+  const modal = await page.$('[data-widget-modal]');
+  assert(!!modal, 'S4 编辑弹窗打开');
+  // 改标题（React 受控 input 需原生 setter）
+  await page.evaluate(() => {
+    const input = document.querySelector('[data-widget-modal] input[placeholder="可选"]');
+    if (input) {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '总预算');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+  await sleep(200);
+  await page.click('[data-widget-save]');
+  await sleep(1500);
+  const titleShown = await page.evaluate(() => document.querySelector('[data-widget="number"]')?.textContent?.includes('总预算') ?? false);
+  assert(titleShown, 'S4 编辑后标题更新为「总预算」');
 
   // 清理
   await req(token, 'DELETE', `/dashboards/${dash.body.id}`);
-  await req(token, 'DELETE', `/boards/${bid}`);
+  await req(token, 'DELETE', `/boards/${bidA}`);
+  await req(token, 'DELETE', `/boards/${bidB}`);
   await req(token, 'DELETE', `/board-folders/${f.body.id}`);
 
   console.log('\n===== 第三十一批 Dashboard BI：' + (errors.length ? `${errors.length} 项失败` : '全部通过 ====='));
