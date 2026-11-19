@@ -103,7 +103,9 @@ async function ensureMinorSchema() {
         position  INT DEFAULT 0,
         PRIMARY KEY (folder_id, board_id)
       );
-      CREATE INDEX IF NOT EXISTS idx_board_folder_items_folder ON board_folder_items(folder_id, position);`);
+      CREATE INDEX IF NOT EXISTS idx_board_folder_items_folder ON board_folder_items(folder_id, position);
+      ALTER TABLE widgets ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+      ALTER TABLE widgets ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {
     console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);

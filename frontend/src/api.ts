@@ -170,6 +170,20 @@ export const api = {
   dashboardWorkloadRank: () => request('/dashboards/workload-rank'),
   dashboardActivity: () => request('/dashboards/activity'),
 
+  // ---- 自定义 Dashboard（BI）----
+  listDashboards: () => request('/dashboards'),
+  createDashboard: (name: string) => request('/dashboards', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameDashboard: (id: string, name: string) => request(`/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteDashboard: (id: string) => request(`/dashboards/${id}`, { method: 'DELETE' }),
+  getDashboard: (id: string) => request(`/dashboards/${id}`),
+  addWidget: (dashboardId: string, dto: { type: string; title?: string; config?: any }) =>
+    request(`/dashboards/${dashboardId}/widgets`, { method: 'POST', body: JSON.stringify(dto) }),
+  updateWidget: (dashboardId: string, widgetId: string, patch: { title?: string; config?: any }) =>
+    request(`/dashboards/${dashboardId}/widgets/${widgetId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteWidget: (dashboardId: string, widgetId: string) =>
+    request(`/dashboards/${dashboardId}/widgets/${widgetId}`, { method: 'DELETE' }),
+  widgetData: (dashboardId: string, widgetId: string) => request(`/dashboards/${dashboardId}/widgets/${widgetId}/data`),
+
   // ---- 通知 / 搜索 ----
   unread: () => request('/notifications/unread'),
   search: (q: string) => request(`/search?q=${encodeURIComponent(q)}`),

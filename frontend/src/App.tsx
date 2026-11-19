@@ -11,6 +11,7 @@ import { ItemDetail } from './components/ItemDetail';
 import { NotificationBell, CommandPalette } from './components/TopWidgets';
 import { WorkspaceNav } from './components/WorkspaceNav';
 import { DashboardPage } from './components/DashboardPage';
+import { DashboardEditor } from './components/DashboardEditor';
 import { NewBoardModal } from './components/NewBoardModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { useItems, useUi } from './store';
@@ -108,6 +109,7 @@ export function App() {
   const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>(null);
   const [allBoards, setAllBoards] = useState<any[]>([]);
   const [workspaceDashboard, setWorkspaceDashboard] = useState(false);
+  const [activeDashboardId, setActiveDashboardId] = useState<string | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   // #65 移动端侧边抽屉
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -191,8 +193,14 @@ export function App() {
             cursor: 'pointer', fontSize: 15, alignItems: 'center' }}>☰</button>
         <div style={{ fontWeight: 800, fontSize: 17, color: '#4f6ef7' }}>Manday</div>
         <nav style={{ display: 'flex', gap: 4 }}>
-          {workspaceDashboard || !activeBoard ? (
-            <button onClick={() => { setWorkspaceDashboard(true); setActiveBoard(null); }}
+          {activeDashboardId ? (
+            <button onClick={() => setActiveDashboardId(null)}
+              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
+                background: '#eef1fe', color: '#4f6ef7', fontWeight: 600 }}>
+              ← 返回
+            </button>
+          ) : workspaceDashboard || !activeBoard ? (
+            <button onClick={() => { setWorkspaceDashboard(true); setActiveBoard(null); setActiveDashboardId(null); }}
               style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
                 background: '#eef1fe', color: '#4f6ef7', fontWeight: 600 }}>
               📊 工作台
@@ -223,18 +231,26 @@ export function App() {
         <div data-sidenav-overlay className={mobileNavOpen ? 'open' : ''}
           onClick={() => setMobileNavOpen(false)} />
         <div data-sidenav className={mobileNavOpen ? 'open' : ''}>
-          <WorkspaceNav activeId={activeBoard?.id} dashboardActive={workspaceDashboard}
-            onOpen={(b) => { setActiveBoard(b); setWorkspaceDashboard(false); setView('table'); setMobileNavOpen(false); }}
-            onOpenDashboard={() => { setWorkspaceDashboard(true); setActiveBoard(null); setMobileNavOpen(false); }}
+          <WorkspaceNav activeId={activeBoard?.id} dashboardActive={workspaceDashboard} activeDashboardId={activeDashboardId}
+            onOpen={(b) => { setActiveBoard(b); setWorkspaceDashboard(false); setActiveDashboardId(null); setView('table'); setMobileNavOpen(false); }}
+            onOpenDashboard={() => { setWorkspaceDashboard(true); setActiveBoard(null); setActiveDashboardId(null); setMobileNavOpen(false); }}
+            onOpenCustomDashboard={(id) => { setActiveDashboardId(id); setWorkspaceDashboard(false); setActiveBoard(null); setMobileNavOpen(false); }}
+            onNewDashboard={() => {
+              const name = prompt('Dashboard 名称');
+              if (!name || !name.trim()) return;
+              api.createDashboard(name.trim()).then((d: any) => { setActiveDashboardId(d.id); setWorkspaceDashboard(false); setActiveBoard(null); }).catch((e) => alert(`创建失败：${(e as Error).message}`));
+            }}
             onNewBoard={() => setNewBoardOpen(true)} />
         </div>
         <main style={{ flex: 1, overflow: 'auto' }}>
-          {workspaceDashboard || !activeBoard ? (
+          {activeDashboardId ? (
+            <DashboardEditor dashboardId={activeDashboardId} onBack={() => setActiveDashboardId(null)} />
+          ) : workspaceDashboard || !activeBoard ? (
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 17, fontWeight: 800, color: '#25272c', margin: '4px 4px 16px' }}>
                 📊 工作台 <span style={{ fontSize: 12, fontWeight: 400, color: '#7a7f8c' }}>· 跨 {allBoards.length} 个 Board 的全局总览</span>
               </div>
-              <DashboardPage boardIds={allBoards.map((b) => b.id)} onOpenItem={(id) => { /* 跨板条目：打开对应 board 后定位 */ setDetailId(id); }} />
+              <DashboardPage boardIds={allBoards.map((b) => b.id)} onOpenItem={(id) => setDetailId(id)} />
             </div>
           ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} onSwitchView={setView as (v: string) => void } />
             : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} boardId={activeBoard.id} />

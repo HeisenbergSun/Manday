@@ -2,7 +2,7 @@
  * Dashboard — 跨 Board 聚合（battery 进度 / number 汇总 / status 分布 / 逾期 / 负载排行 / 动态流）
  * 注意：请求参数走 GET ?boardIds=a,b（GET + @Body 在前端拿不到 body）
  */
-import { Injectable, Controller, Get, Query, Req, Module } from '@nestjs/common';
+import { Injectable, Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, Module } from '@nestjs/common';
 import { Pool } from 'pg';
 
 const DONE_SQL = `sv.value IS NULL OR sv.value #>> '{}' NOT IN ('已完成','Done')`;
@@ -125,13 +125,142 @@ export class DashboardService {
     return rows.filter((r) => r.board).slice(0, 15)
       .map((r) => ({ action: r.action, actor: r.actor ?? '', target: r.target_name, board: r.board, at: r.created_at }));
   }
+
+  // ================= 自定义 Dashboard（BI 图表）=================
+
+  async listDashboards(userId: string) {
+    const { rows } = await this.pg.query(
+      `SELECT id, name, created_at FROM dashboards WHERE created_by = $1 ORDER BY created_at`, [userId]);
+    return rows;
+  }
+
+  async createDashboard(userId: string, name: string) {
+    const { rows } = await this.pg.query(
+      `INSERT INTO dashboards (name, created_by) VALUES ($1,$2) RETURNING id, name, created_at`, [name, userId]);
+    return rows[0];
+  }
+
+  async renameDashboard(userId: string, id: string, name: string) {
+    await this.pg.query(`UPDATE dashboards SET name=$1 WHERE id=$2 AND created_by=$3`, [name, id, userId]);
+    return { ok: true };
+  }
+
+  async deleteDashboard(userId: string, id: string) {
+    await this.pg.query(`DELETE FROM dashboards WHERE id=$1 AND created_by=$2`, [id, userId]);
+    return { ok: true };
+  }
+
+  async getDashboard(userId: string, id: string) {
+    const d = (await this.pg.query(`SELECT id, name FROM dashboards WHERE id=$1 AND created_by=$2`, [id, userId])).rows[0];
+    if (!d) return null;
+    const { rows: widgets } = await this.pg.query(
+      `SELECT id, type, title, config, position FROM widgets WHERE dashboard_id=$1 ORDER BY position, created_at`, [id]);
+    return { ...d, widgets: widgets.map((w) => ({ ...w, config: w.config ?? {} })) };
+  }
+
+  async addWidget(userId: string, dashboardId: string, dto: { type: string; title?: string; config?: any }) {
+    const own = await this.pg.query(`SELECT 1 FROM dashboards WHERE id=$1 AND created_by=$2`, [dashboardId, userId]);
+    if (!own.rowCount) throw new Error('NOT_FOUND');
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM widgets WHERE dashboard_id=$1`, [dashboardId])).rows[0].p;
+    const { rows } = await this.pg.query(
+      `INSERT INTO widgets (dashboard_id, type, title, config, position) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING id, type, title, config, position`,
+      [dashboardId, dto.type, dto.title ?? '', JSON.stringify(dto.config ?? {}), pos]);
+    return { ...rows[0], config: rows[0].config ?? {} };
+  }
+
+  async updateWidget(userId: string, dashboardId: string, widgetId: string, dto: { title?: string; config?: any }) {
+    await this.pg.query(
+      `UPDATE widgets SET title=COALESCE($1,title), config=COALESCE($2::jsonb,config)
+       WHERE id=$3 AND dashboard_id=$4`,
+      [dto.title ?? null, dto.config ? JSON.stringify(dto.config) : null, widgetId, dashboardId]);
+    return { ok: true };
+  }
+
+  async deleteWidget(userId: string, dashboardId: string, widgetId: string) {
+    await this.pg.query(`DELETE FROM widgets WHERE id=$1 AND dashboard_id=$2`, [widgetId, dashboardId]);
+    return { ok: true };
+  }
+
+  /** widget 数据端点：根据 type+config 动态取数（userId 作为可见性参数） */
+  async widgetData(userId: string, widget: { type: string; config: any }) {
+    const cfg = widget.config ?? {};
+    const boardIds: string[] = Array.isArray(cfg.boardIds) ? cfg.boardIds : (cfg.boardId ? [cfg.boardId] : []);
+    if (widget.type === 'battery') return this.battery(userId, boardIds);
+    if (widget.type === 'rank') return this.workloadRank(userId);
+    if (widget.type === 'activity') return this.activity(userId);
+    if (!boardIds.length) return [];
+
+    if (widget.type === 'number') {
+      const agg = ['sum', 'avg', 'count', 'min', 'max'].includes(cfg.agg) ? cfg.agg : 'sum';
+      const sel = agg === 'count' ? 'count(*)' : `${agg}((v.value #>> '{}')::numeric)`;
+      const { rows } = await this.pg.query(
+        `SELECT ${sel} AS value FROM item_values v
+         JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
+         JOIN boards b ON b.id = i.board_id
+         WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+         AND (v.value #>> '{}') ~ '^-?[0-9.]+$'`,
+        [boardIds, userId, cfg.columnId]);
+      return { value: Number(rows[0]?.value) || 0, label: cfg.label ?? '合计', agg };
+    }
+
+    if (widget.type === 'bar' || widget.type === 'pie') {
+      const metric = cfg.metric === 'sum' ? 'sum' : 'count';
+      if (metric === 'sum') {
+        const { rows } = await this.pg.query(
+          `SELECT v.value #>> '{}' AS label, sum((mv.value #>> '{}')::numeric) AS value
+           FROM item_values v
+           JOIN board_columns c ON c.id = v.column_id
+           JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
+           JOIN boards b ON b.id = i.board_id
+           JOIN item_values mv ON mv.item_id = i.id AND mv.column_id = $4
+           WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+           GROUP BY label ORDER BY value DESC LIMIT 20`,
+          [boardIds, userId, cfg.groupBy, cfg.metricColumnId]);
+        return rows.map((r) => ({ label: r.label ?? '（空）', value: Number(r.value) || 0 }));
+      }
+      const { rows } = await this.pg.query(
+        `SELECT v.value #>> '{}' AS label, count(*) AS value
+         FROM item_values v
+         JOIN board_columns c ON c.id = v.column_id
+         JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
+         JOIN boards b ON b.id = i.board_id
+         WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+         GROUP BY label ORDER BY value DESC LIMIT 20`,
+        [boardIds, userId, cfg.groupBy]);
+      return rows.map((r) => ({ label: r.label ?? '（空）', value: Number(r.value) || 0 }));
+    }
+
+    if (widget.type === 'line') {
+      const { rows } = await this.pg.query(
+        `SELECT v.value #>> '{}' AS date, count(*) AS value
+         FROM item_values v
+         JOIN board_columns c ON c.id = v.column_id AND c.type = 'date'
+         JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
+         JOIN boards b ON b.id = i.board_id
+         WHERE i.board_id = ANY($1::uuid[]) AND v.column_id = $3 AND ${VISIBLE_SQL}
+         GROUP BY date ORDER BY date`,
+        [boardIds, userId, cfg.dateColumnId]);
+      return rows.map((r) => ({ date: String(r.date).slice(0, 10), value: Number(r.value) || 0 }));
+    }
+
+    if (widget.type === 'table') {
+      const limit = Math.min(Number(cfg.limit) || 20, 50);
+      const { rows } = await this.pg.query(
+        `SELECT i.id, i.name, b.name AS board, i.created_at
+         FROM items i JOIN boards b ON b.id = i.board_id
+         WHERE i.board_id = ANY($1::uuid[]) AND i.deleted_at IS NULL AND ${VISIBLE_SQL}
+         ORDER BY i.created_at DESC LIMIT $3`,
+        [boardIds, userId, limit]);
+      return rows.map((r) => ({ id: r.id, name: r.name, board: r.board, at: r.created_at }));
+    }
+    return [];
+  }
 }
 
 const VISIBLE_SQL = `(b.visibility = 'company'
   OR b.department_id IN (SELECT department_id FROM user_departments WHERE user_id = $2)
   OR b.owner_id = $2
   OR EXISTS (SELECT 1 FROM board_permissions bp WHERE bp.board_id = b.id AND bp.subject_type='user' AND bp.subject_id=$2))`;
-
 /** 同 VISIBLE_SQL，但用户参数为 $1（无 boardIds 的查询用） */
 const VISIBLE_U = VISIBLE_SQL.replace(/\$2/g, '$1');
 
@@ -174,6 +303,23 @@ export class DashboardController {
   @Get('activity')
   activity(@Req() req) {
     return this.svc.activity(req.user.id);
+  }
+
+  // ---- 自定义 Dashboard CRUD ----
+  @Get() list(@Req() req) { return this.svc.listDashboards(req.user.id); }
+  @Post() create(@Req() req, @Body() b: { name: string }) { return this.svc.createDashboard(req.user.id, b.name); }
+  @Get(':id') get(@Req() req, @Param('id') id: string) { return this.svc.getDashboard(req.user.id, id); }
+  @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameDashboard(req.user.id, id, b.name); }
+  @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteDashboard(req.user.id, id); }
+  @Post(':id/widgets') addWidget(@Req() req, @Param('id') id: string, @Body() b: { type: string; title?: string; config?: any }) { return this.svc.addWidget(req.user.id, id, b); }
+  @Patch(':id/widgets/:wid') updateWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string, @Body() b: { title?: string; config?: any }) { return this.svc.updateWidget(req.user.id, id, wid, b); }
+  @Delete(':id/widgets/:wid') deleteWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string) { return this.svc.deleteWidget(req.user.id, id, wid); }
+  @Get(':id/widgets/:wid/data') widgetData(@Req() req, @Param('id') id: string, @Param('wid') wid: string) {
+    return this.svc.getDashboard(req.user.id, id).then((d) => {
+      const w = d?.widgets?.find((x) => x.id === wid);
+      if (!w) return [];
+      return this.svc.widgetData(req.user.id, w);
+    });
   }
 }
 

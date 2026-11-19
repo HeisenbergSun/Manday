@@ -1,30 +1,44 @@
 /**
- * 工作区布局 — 左侧导航（工作台 / Board 自定义分组 / 回收站入口）
- * 需求：① 工作台入口 ② Board 自定义分组（文件夹）③ 溢出滚动 ④ 折叠
+ * 工作区布局 — 左侧导航
+ * 顶部「＋」按钮（Monday 式）：新建 Board / Dashboard / 分组
+ * 分区：工作台 / 仪表盘（自定义 Dashboard）/ Board 分组 / 未分组
+ * 菜单均用 fixed 定位（避免被行的 overflow:hidden 裁剪）
  */
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 
 interface BoardItem { id: string; name: string; my_role: string; department_name?: string; visibility: string; }
 interface Folder { id: string; name: string; position: number; boardIds: string[]; }
+interface DashItem { id: string; name: string; }
 
-export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, onOpenDashboard }: {
-  activeId?: string; dashboardActive?: boolean; onOpen: (b: BoardItem) => void;
-  onNewBoard?: () => void; onOpenDashboard?: () => void;
+export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onOpen, onNewBoard, onNewDashboard, onOpenDashboard, onOpenCustomDashboard }: {
+  activeId?: string; dashboardActive?: boolean; activeDashboardId?: string | null;
+  onOpen: (b: BoardItem) => void; onNewBoard?: () => void; onNewDashboard?: () => void;
+  onOpenDashboard?: () => void; onOpenCustomDashboard?: (id: string) => void;
 }) {
   const [boards, setBoards] = useState<BoardItem[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [dashboards, setDashboards] = useState<DashItem[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [folderCollapsed, setFolderCollapsed] = useState<Record<string, boolean>>({});
-  const [menuFor, setMenuFor] = useState<string | null>(null); // 正在展开「移动到分组」菜单的 board id
+  // 两个 fixed 菜单：加号菜单 / board 分组菜单
+  const [plusMenu, setPlusMenu] = useState<{ x: number; y: number } | null>(null);
+  const [boardMenu, setBoardMenu] = useState<{ boardId: string; x: number; y: number } | null>(null);
 
   const reload = () => {
     api.getBoards().then((d) => setBoards(Array.isArray(d) ? d : [])).catch(() => {});
     api.listFolders().then((d) => setFolders(Array.isArray(d) ? d : [])).catch(() => {});
+    api.listDashboards().then((d) => setDashboards(Array.isArray(d) ? d : [])).catch(() => {});
   };
   useEffect(reload, []);
 
-  // boardId → folderId 反查（未分组 = undefined）
+  // 点击任意处关闭菜单
+  useEffect(() => {
+    const close = () => { setPlusMenu(null); setBoardMenu(null); };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, []);
+
   const folderOf = (boardId: string): string | undefined => {
     for (const f of folders) if (f.boardIds.includes(boardId)) return f.id;
     return undefined;
@@ -37,7 +51,7 @@ export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, on
         const cur = folderOf(boardId);
         if (cur) await api.removeBoardFromFolder(cur, boardId);
       }
-      setMenuFor(null);
+      setBoardMenu(null);
       reload();
     } catch (e) { alert(`操作失败：${(e as Error).message}`); }
   };
@@ -49,7 +63,7 @@ export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, on
       const f: any = await api.createFolder(name.trim());
       if (boardId && f?.id) await api.addBoardToFolder(f.id, boardId);
       reload();
-      if (boardId) setMenuFor(null);
+      setPlusMenu(null); setBoardMenu(null);
     } catch (e) { alert(`新建分组失败：${(e as Error).message}`); }
   };
 
@@ -66,13 +80,25 @@ export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, on
     catch (e) { alert(`删除失败：${(e as Error).message}`); }
   };
 
+  const openBoardMenu = (b: BoardItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const r = (e.target as HTMLElement).getBoundingClientRect();
+    setBoardMenu({ boardId: b.id, x: Math.min(r.right - 170, window.innerWidth - 180), y: r.bottom + 2 });
+  };
+
+  const openPlusMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const r = (e.target as HTMLElement).getBoundingClientRect();
+    setPlusMenu({ x: Math.min(r.left, window.innerWidth - 190), y: r.bottom + 4 });
+  };
+
   const boardRow = (b: BoardItem, indent = false) => (
     <div key={b.id} onClick={() => onOpen(b)} title={b.name} data-board-item={b.name} style={{
       padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
       background: activeId === b.id ? '#eef1fe' : 'transparent',
       color: activeId === b.id ? '#4f6ef7' : '#25272c', fontWeight: activeId === b.id ? 600 : 400,
       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      display: 'flex', alignItems: 'center', gap: 8, paddingLeft: indent ? 24 : 10, position: 'relative',
+      display: 'flex', alignItems: 'center', gap: 8, paddingLeft: indent ? 24 : 10,
     }}>
       <span style={{
         width: 8, height: 8, borderRadius: 3, flexShrink: 0,
@@ -80,30 +106,9 @@ export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, on
       }} title={{ company: '全员可见', department: '部门内', shared: '指定共享', private: '私有' }[b.visibility]} />
       {!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</span>}
       {!collapsed && (
-        <span data-board-menu-trigger onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === b.id ? null : b.id); }}
+        <span data-board-menu-trigger onClick={(e) => openBoardMenu(b, e)}
           title="移动到分组"
           style={{ flexShrink: 0, color: '#a0a4b1', fontSize: 11, padding: '0 4px', borderRadius: 4, cursor: 'pointer' }}>⋯</span>
-      )}
-      {menuFor === b.id && (
-        <div data-board-menu onClick={(e) => e.stopPropagation()} style={{
-          position: 'absolute', right: 6, top: '100%', zIndex: 60, background: '#fff', borderRadius: 8,
-          boxShadow: '0 6px 20px rgba(0,0,0,.15)', padding: 6, minWidth: 160, fontSize: 12, border: '1px solid #eef0f5',
-        }}>
-          <div style={{ color: '#a0a4b1', fontSize: 11, padding: '2px 8px 6px' }}>移动到分组</div>
-          {folders.map((f) => (
-            <div key={f.id} onClick={() => moveToFolder(b.id, f.id)}
-              style={{ padding: '5px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>
-              {folderOf(b.id) === f.id ? '✓ ' : ''}{f.name}
-            </div>
-          ))}
-          {folderOf(b.id) && (
-            <div onClick={() => moveToFolder(b.id, null)}
-              style={{ padding: '5px 8px', borderRadius: 6, cursor: 'pointer', color: '#7a7f8c' }}>从分组移除</div>
-          )}
-          <div style={{ borderTop: '1px solid #f0f1f5', margin: '4px 0' }} />
-          <div onClick={() => newFolder(b.id)}
-            style={{ padding: '5px 8px', borderRadius: 6, cursor: 'pointer', color: '#4f6ef7' }}>＋ 新建分组…</div>
-        </div>
       )}
     </div>
   );
@@ -113,14 +118,19 @@ export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, on
       width: collapsed ? 52 : 232, background: '#fafbfd', borderRight: '1px solid #e6e8ef',
       padding: 10, flexShrink: 0, transition: 'width .2s', display: 'flex', flexDirection: 'column', gap: 2,
     }}>
+      {/* 标题 + 加号 + 折叠 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px' }}>
         {!collapsed && <span style={{ fontSize: 11, fontWeight: 700, color: '#7a7f8c', letterSpacing: 1 }}>工作区</span>}
-        <span style={{ cursor: 'pointer', color: '#7a7f8c', fontSize: 13 }} onClick={() => setCollapsed(!collapsed)}>
-          {collapsed ? '»' : '«'}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span data-workspace-plus onClick={openPlusMenu} title="新建 Board / Dashboard / 分组"
+            style={{ cursor: 'pointer', color: '#7a7f8c', fontSize: 16, fontWeight: 700, lineHeight: 1, padding: '0 2px' }}>＋</span>
+          <span style={{ cursor: 'pointer', color: '#7a7f8c', fontSize: 13 }} onClick={() => setCollapsed(!collapsed)}>
+            {collapsed ? '»' : '«'}
+          </span>
         </span>
       </div>
 
-      {/* 工作台入口（workspace 级 Dashboard） */}
+      {/* 工作台入口 */}
       <div data-workspace-dashboard onClick={() => onOpenDashboard?.()}
         style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
           background: dashboardActive ? '#eef1fe' : 'transparent', color: dashboardActive ? '#4f6ef7' : '#25272c',
@@ -129,7 +139,21 @@ export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, on
       </div>
 
       <div data-board-list style={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {/* 分组 */}
+        {/* 自定义仪表盘 */}
+        {!collapsed && dashboards.length > 0 && (
+          <div style={{ margin: '2px 0', fontSize: 11, color: '#a0a4b1', fontWeight: 600, padding: '0 8px', letterSpacing: .5 }}>仪表盘</div>
+        )}
+        {dashboards.map((d) => (
+          <div key={d.id} data-dashboard-item={d.name} onClick={() => onOpenCustomDashboard?.(d.id)}
+            style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+              background: activeDashboardId === d.id ? '#eef1fe' : 'transparent',
+              color: activeDashboardId === d.id ? '#4f6ef7' : '#25272c', fontWeight: activeDashboardId === d.id ? 600 : 400,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>📈</span>{!collapsed && <span>{d.name}</span>}
+          </div>
+        ))}
+
+        {/* Board 分组 */}
         {folders.map((f) => {
           const list = boards.filter((b) => f.boardIds.includes(b.id));
           const isC = !!folderCollapsed[f.id];
@@ -168,10 +192,47 @@ export function WorkspaceNav({ activeId, dashboardActive, onOpen, onNewBoard, on
           onClick={onNewBoard}>
           {collapsed ? '⊕' : '＋ 新建 Board'}
         </div>
-        <div style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, color: '#7a7f8c', cursor: 'pointer' }}>
-          {collapsed ? '🗑' : '回收站'}
-        </div>
       </div>
+
+      {/* 加号菜单（fixed，避免裁剪） */}
+      {plusMenu && (
+        <div data-workspace-plus-menu onClick={(e) => e.stopPropagation()}
+          style={{ position: 'fixed', left: plusMenu.x, top: plusMenu.y, zIndex: 200, background: '#fff',
+            borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,.18)', padding: 6, minWidth: 180, fontSize: 13, border: '1px solid #eef0f5' }}>
+          <div onClick={() => { setPlusMenu(null); onNewBoard?.(); }}
+            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>▤ 新建 Board</div>
+          <div data-plus-dashboard onClick={() => { setPlusMenu(null); onNewDashboard?.(); }}
+            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>📊 新建 Dashboard</div>
+          <div onClick={() => { setPlusMenu(null); newFolder(); }}
+            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>🗂 新建分组</div>
+        </div>
+      )}
+
+      {/* board 分组菜单（fixed） */}
+      {boardMenu && (() => {
+        const b = boards.find((x) => x.id === boardMenu.boardId);
+        if (!b) return null;
+        return (
+          <div data-board-menu onClick={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', left: boardMenu.x, top: boardMenu.y, zIndex: 200, background: '#fff',
+              borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,.18)', padding: 6, minWidth: 170, fontSize: 12, border: '1px solid #eef0f5' }}>
+            <div style={{ color: '#a0a4b1', fontSize: 11, padding: '2px 8px 6px' }}>移动到分组</div>
+            {folders.map((f) => (
+              <div key={f.id} data-board-menu-folder={f.name} onClick={() => moveToFolder(b.id, f.id)}
+                style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>
+                {folderOf(b.id) === f.id ? '✓ ' : ''}{f.name}
+              </div>
+            ))}
+            {folderOf(b.id) && (
+              <div onClick={() => moveToFolder(b.id, null)}
+                style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#7a7f8c' }}>从分组移除</div>
+            )}
+            <div style={{ borderTop: '1px solid #f0f1f5', margin: '4px 0' }} />
+            <div onClick={() => newFolder(b.id)}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#4f6ef7' }}>＋ 新建分组…</div>
+          </div>
+        );
+      })()}
     </nav>
   );
 }
