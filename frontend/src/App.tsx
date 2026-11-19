@@ -107,6 +107,8 @@ export function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [activeBoard, setActiveBoard] = useState<{ id: string; name: string } | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
+  // #65 移动端侧边抽屉
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // P2-1：首次登录问卷引导（每用户只出现一次）
   const [onboarding, setOnboarding] = useState(false);
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(() =>
@@ -147,11 +149,41 @@ export function App() {
     return () => leaveBoard(boardId);
   }, [user?.id, activeBoard?.id]);
 
+  // #60 断线重连后全量 refetch：补齐断线期间错过的变更
+  useEffect(() => {
+    const onReconnected = () => {
+      if (!user || !activeBoard?.id) return;
+      api.getBoard(activeBoard.id)
+        .then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole))
+        .catch(() => {});
+    };
+    window.addEventListener('manday:reconnected', onReconnected);
+    return () => window.removeEventListener('manday:reconnected', onReconnected);
+  }, [user?.id, activeBoard?.id]);
+
   if (!user) return <Login onLogin={setUser} />;
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f6f7fb' }}>
+      {/* #65 移动端适配样式 */}
+      <style>{`
+        [data-mobile-burger] { display: none; }
+        @media (max-width: 768px) {
+          [data-mobile-burger] { display: inline-flex; }
+          [data-sidenav] { position: fixed; left: 0; top: 52px; bottom: 0; z-index: 90;
+            transform: translateX(-100%); transition: transform .2s; background: #fff;
+            box-shadow: 4px 0 20px rgba(0,0,0,.12); }
+          [data-sidenav].open { transform: none; }
+          [data-sidenav-overlay] { display: none; }
+          [data-sidenav-overlay].open { display: block; position: fixed; inset: 0; top: 52px; z-index: 80; background: rgba(15,18,30,.28); }
+          header nav { overflow-x: auto; max-width: 55vw; }
+          header [data-desktop-hint] { display: none !important; }
+        }
+      `}</style>
       <header style={{ height: 52, background: '#fff', borderBottom: '1px solid #e6e8ef', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16 }}>
+        <button data-mobile-burger onClick={() => setMobileNavOpen((v) => !v)}
+          style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
+            cursor: 'pointer', fontSize: 15, alignItems: 'center' }}>☰</button>
         <div style={{ fontWeight: 800, fontSize: 17, color: '#4f6ef7' }}>Manday</div>
         <nav style={{ display: 'flex', gap: 4 }}>
           {(['table', 'kanban', 'calendar', 'gantt', 'workload', 'insights', 'dashboard', 'trash'] as const).map((v) => (
@@ -164,7 +196,7 @@ export function App() {
           ))}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ color: '#7a7f8c', fontSize: 12 }}>⌘K 搜索</span>
+          <span data-desktop-hint style={{ color: '#7a7f8c', fontSize: 12 }}>⌘K 搜索</span>
           <span style={{ color: '#7a7f8c', fontSize: 12 }}>{user.name || user.email || '已登录'}</span>
           <button onClick={() => { clearToken(); localStorage.removeItem('userId'); location.reload(); }}
             style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 12 }}>退出</button>
@@ -174,8 +206,14 @@ export function App() {
       </header>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <WorkspaceNav activeId={activeBoard?.id} onOpen={(b) => { setActiveBoard(b); setView('table'); }}
-          onNewBoard={() => setNewBoardOpen(true)} />
+        {/* #65 移动端抽屉式侧边栏 */}
+        <div data-sidenav-overlay className={mobileNavOpen ? 'open' : ''}
+          onClick={() => setMobileNavOpen(false)} />
+        <div data-sidenav className={mobileNavOpen ? 'open' : ''}>
+          <WorkspaceNav activeId={activeBoard?.id}
+            onOpen={(b) => { setActiveBoard(b); setView('table'); setMobileNavOpen(false); }}
+            onNewBoard={() => setNewBoardOpen(true)} />
+        </div>
         <main style={{ flex: 1, overflow: 'auto' }}>
           {!activeBoard ? (
             <div style={{ padding: 48, color: '#7a7f8c', fontSize: 14 }}>← 从左侧选择一个 Board，或新建一个</div>

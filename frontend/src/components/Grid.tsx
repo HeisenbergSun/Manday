@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { UI, TAG, doneLabelsOf, soften, GROUP_PALETTE } from '../theme';
 import { api } from '../api';
 
-export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown>; group_id?: string };
+export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown>; group_id?: string; subtasks?: { total: number; done: number } };
 export type GridColumn = { id: string; name: string; type: string; settings: any; restricted?: boolean };
 
 const LABEL_W = 260;
@@ -160,9 +160,14 @@ type Props = {
   onDuplicateItem?: (itemId: string) => Promise<void>;
   onDeleteItem?: (itemId: string) => Promise<void>;
   onMoveItem?: (itemId: string, groupId: string | null) => Promise<void>;
+  /** #61 筛选状态受控提升（视图持久化用）：传入则由父组件持有 */
+  filters?: FilterCondition[];
+  onFiltersChange?: (f: FilterCondition[]) => void;
+  /** #58 导出接筛选：当前筛选后的行集回调 */
+  onFilteredRowsChange?: (rows: GridRow[]) => void;
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem, filters: filtersProp, onFiltersChange, onFilteredRowsChange }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -172,9 +177,15 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
   const [itemsVersion, setItemsVersion] = useState(0);
 
-  // ── 筛选栏 ──
+  // ── 筛选栏（#61：可选受控提升到父组件，便于视图持久化）──
   const [filterBarOpen, setFilterBarOpen] = useState(false);
-  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [internalFilters, setInternalFilters] = useState<FilterCondition[]>([]);
+  const filters = filtersProp ?? internalFilters;
+  const setFilters = (f: FilterCondition[] | ((cur: FilterCondition[]) => FilterCondition[])) => {
+    const next = typeof f === 'function' ? (f as (cur: FilterCondition[]) => FilterCondition[])(filters) : f;
+    if (onFiltersChange) onFiltersChange(next);
+    else setInternalFilters(next);
+  };
 
   // ── 列状态（隐藏/冻结/宽度/顺序） ──
   const [columnStates, setColumnStates] = useState<Record<string, ColumnState>>({});
@@ -210,11 +221,24 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   // ── 行菜单 ──
   const [rowMenuFor, setRowMenuFor] = useState<string | null>(null);
 
+  // ── #66 附件图片 lightbox 预览 ──
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+  const openImage = async (a: { id: string; name: string }) => {
+    try {
+      const blob = await api.attachmentBlob(a.id);
+      setLightbox({ url: URL.createObjectURL(blob), name: a.name });
+    } catch { api.downloadAttachment(a.id, a.name).catch(() => {}); }
+  };
+  const isImageFile = (n: string) => /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(n);
+
   // ── people 列真实用户列表（选项/显示用）──
   const companyUsers = useCompanyUsers();
 
   useEffect(() => { setLocalOrder(null); setItemsVersion((v) => v + 1); }, [rows]);
   useEffect(() => { onSelectionChange?.(selected); }, [selected]);
+  // #58：筛选后的行集回传父组件（导出用）
+  const filteredRowsCb = useRef(onFilteredRowsChange);
+  filteredRowsCb.current = onFilteredRowsChange;
 
   // 列菜单外部点击关闭
   useEffect(() => {
@@ -297,6 +321,13 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       }
     }));
   }, [rows, filters]);
+  useEffect(() => { filteredRowsCb.current?.(filteredRows); }, [filteredRows]);
+  // #61：恢复带筛选的视图时自动展开筛选栏
+  const prevFilterCount = useRef(0);
+  useEffect(() => {
+    if (filters.length > 0 && prevFilterCount.current === 0) setFilterBarOpen(true);
+    prevFilterCount.current = filters.length;
+  }, [filters.length]);
 
   const sortedRows = useMemo(() => {
     let arr = [...filteredRows];
@@ -516,7 +547,38 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     setDraft(current);
   };
 
-  const commit = async () => {
+  /** 取单元格当前显示值（#59 键盘跳转后重新开编辑器用，与 td onClick 的 draft 来源一致） */
+  const startEditValue = (row: GridRow, field: string): string => {
+    if (field === 'name') return row.name;
+    const col = columns.find((c) => c.id === field);
+    return col?.type === 'checkbox' ? String(row.values[field] === true)
+      : col?.type === 'tags' ? JSON.stringify(row.values[field] ?? [])
+      : col?.type === 'people' || col?.type === 'dependency' ? String(row.values[field] ?? '')
+      : col?.type === 'mirror' ? (() => { try { return String(JSON.parse(String(row.values[field] ?? '{}')).itemId ?? ''); } catch { return ''; } })()
+      : scalar(row.values[field]);
+  };
+
+  /** #59 键盘流：Enter → 下行同列继续编辑；Tab → 右跳下一个可编辑列 */
+  const moveEditing = (rowId: string, field: string, dir: 'down' | 'right') => {
+    if (dir === 'down') {
+      const idx = sortedRows.findIndex((r) => r.id === rowId);
+      const next = sortedRows[idx + 1];
+      if (next) startEdit(next.id, field, startEditValue(next, field));
+      return;
+    }
+    const editableType = (t?: string) => !!t && ['text', 'number', 'date', 'longtext', 'status', 'people', 'dropdown', 'checkbox', 'tags'].includes(t);
+    const cols = visibleColumns;
+    const from = field === 'name' ? -1 : cols.findIndex((c) => c.id === field);
+    const row = rows.find((r) => r.id === rowId);
+    for (let i = from + 1; i < cols.length; i++) {
+      const c = cols[i];
+      if (c.restricted || !editableType(c.type) || !row) continue;
+      startEdit(rowId, c.id, startEditValue(row, c.id));
+      return;
+    }
+  };
+
+  const commit = async (move?: 'down' | 'right') => {
     const e = editing;
     setEditing(null);
     if (!e) return;
@@ -526,12 +588,15 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     let value: unknown = draft;
     if (e.field === 'name') {
       if (draft !== row.name && draft.trim()) await onEdit(row, 'name', draft.trim());
+      if (move) moveEditing(e.rowId, 'name', move);
       return;
     }
     if (col?.type === 'number') value = draft === '' ? null : Number(draft);
     if (col?.type === 'checkbox') value = draft === 'true';
     if (col?.type === 'tags') { try { value = JSON.parse(draft); } catch { value = []; } }
-    await onEdit(row, e.field, value);
+    const p = onEdit(row, e.field, value);
+    if (move) moveEditing(e.rowId, e.field, move);
+    await p;
   };
 
   const drop = async (targetId: string) => {
@@ -578,7 +643,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       }
       if (col.type === 'date') {
         return <input data-grid-editor autoFocus type="date" value={draft} onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(null); }}
+          onBlur={() => commit()} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit('down'); } if (e.key === 'Tab') { e.preventDefault(); commit('right'); } if (e.key === 'Escape') setEditing(null); }}
           style={editorStyle} />;
       }
       if (col.type === 'status' || col.type === 'people' || col.type === 'dropdown') {
@@ -620,17 +685,17 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               {o.label}
             </span>;
           })}
-          <button onClick={commit} style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 6, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 11 }}>✓</button>
+          <button onClick={() => commit()} style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 6, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 11 }}>✓</button>
         </div>;
       }
       if (col.type === 'longtext') {
         return <textarea data-grid-editor autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit(); if (e.key === 'Escape') setEditing(null); }}
+          onBlur={() => commit()} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit(); if (e.key === 'Escape') setEditing(null); }}
           style={{ ...editorStyle, minHeight: 60, resize: 'vertical' }} />;
       }
       return <input data-grid-editor autoFocus type={col.type === 'number' ? 'number' : 'text'} value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(null); }}
+        onBlur={() => commit()} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit('down'); } if (e.key === 'Tab') { e.preventDefault(); commit('right'); } if (e.key === 'Escape') setEditing(null); }}
         style={editorStyle} />;
     }
 
@@ -666,15 +731,17 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       try { const p = JSON.parse(String(v)); if (Array.isArray(p)) list = p; } catch { }
       if (!list.length) return <span data-attach-cell={col.id} style={{ color: '#c3c8d4' }}>—</span>;
       return <span data-attach-cell={col.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {list.map((a) => (
-          <span key={a.id} data-attach-chip={a.id} title={`${a.name} · 点击下载`}
-            onClick={() => api.downloadAttachment(a.id, a.name).catch(() => {})}
+        {list.map((a) => {
+          const img = isImageFile(a.name);
+          return <span key={a.id} data-attach-chip={a.id} data-attach-img={img ? '1' : undefined}
+            title={`${a.name} · ${img ? '点击预览' : '点击下载'}`}
+            onClick={() => (img ? openImage(a) : api.downloadAttachment(a.id, a.name).catch(() => {}))}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#eef1fe', color: '#5b6c8f',
               padding: '2px 9px', borderRadius: 14, fontSize: 12, cursor: 'pointer', maxWidth: 180,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            📎 {a.name}
-          </span>
-        ))}
+            {img ? '🖼' : '📎'} {a.name}
+          </span>;
+        })}
       </span>;
     }
     if (col.type === 'checkbox') {
@@ -1071,10 +1138,19 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 onClick={() => !editing && startEdit(row.id, 'name', row.name)}>
                 {editing?.rowId === row.id && editing.field === 'name'
                   ? <input data-grid-editor autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-                      onBlur={commit}
-                      onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(null); }}
+                      onBlur={() => commit()}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit('down'); } if (e.key === 'Escape') setEditing(null); }}
                       style={{ ...editorStyle, width: '95%' }} />
-                  : <span style={rowDone(row) ? { textDecoration: 'line-through', color: UI.textFaint } : undefined}>{row.name}</span>}
+                  : <span style={rowDone(row) ? { textDecoration: 'line-through', color: UI.textFaint } : undefined}>{row.name}
+                    {/* #62 子任务进度徽章 */}
+                    {row.subtasks && (
+                      <span data-subtask-badge={row.id} style={{ marginLeft: 6, fontSize: 10, padding: '1px 7px', borderRadius: 9,
+                        background: row.subtasks.total > 0 && row.subtasks.done >= row.subtasks.total ? '#00a25b22' : '#eef1fe',
+                        color: row.subtasks.total > 0 && row.subtasks.done >= row.subtasks.total ? '#00a25b' : '#5b6c8f' }}>
+                        ☑ {row.subtasks.done}/{row.subtasks.total}
+                      </span>
+                    )}
+                  </span>}
               </td>
               {visibleColumns.map((c) => {
                 const isDropdownEdit = editing?.rowId === row.id && editing.field === c.id
@@ -1155,6 +1231,16 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               + 新建分组
             </button>
           )}
+        </div>
+      )}
+      {/* ── #66 图片 lightbox ── */}
+      {lightbox && (
+        <div data-lightbox="1" onClick={() => { URL.revokeObjectURL(lightbox.url); setLightbox(null); }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,18,30,.72)', zIndex: 9998,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
+          <img src={lightbox.url} alt={lightbox.name}
+            style={{ maxWidth: '88vw', maxHeight: '86vh', borderRadius: 8, boxShadow: '0 12px 48px rgba(0,0,0,.5)' }} />
+          <div style={{ position: 'absolute', bottom: 20, color: '#fff', fontSize: 12 }}>{lightbox.name}（点击任意处关闭）</div>
         </div>
       )}
     </div>

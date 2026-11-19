@@ -58,7 +58,7 @@ export class ItemsService {
     const { rows: columns } = await this.pg.query(
       `SELECT id, name, type, settings FROM board_columns WHERE board_id = $1 ORDER BY position`, [boardId]);
     const { rows: childItems } = await this.pg.query(
-      `SELECT i.id, i.parent_item_id,
+      `SELECT i.id, i.parent_item_id, i.done,
               jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
@@ -70,6 +70,18 @@ export class ItemsService {
       return { id: r.id, parentItemId: r.parent_item_id, values };
     });
     injectFormulaValues(columns, itemRows, childRows);
+    // #62 子任务进度徽章：按父条目聚合子任务完成数（total/done）
+    const subStats: Record<string, { total: number; done: number }> = {};
+    for (const c of childItems) {
+      const pid = String(c.parent_item_id);
+      const s = subStats[pid] ?? (subStats[pid] = { total: 0, done: 0 });
+      s.total += 1;
+      if (c.done) s.done += 1;
+    }
+    for (const it of itemRows) {
+      const s = subStats[String(it.id)];
+      if (s) (it as any).subtasks = s;
+    }
     if (userId) await injectMirrorValues(this.pg, columns, itemRows, userId);
     return itemRows;
   }
@@ -130,6 +142,8 @@ export class ItemsService {
         void this.automation.emit(col.board_id, itemId,
           { type: 'status_changed', field: col.name, to: value, from: prevValue }, userId);
       } else if (col.type === 'people') {
+        // #63 人员指派通知：新增的被指派人（除操作者本人）写 notifications
+        void this.notifyAssignees(col.board_id, itemId, col.name, prevValue, value, userId);
         void this.automation.emit(col.board_id, itemId,
           { type: 'assignee_changed', field: col.name, to: value, from: prevValue }, userId);
       } else {
@@ -138,6 +152,33 @@ export class ItemsService {
       }
       return { version: rows[0].version };
     } finally { client.release(); }
+  }
+
+  /** #63 人员指派通知：diff 新旧指派人，新指派者（除操作者本人）写 notifications（铃铛下次拉取可见） */
+  private async notifyAssignees(
+    boardId: string, itemId: string, colName: string,
+    prevValue: unknown, nextValue: unknown, actorId: string,
+  ) {
+    try {
+      const toIds = (v: unknown): string[] => {
+        if (v == null) return [];
+        if (Array.isArray(v)) {
+          return v.map((x) => (typeof x === 'object' && x ? String((x as any).id ?? '') : String(x)))
+            .filter((s) => s && s !== 'null');
+        }
+        return String(v).trim() ? [String(v).trim()] : [];
+      };
+      const prev = new Set(toIds(prevValue));
+      const fresh = toIds(nextValue).filter((id) => !prev.has(id) && id !== actorId);
+      if (!fresh.length) return;
+      const item = (await this.pg.query(`SELECT name FROM items WHERE id = $1`, [itemId])).rows[0];
+      for (const uid of fresh) {
+        await this.pg.query(
+          `INSERT INTO notifications (user_id, type, payload) VALUES ($1, 'assign', $2::jsonb)`,
+          [uid, JSON.stringify({ itemId, itemName: item?.name ?? '', boardId, column: colName, by: actorId })],
+        );
+      }
+    } catch { /* 通知失败不影响保存 */ }
   }
 
   /** 批量重排序（拖拽）：一次事务写入新 position */

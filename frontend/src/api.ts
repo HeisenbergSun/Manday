@@ -99,14 +99,18 @@ export const api = {
   deleteAttachment: (id: string) => request(`/attachments/${id}`, { method: 'DELETE' }),
   /** blob 下载（JWT 走 header，浏览器 <a> 无法带）→ 触发浏览器保存 */
   downloadAttachment: async (id: string, fileName: string) => {
-    const res = await fetch(BASE + `/attachments/${id}/file`, { credentials: 'include', headers: { ...authHeaders() } });
-    if (!res.ok) throw new Error(`${res.status}`);
-    const blob = await res.blob();
+    const blob = await api.attachmentBlob(id);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = fileName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  },
+  /** #66 取附件原始 blob（图片 lightbox 预览用） */
+  attachmentBlob: async (id: string) => {
+    const res = await fetch(BASE + `/attachments/${id}/file`, { credentials: 'include', headers: { ...authHeaders() } });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.blob();
   },
   createView: (boardId: string, name: string, viewType: string, config: unknown) =>
     request(`/boards/${boardId}/views`, { method: 'POST', body: JSON.stringify({ name, viewType, config }) }),

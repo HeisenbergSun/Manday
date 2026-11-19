@@ -86,6 +86,19 @@ const browser = await puppeteer.launch({
   const fileInput = await page.$('input[type=file][accept=".xlsx,.xls,.csv"]');
   assert(!!fileInput, 'E2 文件选择输入存在');
   await fileInput.uploadFile(xlsxPath);
+  // #57 两段式导入：先出现预览弹窗，点确认后才开始落库
+  let previewShown = false;
+  for (let i = 0; i < 10; i++) {
+    await sleep(500);
+    if (await page.$('[data-import-preview]')) { previewShown = true; break; }
+  }
+  assert(previewShown, 'E1.5 导入预览弹窗出现（data-import-preview）');
+  if (previewShown) {
+    const mapTags = await page.evaluate(() => document.querySelector('[data-import-preview]')?.innerText ?? '');
+    assert(mapTags.includes('→ 条目名'), 'E1.6 预览含列映射（条目名）');
+    assert(mapTags.includes('新建列'), 'E1.6 预览含新建列提示');
+    await page.click('[data-import-confirm]');
+  }
   // 等待导入完成（toast 提示）
   let toast = '';
   for (let i = 0; i < 30; i++) {

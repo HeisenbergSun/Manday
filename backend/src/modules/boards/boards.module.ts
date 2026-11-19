@@ -78,7 +78,7 @@ export class BoardsService {
     });
     // P2-3：Formula 列读取时注入计算值（含 SUM/COUNT 聚合子条目）
     const { rows: childItems } = await this.pg.query(
-      `SELECT i.id, i.parent_item_id,
+      `SELECT i.id, i.parent_item_id, i.done,
               jsonb_agg(jsonb_build_object('k', iv.column_id, 'v', iv.value #>> '{}')) AS kv
        FROM items i
        LEFT JOIN item_values iv ON iv.item_id = i.id
@@ -90,6 +90,18 @@ export class BoardsService {
       return { id: r.id, parentItemId: r.parent_item_id, values };
     });
     injectFormulaValues(columns, itemRows, childRows);
+    // #62 子任务进度徽章：按父条目聚合子任务完成数（total/done）
+    const subStats: Record<string, { total: number; done: number }> = {};
+    for (const c of childItems) {
+      const pid = String(c.parent_item_id);
+      const s = subStats[pid] ?? (subStats[pid] = { total: 0, done: 0 });
+      s.total += 1;
+      if (c.done) s.done += 1;
+    }
+    for (const it of itemRows) {
+      const s = subStats[String(it.id)];
+      if (s) (it as any).subtasks = s;
+    }
     // P2-4：Mirror 列读取时注入源条目名 + 状态（含权限过滤）
     await injectMirrorValues(this.pg, columns, itemRows, userId);
     // P1-2：受限列（viewPermission=owner）对非 owner 剓值、标记 restricted

@@ -3,13 +3,14 @@
  * 列类型渲染/编辑器统一在 Grid.tsx；LWW 保存与冲突刷新在本组件
  */
 import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
-import { BoardGrid, type GridRow } from './Grid';
+import { BoardGrid, type GridRow, type FilterCondition } from './Grid';
 import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { UI, TAG, doneLabelsOf, soften } from '../theme';
 import { AutomationPanel } from './AutomationPanel';
 import { parseWorkbook, mapHeaders, convertRow, inferType, type ImportCol } from '../importExcel';
 import { loadCompanyUsers } from '../people';
+import * as XLSX from 'xlsx';
 
 /** 列类型的中文展示名 */
 const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像', dependency: '前置', attachment: '附件', rating: '星级', tags: '标签', longtext: '长文本' } as Record<string, string>)[t] ?? t;
@@ -114,6 +115,14 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   const canEditContent = isOwner || myRole === 'editor';
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  // #57 导入预览：解析结果先弹窗确认再落库
+  const [importPreview, setImportPreview] = useState<{
+    fileName: string; sheet: { headers: string[]; rows: Record<string, unknown>[] };
+    headerMap: Record<string, ImportCol | 'name' | null>;
+  } | null>(null);
+  // #61 筛选状态提升到本组件（视图持久化 + 导出范围用）
+  const [tableFilters, setTableFilters] = useState<FilterCondition[]>([]);
+  const filteredRowsRef = useRef<GridRow[]>([]);
   /** 统一 toast（第二十批）：全部路由到全局 ToastHost；「已…」开头默认 success，其余 info */
   const [mgrOpen, setMgrOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -167,6 +176,8 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     const cfg = v.config ?? {};
     setSortBy(cfg.sortBy ?? null);
     setSortDir(cfg.sortDir === 'desc' ? 'desc' : 'asc');
+    // #61：恢复视图保存时的筛选条件
+    setTableFilters(Array.isArray(cfg.filters) ? cfg.filters : []);
     setViewsOpen(false);
     if (v.view_type && v.view_type !== 'table') onSwitchView?.(v.view_type);
   };
@@ -206,7 +217,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     if (!name || busy) return;
     setBusy(true);
     try {
-      const v: any = await api.createView(boardId, name, 'table', { sortBy, sortDir });
+      const v: any = await api.createView(boardId, name, 'table', { sortBy, sortDir, filters: tableFilters });
       await loadViews();
       setActiveViewId(v.id);
       setNewViewName('');
@@ -250,6 +261,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     () => Object.values(items).map((it: any) => ({
       id: it.id, name: it.name, version: it.version, position: it.position ?? 0,
       values: it.values ?? {}, group_id: it.group_id,
+      subtasks: it.subtasks ? { total: it.subtasks.total, done: it.subtasks.done } : undefined,
     })),
     [items],
   );
@@ -292,6 +304,20 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
       flash(`删除失败：${(e as Error).message}`);
     }
   }, [selectedIds, reloadBoard]);
+
+  /** #64 空板一键添加常用列（仅 owner 且无列时出现） */
+  const addCommonColumns = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      for (const [name, type] of [['负责人', 'people'], ['状态', 'status'], ['截止日期', 'date']] as const) {
+        try { await api.addColumn(boardId, name, type); } catch { /* 已存在同名列则跳过 */ }
+      }
+      await reloadBoard();
+      flash('已添加常用列：负责人 / 状态 / 截止日期');
+    } catch (e) { flash(`添加失败：${(e as Error).message}`); }
+    finally { setBusy(false); }
+  }, [boardId, busy, reloadBoard]);
 
   /** 新增列（status 列后端会带默认标签） */
   const addColumn = useCallback(async () => {
@@ -347,7 +373,8 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     } catch (e) { flash(`修改列权限失败：${(e as Error).message}`); }
   }, [boardId, reloadBoard]);
 
-  /** 单元格保存：name 走本体接口，其余走 LWW updateCell */
+  /** 单元格保存：name 走本体接口，其余走 LWW updateCell
+   *  #56 智能合并重试：409 时取行最新 version → 重放保存一次；仍冲突才整板刷新 */
   const saveCell = useCallback(async (row: GridRow, field: string, value: unknown) => {
     if (field === '__attachments__') { await reloadBoard(); return; } // P3-2：附件上传后刷新（cell 由附件端点维护）
     try {
@@ -361,6 +388,16 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
       applyPatch(row.id, field, value, version);
     } catch (err: any) {
       if (err.message?.includes('CONFLICT') || err.code === 'CONFLICT') {
+        // #56：尝试用最新 version 重放一次（自动合并），失败才回退整板刷新
+        const fresh: any = await api.item(row.id).catch(() => null);
+        if (fresh?.version && fresh.version !== row.version) {
+          try {
+            const { version } = await api.updateCell(row.id, field, value, fresh.version);
+            applyPatch(row.id, field, value, version);
+            flash('该行已被他人修改，已自动合并保存');
+            return;
+          } catch { /* 重放仍冲突 → 走刷新兜底 */ }
+        }
         flash('该行已被他人修改，正在加载最新内容…');
         await reloadBoard();
       } else if (String(err.message ?? err).includes('FORBIDDEN')) {
@@ -425,18 +462,27 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     flash(`批量改状态：成功 ${ok}${fail ? `，失败 ${fail}` : ''}`);
   }, [statusCol, gridRows, selectedIds, saveCell]);
 
-  /** CSV 导出（第二十三批）：导出当前看板所有条目和列 */
+  /** CSV 导出（第二十三批）：导出当前看板条目和列；#58 有筛选时仅导出筛选后行 */
+  const exportRows = useCallback(() => {
+    if (tableFilters.length === 0) return gridRows;
+    const ids = new Set(filteredRowsRef.current.map((r) => r.id));
+    const f = gridRows.filter((r) => ids.has(r.id));
+    return f.length ? f : gridRows;
+  }, [tableFilters, gridRows]);
+
+  const rowToCells = (r: GridRow) => [
+    r.name,
+    ...columns.map((c: any) => {
+      const v = r.values[c.id];
+      if (v == null) return '';
+      if (typeof v === 'object') return JSON.stringify(v);
+      return String(v);
+    }),
+  ];
+
   const exportCSV = useCallback(() => {
     const headers = ['条目', ...columns.map((c: any) => c.name)];
-    const dataRows = gridRows.map((r) => [
-      r.name,
-      ...columns.map((c: any) => {
-        const v = r.values[c.id];
-        if (v == null) return '';
-        if (typeof v === 'object') return JSON.stringify(v);
-        return String(v);
-      }),
-    ]);
+    const dataRows = exportRows().map(rowToCells);
     const csv = [headers, ...dataRows].map((row) =>
       row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','),
     ).join('\n');
@@ -447,27 +493,53 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     a.download = `manday-export-${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    flash('已导出 CSV');
-  }, [gridRows, columns]);
+    flash(tableFilters.length ? `已导出 CSV（筛选后 ${dataRows.length} 条）` : '已导出 CSV');
+  }, [exportRows, columns, tableFilters]);
 
-  /** Excel 导入（第二十八批）：解析 → 表头映射（可自动建列）→ 逐行建条目 + 写单元格 */
+  /** #58 Excel 导出（xlsx）：有筛选时仅导出筛选后行 */
+  const exportXLSX = useCallback(() => {
+    const headers = ['条目', ...columns.map((c: any) => c.name)];
+    const dataRows = exportRows().map(rowToCells);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    ws['!cols'] = [{ wch: 28 }, ...columns.map(() => ({ wch: 16 }))];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Manday');
+    XLSX.writeFile(wb, `manday-export-${Date.now()}.xlsx`);
+    flash(tableFilters.length ? `已导出 Excel（筛选后 ${dataRows.length} 条）` : '已导出 Excel');
+  }, [exportRows, columns, tableFilters]);
+
+  /** Excel 导入（第二十八批 → #57 两段式）：解析+映射 → 预览弹窗确认 → 逐行建条目 + 写单元格 */
   const importFileRef = useRef<HTMLInputElement>(null);
-  const importExcel = useCallback(async (file: File) => {
-    setImporting(true);
-    const okRows: string[] = [];
-    const failRows: string[] = [];
+  const prepareImport = useCallback(async (file: File) => {
     try {
       const buf = await file.arrayBuffer();
       const sheet = parseWorkbook(buf);
       if (!sheet.rows.length) { flash('导入失败：表格无数据行'); return; }
+      const cols: ImportCol[] = columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings }));
+      const headerMap = mapHeaders(sheet.headers, cols);
+      setImportPreview({ fileName: file.name, sheet, headerMap });
+    } catch (e) {
+      flash(`导入失败：${(e as Error).message}`);
+    }
+  }, [columns]);
+
+  /** 预览确认后真正落库：owner 对未匹配表头自动建列，再逐行写 */
+  const confirmImport = useCallback(async () => {
+    const p = importPreview;
+    if (!p) return;
+    setImportPreview(null);
+    setImporting(true);
+    const okRows: string[] = [];
+    const failRows: string[] = [];
+    try {
       let cols: ImportCol[] = columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings }));
-      let headerMap = mapHeaders(sheet.headers, cols);
+      const headerMap = { ...p.headerMap };
       const users = await loadCompanyUsers();
       // 未匹配列 → owner 自动建列（按内容推断类型）
-      const missing = sheet.headers.filter((h) => headerMap[h] === null);
+      const missing = p.sheet.headers.filter((h) => headerMap[h] === null);
       if (missing.length && isOwner) {
         for (const h of missing) {
-          const vals = sheet.rows.map((r) => r[h]);
+          const vals = p.sheet.rows.map((r) => r[h]);
           const type = inferType(vals);
           try {
             const created: any = await api.addColumn(boardId, h.trim(), type);
@@ -477,7 +549,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
         }
       }
       const firstGroup = (await api.getBoard(boardId) as any)?.groups?.[0]?.id;
-      for (const row of sheet.rows) {
+      for (const row of p.sheet.rows) {
         try {
           const converted = convertRow(row, headerMap, users);
           if (!converted) { failRows.push('(空行/无条目名)'); continue; }
@@ -497,7 +569,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     } finally {
       setImporting(false);
     }
-  }, [columns, boardId, isOwner, reloadBoard]);
+  }, [importPreview, columns, boardId, isOwner, reloadBoard]);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -666,13 +738,18 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
         <button data-export-csv onClick={exportCSV}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
             cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
-          📥 导出 CSV
+          📥 导出 CSV{tableFilters.length ? '（筛选后）' : ''}
+        </button>
+        <button data-export-xlsx onClick={exportXLSX}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
+          📗 导出 Excel{tableFilters.length ? '（筛选后）' : ''}
         </button>
         <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
           onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = '';
-            if (f) importExcel(f);
+            if (f) prepareImport(f);
           }} />
         <button data-import-excel onClick={() => importFileRef.current?.click()} disabled={importing}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
@@ -729,6 +806,48 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           {gridRows.length} 条目 · 单击编辑 · 拖 ⠿ 排序 · ↑↓/Enter/Space 快捷键 · 勾选 3 行以上出批量工具条
         </span>
       </div>
+      {/* toast 统一走右下角全局 ToastHost（第二十批） */}      {/* #57 导入预览确认弹窗 */}
+      {importPreview && (
+        <div data-import-preview="1" style={{ position: 'fixed', inset: 0, background: 'rgba(15,18,30,.45)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 20, width: 620, maxHeight: '80vh', overflow: 'auto',
+            boxShadow: '0 12px 40px rgba(0,0,0,.25)' }}>
+            <b style={{ fontSize: 15 }}>📥 导入预览 — {importPreview.fileName}</b>
+            <div style={{ fontSize: 12, color: '#7a7f8c', margin: '6px 0 10px' }}>
+              共 {importPreview.sheet.rows.length} 行数据 · 确认后写入当前看板
+            </div>
+            <b style={{ fontSize: 13 }}>列映射</b>
+            <div style={{ margin: '6px 0 12px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {importPreview.sheet.headers.filter((h) => h).map((h) => {
+                const m = importPreview.headerMap[h];
+                const tag = m === 'name' ? { text: '→ 条目名', bg: '#eef1fe', color: '#4f6ef7' }
+                  : m ? { text: `→ ${m.name}（${typeLabel(m.type)}）`, bg: '#e6f7ef', color: '#00a25b' }
+                  : isOwner ? { text: '→ 新建列', bg: '#fff8e6', color: '#b8860b' }
+                  : { text: '→ 忽略（无匹配列）', bg: '#f0f1f5', color: '#a0a4b1' };
+                return <span key={h} style={{ fontSize: 12, padding: '2px 9px', borderRadius: 9, background: tag.bg, color: tag.color }}>
+                  {h} {tag.text}</span>;
+              })}
+            </div>
+            <b style={{ fontSize: 13 }}>前 5 行样例</b>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, margin: '6px 0 14px' }}>
+              <thead><tr>{importPreview.sheet.headers.filter((h) => h).map((h) => (
+                <th key={h} style={{ padding: '4px 8px', borderBottom: '1px solid #e6e8ef', textAlign: 'left', color: '#7a7f8c' }}>{h}</th>))}</tr></thead>
+              <tbody>{importPreview.sheet.rows.slice(0, 5).map((r, i) => (
+                <tr key={i}>{importPreview.sheet.headers.filter((h) => h).map((h) => (
+                  <td key={h} style={{ padding: '4px 8px', borderBottom: '1px solid #f0f1f5' }}>{r[h] == null ? '' : String(r[h])}</td>))}</tr>))}</tbody>
+            </table>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button data-import-cancel onClick={() => setImportPreview(null)}
+                style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 13 }}>取消</button>
+              <button data-import-confirm onClick={confirmImport} disabled={importing}
+                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff',
+                  cursor: importing ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600 }}>
+                {importing ? '导入中…' : `确认导入 ${importPreview.sheet.rows.length} 行`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* toast 统一走右下角全局 ToastHost（第二十批） */}      {/* 底部浮动批量工具条（P0-4）：勾选 ≥3 行浮出 */}
       {selectedIds.size >= 3 && (
         <div data-batch-bar="1" style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
@@ -773,6 +892,13 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
               <div style={{ color: '#7a7f8c', fontSize: 12, marginTop: 6 }}>
                 点左上角「＋ 新建条目」开始，或用「⚙ 列与分组」先建状态/人员/日期列
               </div>
+              {isOwner && columns.length === 0 && (
+                <button data-quick-columns onClick={addCommonColumns}
+                  style={{ marginTop: 14, padding: '8px 18px', borderRadius: 8, border: '1px dashed #4f6ef7',
+                    background: '#f5f7ff', color: '#4f6ef7', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                  ✨ 一键添加常用列（负责人 / 状态 / 截止日期）
+                </button>
+              )}
             </div>
           )}
           <BoardGrid
@@ -789,6 +915,9 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             onOrderChange={saveOrder}
             onSelectionChange={setSelectedIds}
             boardId={boardId}
+            filters={tableFilters}
+            onFiltersChange={setTableFilters}
+            onFilteredRowsChange={(rs) => { filteredRowsRef.current = rs; }}
             onAddColumn={async (name, type, settings) => {
               try {
                 await api.addColumn(boardId, name, type, settings);

@@ -6,7 +6,12 @@ import { useItems } from './store';
 
 export const socket = io('/', { auth: { userId: localStorage.getItem('userId') }, withCredentials: true });
 
+// #60 断线重连自动 refetch：记录当前 board，重连成功后重新 join + 通知 App 全量刷新
+let currentBoardId: string | null = null;
+let wasDisconnected = false;
+
 export function joinBoard(boardId: string) {
+  currentBoardId = boardId;
   socket.emit('board:join', boardId);
   socket.on('item:changed', (p: {
     type: string; itemId: string; field?: string; value?: unknown; version?: number;
@@ -35,4 +40,14 @@ export function leaveBoard(boardId: string) {
 }
 
 // 断线自动重连退避（蓝绿发布切换时前端无感恢复）
-socket.on('disconnect', () => setTimeout(() => socket.connect(), 1000 + Math.random() * 2000));
+socket.on('disconnect', () => { wasDisconnected = true; setTimeout(() => socket.connect(), 1000 + Math.random() * 2000); });
+
+// 重连成功：服务端房间已丢失 → 重新 join，并通知 App 全量 refetch 补齐断线期间错过的变更
+socket.on('connect', () => {
+  if (!wasDisconnected) return;
+  wasDisconnected = false;
+  if (currentBoardId) {
+    socket.emit('board:join', currentBoardId);
+    window.dispatchEvent(new CustomEvent('manday:reconnected', { detail: currentBoardId }));
+  }
+});

@@ -105,6 +105,22 @@ function parseDate(v: FVal): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// #67 公式列级 memo：tokenize 结果按表达式缓存（表达式不变则无需重复词法分析）
+const TOKEN_CACHE = new Map<string, Token[]>();
+const TOKEN_CACHE_MAX = 500;
+function tokenizeCached(expr: string): Token[] {
+  let t = TOKEN_CACHE.get(expr);
+  if (!t) {
+    t = tokenize(expr);
+    if (TOKEN_CACHE.size >= TOKEN_CACHE_MAX) {
+      // 简单防膨胀：超过上限清空重建
+      TOKEN_CACHE.clear();
+    }
+    TOKEN_CACHE.set(expr, t);
+  }
+  return t;
+}
+
 class Parser {
   tokens: Token[];
   pos = 0;
@@ -375,7 +391,7 @@ class Parser {
 }
 
 export function evaluateFormula(expr: string, row: FormulaRow, children: FormulaRow[]): FVal {
-  const tokens = tokenize(expr);
+  const tokens = tokenizeCached(expr);
   const p = new Parser(tokens, row, children);
   const v = p.parseExpr();
   if (p.pos !== tokens.length || p.errors || v === null) return null;
@@ -385,7 +401,7 @@ export function evaluateFormula(expr: string, row: FormulaRow, children: Formula
 
 export function validateFormula(expr: string): boolean {
   try {
-    const tokens = tokenize(expr);
+    const tokens = tokenizeCached(expr);
     const zeroRow = {
       id: 0,
       values: new Proxy({}, { get: () => '0' }),
