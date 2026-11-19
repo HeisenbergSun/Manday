@@ -473,6 +473,35 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     } catch (e) { flash(`删除选项失败：${(e as Error).message}`); }
   }, [boardId, reloadBoard]);
 
+  /** 自定义选项：重命名预置选项（同步 doneLabels/inactiveLabels 引用） */
+  const renameColumnOption = useCallback(async (col: any, oldLabel: string, newLabel: string) => {
+    newLabel = newLabel.trim();
+    if (!newLabel || newLabel === oldLabel) return;
+    const s: any = { ...(col.settings ?? {}) };
+    const key = col.type === 'status' ? 'labels' : 'options';
+    s[key] = (Array.isArray(s[key]) ? s[key] : []).map((o: any) => (o?.label ?? o) === oldLabel
+      ? (col.type === 'status' ? { ...o, label: newLabel } : { label: newLabel }) : o);
+    if (col.type === 'status') {
+      s.inactiveLabels = (s.inactiveLabels ?? []).map((l: string) => l === oldLabel ? newLabel : l);
+      s.doneLabels = (s.doneLabels ?? []).map((l: string) => l === oldLabel ? newLabel : l);
+    }
+    try {
+      await api.updateColumnSettings(boardId, col.id, s);
+      await reloadBoard();
+      flash(`已重命名「${oldLabel}」→「${newLabel}」`);
+    } catch (e) { flash(`重命名失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
+
+  /** 自定义选项：status 标签改颜色 */
+  const setOptionColor = useCallback(async (col: any, label: string, color: string) => {
+    const s: any = { ...(col.settings ?? {}) };
+    s.labels = (Array.isArray(s.labels) ? s.labels : []).map((o: any) => o.label === label ? { ...o, color } : o);
+    try {
+      await api.updateColumnSettings(boardId, col.id, s);
+      await reloadBoard();
+    } catch (e) { flash(`改色失败：${(e as Error).message}`); }
+  }, [boardId, reloadBoard]);
+
   /** 批量改状态（P0-4）：选中 ≥3 行时底部工具条，逐行 LWW 写入 */
   const statusCol = useMemo(() => columns.find((c: any) => c.type === 'status'), [columns]);
   // P2-2：示例条目（名称以「示例：」开头）可一键删除
@@ -673,12 +702,16 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                       const inactive = (c.settings?.inactiveLabels ?? []).includes(l.label);
                       const isDone = doneLabelsOf(c.settings).has(l.label);
                       const chip = soften(l.color) ?? '#d0d4e0';
-                      return <span key={l.label} onClick={(e) => { if (!isOwner) return; e.shiftKey ? toggleDoneLabel(c, l.label) : toggleLabelInactive(c, l.label); }}
-                        title={isOwner ? (inactive ? '已停用，点恢复' : '点击停用标签（Shift+点 = 设/取消完成语义）') : '仅负责人可修改标签'}
+                      return <span key={l.label}
+                        onClick={(e) => { if (!isOwner) return; e.shiftKey ? toggleDoneLabel(c, l.label) : toggleLabelInactive(c, l.label); }}
+                        onDoubleClick={() => { if (!isOwner) return; const v = prompt('重命名标签', l.label); if (v && v.trim() && v.trim() !== l.label) renameColumnOption(c, l.label, v.trim()); }}
+                        title={isOwner ? (inactive ? '已停用，点恢复' : '点击停用标签 · 双击重命名 · 点色块换色 · Shift+点设完成') : '仅负责人可修改标签'}
                         style={{ cursor: isOwner ? 'pointer' : 'default', fontSize: 11, padding: '1px 7px', borderRadius: 10,
                           background: `${chip}22`, color: inactive ? UI.textFaint : chip,
                           textDecoration: inactive ? 'line-through' : 'none',
-                          border: isDone ? `1px solid ${TAG.done}` : 'none' }}>
+                          border: isDone ? `1px solid ${TAG.done}` : 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        {isOwner && <span data-option-color onClick={(e) => { e.stopPropagation(); setOptionColor(c, l.label, OPTION_COLORS[(OPTION_COLORS.indexOf(l.color) + 1) % OPTION_COLORS.length] ?? '#579bfc'); }}
+                          title="点击换色" style={{ width: 8, height: 8, borderRadius: '50%', background: chip, flexShrink: 0, cursor: 'pointer' }} />}
                         {l.label}{isDone ? ' ✓' : ''}</span>;
                     })}
                     {isOwner && (
@@ -693,7 +726,8 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                     {(c.settings?.options ?? []).map((o: any) => {
                       const label = o?.label ?? o;
                       return <span key={label} data-option-chip={label}
-                        title={isOwner ? '预置选项（点击 × 删除）' : '预置选项'}
+                        onDoubleClick={() => { if (!isOwner) return; const v = prompt('重命名选项', label); if (v && v.trim() && v.trim() !== label) renameColumnOption(c, label, v.trim()); }}
+                        title={isOwner ? '预置选项（双击重命名 · 点击 × 删除）' : '预置选项'}
                         style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: '#eef1fe', color: '#4f6ef7',
                           display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         {label}

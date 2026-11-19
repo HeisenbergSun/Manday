@@ -186,15 +186,17 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
     e.preventDefault(); e.stopPropagation();
     const startX = e.clientX, startY = e.clientY;
     const startW = widget.config?.w ?? 2, startH = widget.config?.h ?? 2;
+    let latest = { w: startW, h: startH };
     const onMove = (ev: MouseEvent) => {
       const w = Math.max(1, Math.min(6, startW + Math.round((ev.clientX - startX) / 80)));
       const h = Math.max(1, Math.min(4, startH + Math.round((ev.clientY - startY) / 60)));
+      latest = { w, h };
       setSize({ w, h });
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      if (size) onResize(size.w, size.h);
+      onResize(latest.w, latest.h);
       setSize(null);
     };
     window.addEventListener('mousemove', onMove);
@@ -261,8 +263,8 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
           ))}</div>
         )}
       </div>
-      {/* 右下角调整大小手柄 */}
-      <span onMouseDown={startResize} title="拖动调整大小" data-widget-resize
+      {/* 右下角调整大小手柄（draggable=false 避免被网格拖拽排序接管） */}
+      <span onMouseDown={startResize} draggable={false} title="拖动调整大小" data-widget-resize
         style={{ position: 'absolute', right: 2, bottom: 2, width: 14, height: 14, cursor: 'nwse-resize', color: '#c3c8d4', fontSize: 11, lineHeight: 1 }}>⤡</span>
     </div>
   );
@@ -346,7 +348,7 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
             onDragStart={(e) => e.dataTransfer.setData('text/plain', w.id)}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); dropWidget(e.dataTransfer.getData('text/plain'), w.id); }}
-            style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}` }}>
+            style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}`, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
             <WidgetCard dashboardId={dashboardId} widget={w}
               onDelete={() => removeWidget(w.id)} onEdit={() => setEditing(w)} onResize={(nw, nh) => resizeWidget(w, nw, nh)} onOpenItem={onOpenItem} />
           </div>
