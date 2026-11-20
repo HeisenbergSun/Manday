@@ -237,10 +237,10 @@ export class BoardsService {
     return { restored: itemIds.length };
   }
 
-  /** —— 列管理 ——（P1-1：结构操作仅 owner；加号按钮前端对所有人可见，非 owner 由这里 403 拦截） */
+  /** —— 列管理 ——（加列对 editor 及以上开放；删/改列仍仅 owner） */
   async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
-    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加列');
+    if (!can(userRole, 'edit')) throw new ForbiddenException('无权限添加列');
     if (!['text', 'status', 'people', 'date', 'number', 'checkbox', 'dropdown', 'formula', 'mirror', 'dependency', 'attachment', 'rating', 'tags', 'longtext'].includes(dto.type)) throw new BadRequestException('BAD_TYPE');
     if (dto.type === 'formula' && !(typeof dto.settings?.formula === 'string' && dto.settings.formula.trim())) throw new BadRequestException('BAD_FORMULA');
     if (dto.type === 'formula') {

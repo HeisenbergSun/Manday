@@ -178,9 +178,11 @@ type Props = {
   onFiltersChange?: (f: FilterCondition[]) => void;
   /** #58 导出接筛选：当前筛选后的行集回调 */
   onFilteredRowsChange?: (rows: GridRow[]) => void;
+  /** 外部清除选择信号（父组件点击「清除选择」时递增，触发清空内部勾选） */
+  clearSignal?: number;
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onAddColumnOption, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem, filters: filtersProp, onFiltersChange, onFilteredRowsChange }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onAddColumnOption, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem, filters: filtersProp, onFiltersChange, onFilteredRowsChange, clearSignal }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -249,6 +251,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
   useEffect(() => { setLocalOrder(null); setItemsVersion((v) => v + 1); }, [rows]);
   useEffect(() => { onSelectionChange?.(selected); }, [selected]);
+  // 外部清除选择信号 → 清空内部勾选（父组件「清除选择」按钮）
+  useEffect(() => { if (clearSignal) setSelected(new Set()); }, [clearSignal]);
   // #58：筛选后的行集回传父组件（导出用）
   const filteredRowsCb = useRef(onFilteredRowsChange);
   filteredRowsCb.current = onFilteredRowsChange;

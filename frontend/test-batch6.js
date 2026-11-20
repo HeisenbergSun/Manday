@@ -124,23 +124,18 @@ const browser = await puppeteer.launch({
   assert(l4 > 0, '没有拖拽手柄');
   console.log('L4 拖拽手柄 PASS');
 
-  // ---- L5: 列级权限 ----
-  // 注意：列级权限的语义是「非 owner 编辑 owner-only 列 → 403」。
-  // dev 账号是 Monday迁移 的 owner，必须选一个 dev 非 owner 的 board（App 2.0 项目）来测。
-  const bid5 = await page.evaluate(async (h, cur) => {
-    const j = await (await fetch('/api/boards', { headers: h })).json();
-    const arr = Array.isArray(j) ? j : j.items;
-    const target = arr.find((b) => b.name === 'App 2.0 项目') || arr.find((b) => b.id !== cur);
-    return target?.id ?? null;
-  }, headers, bid);
-  const dateCol = await page.evaluate(async (id, h) => {
-    const d = await (await fetch('/api/boards/' + id, { headers: h })).json();
-    const c = d.columns.find((x) => x.type === 'date');
-    return { id: c.id, name: c.name, settings: c.settings ?? {} };
-  }, bid5, headers);
-  // 设为 owner-only（P1-1 后结构操作仅 board owner——App 2.0 项目 owner 是张伟，需用他的 token 设权限）
+  // ---- L5: 列级权限（动态创建张伟 owner 的 board，dev 非 owner）----
   const ZW = '43c4d6a3-2831-4cd7-b8f9-376c1ab8e519';
   const zwToken = 'Bearer ' + require('../backend/node_modules/jsonwebtoken').sign({ sub: ZW, email: 'zhangwei@internal' }, 'manday-dev-secret', { expiresIn: '12h' });
+  const l5prep = await page.evaluate(async (auth) => {
+    const b = await (await fetch('/api/boards', { method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'B6-权限-' + Date.now(), visibility: 'company' }) })).json();
+    const c = await (await fetch('/api/boards/' + b.id + '/columns', { method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '日期', type: 'date' }) })).json();
+    await fetch('/api/boards/' + b.id + '/items', { method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '条目1' }) });
+    return { bid: b.id, cid: c.id };
+  }, zwToken);
+  const bid5 = l5prep.bid;
+  const dateCol = { id: l5prep.cid, name: '日期', settings: {} };
+  // 设为 owner-only（P1-1 后结构操作仅 board owner）
   const setRes = await page.evaluate(async (id, auth, col) => {
     const r = await fetch('/api/boards/' + id + '/columns/' + col.id, { method: 'PATCH', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { ...col.settings, editable: 'owner' } }) });
     return r.status;

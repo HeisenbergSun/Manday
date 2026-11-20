@@ -109,9 +109,9 @@ const browser = await puppeteer.launch({
   });
   await sleep(400);
 
-  // ---- M1/M2/M3：非 owner 结构 403、内容 200 ----
+  // ---- M1/M2/M3：editor 加列成功（第四十二批放开）、加组仍 403、内容 200 ----
   const m1 = await req(linaToken, 'POST', `/boards/${bid}/columns`, { name: '越权列', type: 'text' });
-  assert(m1.status === 403, `M1 非 owner 加列 → 403（实际 ${m1.status}）`);
+  assert(m1.status === 201 || m1.status === 200, `M1 editor 加列 → 200（实际 ${m1.status}）`);
   const gid0 = (await req(linaToken, 'GET', `/boards/${bid}/items`)).body.groups?.[0]?.id;
   const m2 = await req(linaToken, 'POST', `/boards/${bid}/groups`, { name: '越权组' });
   assert(m2.status === 403, `M2 非 owner 加组 → 403（实际 ${m2.status}）`);

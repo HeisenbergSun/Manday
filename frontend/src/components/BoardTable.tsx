@@ -139,6 +139,8 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   const [newGroupName, setNewGroupName] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [clearSignal, setClearSignal] = useState(0);
+  const [batchEditOpen, setBatchEditOpen] = useState(false);
   // 视图（P1-3）：命名视图（排序配置）+ 锁定；prefs（P1-4）：每 board 每用户独立
   const [views, setViews] = useState<any[]>([]);
   const [viewsOpen, setViewsOpen] = useState(false);
@@ -524,6 +526,17 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     }
     flash(`批量改状态：成功 ${ok}${fail ? `，失败 ${fail}` : ''}`);
   }, [statusCol, gridRows, selectedIds, saveCell]);
+
+  /** 批量编辑任意列（多选后对选中行统一写值） */
+  const batchEditColumn = useCallback(async (col: any, value: unknown) => {
+    const rows = gridRows.filter((r) => selectedIds.has(r.id));
+    let ok = 0, fail = 0;
+    for (const r of rows) {
+      try { await saveCell(r, col.id, value); ok++; } catch { fail++; }
+    }
+    flash(`批量编辑「${col.name}」：成功 ${ok}${fail ? `，失败 ${fail}` : ''}`);
+    setBatchEditOpen(false);
+  }, [gridRows, selectedIds, saveCell]);
 
   /** CSV 导出（第二十三批）：导出当前看板条目和列；#58 有筛选时仅导出筛选后行 */
   const exportRows = useCallback(() => {
@@ -940,10 +953,18 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           <button data-batch-delete onClick={() => { deleteSelected(); }}
             style={{ border: 'none', background: 'transparent', color: '#ff9aa9', cursor: 'pointer', fontSize: 13 }}>
             🗑 移入回收站</button>
-          <button onClick={() => setSelectedIds(new Set())}
+          <button data-batch-edit onClick={() => setBatchEditOpen(true)}
+            style={{ border: 'none', background: 'transparent', color: '#9db8ff', cursor: 'pointer', fontSize: 13 }}>
+            ✎ 批量编辑</button>
+          <button data-batch-clear onClick={() => { setSelectedIds(new Set()); setClearSignal((s) => s + 1); }}
             style={{ border: 'none', background: 'transparent', color: '#c5c9d4', cursor: 'pointer', fontSize: 13 }}>
             清除选择</button>
         </div>
+      )}
+      {/* 批量编辑弹窗（任意列） */}
+      {batchEditOpen && (
+        <BatchEditModal columns={columns}
+          onClose={() => setBatchEditOpen(false)} onApply={batchEditColumn} />
       )}
       {boardLoading ? (
         <div data-skeleton style={{ padding: '12px 12px 20px' }}>
@@ -986,6 +1007,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             onEdit={saveCell}
             onOrderChange={saveOrder}
             onSelectionChange={setSelectedIds}
+            clearSignal={clearSignal}
             boardId={boardId}
             filters={tableFilters}
             onFiltersChange={setTableFilters}
@@ -1081,6 +1103,90 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           />
         </>
       )}
+    </div>
+  );
+}
+
+/** 批量编辑弹窗：选列 + 按列类型输入值，应用到所有选中行 */
+function BatchEditModal({ columns, onClose, onApply }: {
+  columns: any[]; onClose: () => void; onApply: (col: any, value: unknown) => void;
+}) {
+  const editableCols = columns.filter((c: any) => !['name', 'attachment', 'formula', 'mirror', 'dependency'].includes(c.type));
+  const [colId, setColId] = useState('');
+  const [value, setValue] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
+  useEffect(() => { api.listUsers().then((u: any) => setUsers(Array.isArray(u) ? u : [])).catch(() => {}); }, []);
+  const col = editableCols.find((c: any) => c.id === colId);
+
+  const apply = () => {
+    if (!col) return;
+    let v: unknown = value;
+    if (col.type === 'number') v = value === '' ? '' : Number(value);
+    if (col.type === 'checkbox') v = value === 'true';
+    if (col.type === 'people') v = value ? [value] : [];
+    if (col.type === 'tags') v = value ? value.split(/[,、;；]/).map((s: string) => s.trim()).filter(Boolean) : [];
+    onApply(col, v);
+  };
+
+  const canApply = !!col && (col.type === 'checkbox' || col.type === 'people' || col.type === 'tags' || value !== '');
+
+  return (
+    <div data-batch-edit-modal onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,18,30,.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, padding: 20, width: 420, maxHeight: '80vh', overflow: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,.25)' }}>
+        <b style={{ fontSize: 15 }}>✎ 批量编辑</b>
+        <div style={{ fontSize: 12, color: '#7a7f8c', margin: '4px 0 14px' }}>将所选行的该列统一改为新值</div>
+        <div style={{ fontSize: 12, color: '#5a6072', marginBottom: 4 }}>选择列</div>
+        <select data-batch-edit-col value={colId} onChange={(e) => { setColId(e.target.value); setValue(''); }}
+          style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13, marginBottom: 12 }}>
+          <option value="">选择列…</option>
+          {editableCols.map((c: any) => <option key={c.id} value={c.id}>{c.name}（{c.type}）</option>)}
+        </select>
+
+        {col && col.type === 'status' && (
+          <select data-batch-edit-value value={value} onChange={(e) => setValue(e.target.value)}
+            style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+            <option value="">— 清空 —</option>
+            {((col.settings?.labels ?? []) as any[]).filter((l: any) => !((col.settings?.inactiveLabels ?? []) as string[]).includes(l.label))
+              .map((l: any) => <option key={l.label} value={l.label}>{l.label}</option>)}
+          </select>
+        )}
+        {col && col.type === 'dropdown' && (
+          <select data-batch-edit-value value={value} onChange={(e) => setValue(e.target.value)}
+            style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+            <option value="">— 清空 —</option>
+            {((col.settings?.options ?? []) as any[]).map((o: any) => <option key={o.label} value={o.label}>{o.label}</option>)}
+          </select>
+        )}
+        {col && col.type === 'people' && (
+          <select data-batch-edit-value value={value} onChange={(e) => setValue(e.target.value)}
+            style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+            <option value="">— 清空 —</option>
+            {users.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
+        {col && col.type === 'checkbox' && (
+          <select data-batch-edit-value value={value} onChange={(e) => setValue(e.target.value)}
+            style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+            <option value="true">是</option>
+            <option value="false">否</option>
+          </select>
+        )}
+        {col && col.type === 'date' && (
+          <input data-batch-edit-value type="date" value={value} onChange={(e) => setValue(e.target.value)}
+            style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+        )}
+        {col && ['text', 'longtext', 'number', 'tags'].includes(col.type) && (
+          <input data-batch-edit-value type={col.type === 'number' ? 'number' : 'text'} value={value} onChange={(e) => setValue(e.target.value)}
+            placeholder={col.type === 'tags' ? '逗号/顿号分隔多个标签' : '输入新值'}
+            style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 13 }}>取消</button>
+          <button data-batch-edit-apply onClick={apply} disabled={!canApply}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: canApply ? '#4f6ef7' : '#c3c8d4', color: '#fff', cursor: canApply ? 'pointer' : 'default', fontSize: 13, fontWeight: 600 }}>应用</button>
+        </div>
+      </div>
     </div>
   );
 }
