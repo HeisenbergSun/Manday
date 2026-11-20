@@ -549,17 +549,19 @@ export class BoardsService {
 
   // ---- 工作区自定义分组（用户级 Board 文件夹）----
 
-  /** 我的分组列表（含每个分组的 board id） */
+  /** 我的分组列表（含每个分组的 board id + dashboard id） */
   async listFolders(userId: string) {
-    const { rows } = await this.pg.query(
-      `SELECT f.id, f.name, f.position,
-              COALESCE(jsonb_agg(bfi.board_id ORDER BY bfi.position) FILTER (WHERE bfi.board_id IS NOT NULL), '[]'::jsonb) AS board_ids
-       FROM board_folders f
-       LEFT JOIN board_folder_items bfi ON bfi.folder_id = f.id
-       WHERE f.user_id = $1
-       GROUP BY f.id
-       ORDER BY f.position, f.created_at`, [userId]);
-    return rows.map((r) => ({ id: r.id, name: r.name, position: r.position, boardIds: r.board_ids ?? [] }));
+    const { rows: folders } = await this.pg.query(
+      `SELECT f.id, f.name, f.position FROM board_folders f WHERE f.user_id = $1 ORDER BY f.position, f.created_at`, [userId]);
+    const { rows: boardItems } = await this.pg.query(
+      `SELECT bfi.folder_id, bfi.board_id FROM board_folder_items bfi JOIN board_folders f ON f.id = bfi.folder_id WHERE f.user_id = $1 ORDER BY bfi.position`, [userId]);
+    const { rows: dashItems } = await this.pg.query(
+      `SELECT dfi.folder_id, dfi.dashboard_id FROM dashboard_folder_items dfi JOIN board_folders f ON f.id = dfi.folder_id WHERE f.user_id = $1 ORDER BY dfi.position`, [userId]);
+    const boardMap: Record<string, string[]> = {};
+    for (const b of boardItems) (boardMap[b.folder_id] ??= []).push(b.board_id);
+    const dashMap: Record<string, string[]> = {};
+    for (const d of dashItems) (dashMap[d.folder_id] ??= []).push(d.dashboard_id);
+    return folders.map((f) => ({ id: f.id, name: f.name, position: f.position, boardIds: boardMap[f.id] ?? [], dashboardIds: dashMap[f.id] ?? [] }));
   }
 
   async createFolder(userId: string, name: string) {
@@ -599,6 +601,19 @@ export class BoardsService {
     await this.pg.query(`DELETE FROM board_folder_items WHERE folder_id = $1 AND board_id = $2`, [folderId, boardId]);
     return { ok: true };
   }
+
+  async addDashboardToFolder(userId: string, folderId: string, dashboardId: string) {
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM dashboard_folder_items WHERE folder_id = $1`, [folderId])).rows[0].p;
+    await this.pg.query(
+      `INSERT INTO dashboard_folder_items (folder_id, dashboard_id, position) VALUES ($1,$2,$3)
+       ON CONFLICT (folder_id, dashboard_id) DO NOTHING`, [folderId, dashboardId, pos]);
+    return { ok: true };
+  }
+
+  async removeDashboardFromFolder(userId: string, folderId: string, dashboardId: string) {
+    await this.pg.query(`DELETE FROM dashboard_folder_items WHERE folder_id = $1 AND dashboard_id = $2`, [folderId, dashboardId]);
+    return { ok: true };
+  }
 }
 
 @Controller('users')
@@ -617,6 +632,8 @@ export class BoardFoldersController {
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteFolder(req.user.id, id); }
   @Post(':id/boards') addBoard(@Req() req, @Param('id') id: string, @Body() b: { boardId: string }) { return this.svc.addBoardToFolder(req.user.id, id, b.boardId); }
   @Delete(':id/boards/:boardId') removeBoard(@Req() req, @Param('id') id: string, @Param('boardId') boardId: string) { return this.svc.removeBoardFromFolder(req.user.id, id, boardId); }
+  @Post(':id/dashboards') addDash(@Req() req, @Param('id') id: string, @Body() b: { dashboardId: string }) { return this.svc.addDashboardToFolder(req.user.id, id, b.dashboardId); }
+  @Delete(':id/dashboards/:dashboardId') removeDash(@Req() req, @Param('id') id: string, @Param('dashboardId') dashboardId: string) { return this.svc.removeDashboardFromFolder(req.user.id, id, dashboardId); }
 }
 
 @Controller('boards')

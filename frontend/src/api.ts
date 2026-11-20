@@ -58,6 +58,8 @@ export const api = {
   deleteFolder: (folderId: string) => request(`/board-folders/${folderId}`, { method: 'DELETE' }),
   addBoardToFolder: (folderId: string, boardId: string) => request(`/board-folders/${folderId}/boards`, { method: 'POST', body: JSON.stringify({ boardId }) }),
   removeBoardFromFolder: (folderId: string, boardId: string) => request(`/board-folders/${folderId}/boards/${boardId}`, { method: 'DELETE' }),
+  addDashboardToFolder: (folderId: string, dashboardId: string) => request(`/board-folders/${folderId}/dashboards`, { method: 'POST', body: JSON.stringify({ dashboardId }) }),
+  removeDashboardFromFolder: (folderId: string, dashboardId: string) => request(`/board-folders/${folderId}/dashboards/${dashboardId}`, { method: 'DELETE' }),
   createItem: (boardId: string, name: string, groupId?: string) =>
     request(`/boards/${boardId}/items`, { method: 'POST', body: JSON.stringify({ name, groupId }) }),
   updateItem: (itemId: string, patch: { name?: string; groupId?: string; done?: boolean }) =>

@@ -114,7 +114,13 @@ async function ensureMinorSchema() {
       ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS position DOUBLE PRECISION NOT NULL DEFAULT 0;
       UPDATE dashboards d SET position = t.rn FROM (
         SELECT id, row_number() OVER (ORDER BY created_at) AS rn FROM dashboards
-      ) t WHERE d.id = t.id AND d.position = 0;`);
+      ) t WHERE d.id = t.id AND d.position = 0;
+      CREATE TABLE IF NOT EXISTS dashboard_folder_items (
+        folder_id    UUID NOT NULL REFERENCES board_folders(id) ON DELETE CASCADE,
+        dashboard_id UUID NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+        position     INT DEFAULT 0,
+        PRIMARY KEY (folder_id, dashboard_id)
+      );`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {
     console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);
