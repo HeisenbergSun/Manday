@@ -122,6 +122,96 @@ export class BoardsService {
     return board;
   }
 
+  /** 重命名 board（仅 owner） */
+  async renameBoard(boardId: string, userId: string, name: string) {
+    const role = await this.resolveRole(boardId, userId);
+    if (role !== 'owner') throw new ForbiddenException('仅看板负责人可重命名');
+    await this.pg.query(`UPDATE boards SET name=$1 WHERE id=$2`, [name.trim(), boardId]);
+    return { ok: true };
+  }
+
+  /** 复制整个 board：列 + 分组 + 条目（含子条目）+ 列值 */
+  async duplicateBoard(boardId: string, userId: string) {
+    const role = await this.resolveRole(boardId, userId);
+    if (!can(role, 'read')) throw new ForbiddenException('无权限复制此看板');
+    const src = (await this.pg.query(`SELECT * FROM boards WHERE id=$1 AND is_archived=false`, [boardId])).rows[0];
+    if (!src) throw new Error('NOT_FOUND');
+    const client = await this.pg.connect();
+    try {
+      await client.query('BEGIN');
+      const nb = await client.query(
+        `INSERT INTO boards (name, description, visibility, owner_id) VALUES ($1,$2,$3,$4) RETURNING id`,
+        [`${src.name}（副本）`, src.description, src.visibility, userId]);
+      const nid = nb.rows[0].id;
+      await client.query(
+        `INSERT INTO board_permissions (board_id, subject_type, subject_id, role) VALUES ($1,'user',$2,'owner')`,
+        [nid, userId]);
+      // 列
+      const colMap: Record<string, string> = {};
+      const cols = (await client.query(`SELECT * FROM board_columns WHERE board_id=$1 ORDER BY position`, [boardId])).rows;
+      for (const c of cols) {
+        const r = await client.query(
+          `INSERT INTO board_columns (board_id, type, name, settings, position) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+          [nid, c.type, c.name, c.settings, c.position]);
+        colMap[c.id] = r.rows[0].id;
+      }
+      // 分组
+      const groupMap: Record<string, string> = {};
+      const groups = (await client.query(`SELECT * FROM board_groups WHERE board_id=$1 ORDER BY position`, [boardId])).rows;
+      for (const g of groups) {
+        const r = await client.query(
+          `INSERT INTO board_groups (board_id, name, color, position) VALUES ($1,$2,$3,$4) RETURNING id`,
+          [nid, g.name, g.color, g.position]);
+        groupMap[g.id] = r.rows[0].id;
+      }
+      // 条目（顶层 + 子条目），记录映射
+      const itemMap: Record<string, string> = {};
+      const tops = (await client.query(`SELECT * FROM items WHERE board_id=$1 AND deleted_at IS NULL AND parent_item_id IS NULL ORDER BY position`, [boardId])).rows;
+      for (const it of tops) {
+        const r = await client.query(
+          `INSERT INTO items (board_id, group_id, name, position, created_by, version) VALUES ($1,$2,$3,$4,$5,1) RETURNING id`,
+          [nid, it.group_id ? groupMap[it.group_id] ?? null : null, it.name, it.position, userId]);
+        itemMap[it.id] = r.rows[0].id;
+      }
+      const children = (await client.query(`SELECT * FROM items WHERE board_id=$1 AND deleted_at IS NULL AND parent_item_id IS NOT NULL`, [boardId])).rows;
+      for (const ch of children) {
+        if (!itemMap[ch.parent_item_id]) continue;
+        const r = await client.query(
+          `INSERT INTO items (board_id, group_id, name, position, created_by, version, parent_item_id) VALUES ($1,NULL,$2,$3,$4,1,$5) RETURNING id`,
+          [nid, ch.name, ch.position, userId, itemMap[ch.parent_item_id]]);
+        itemMap[ch.id] = r.rows[0].id;
+      }
+      // 列值
+      for (const [oid, nid2] of Object.entries(itemMap)) {
+        const vals = (await client.query(`SELECT * FROM item_values WHERE item_id=$1`, [oid])).rows;
+        for (const v of vals) {
+          if (!colMap[v.column_id]) continue;
+          await client.query(
+            `INSERT INTO item_values (item_id, column_id, board_id, value) VALUES ($1,$2,$3,$4::jsonb)`,
+            [nid2, colMap[v.column_id], nid, JSON.stringify(v.value)]);
+        }
+      }
+      await client.query('COMMIT');
+      return { id: nid, name: `${src.name}（副本）` };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** 删除 board（仅 owner，硬删，级联清条目/列/分组） */
+  async deleteBoard(boardId: string, userId: string) {
+    const role = await this.resolveRole(boardId, userId);
+    if (role !== 'owner') throw new ForbiddenException('仅看板负责人可删除');
+    await this.pg.query(`DELETE FROM boards WHERE id=$1`, [boardId]);
+    await this.pg.query(
+      `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'board.delete',$2,'ui')`,
+      [userId, boardId]);
+    return { ok: true };
+  }
+
   /** 回收站（P0 刚需）：列出已删除条目，支持恢复 */
   async recycleBin(boardId: string, userId: string) {
     const userRole = await this.resolveRole(boardId, userId);
@@ -507,6 +597,9 @@ export class BoardsController {
   constructor(private svc: BoardsService) {}
   @Get() list(@Req() req) { return this.svc.listForUser(req.user.id); }
   @Post() create(@Req() req, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
+  @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameBoard(id, req.user.id, b.name); }
+  @Post(':id/duplicate') duplicate(@Req() req, @Param('id') id: string) { return this.svc.duplicateBoard(id, req.user.id); }
+  @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteBoard(id, req.user.id); }
   @Get(':id') detail(@Req() req, @Param('id') id: string) {
     return this.svc.detail(id, req.user.id);
   }

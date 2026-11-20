@@ -45,6 +45,9 @@ export const api = {
 
   getBoards: () => request('/boards'),
   getBoard: (boardId: string) => request(`/boards/${boardId}`),
+  renameBoard: (boardId: string, name: string) => request(`/boards/${boardId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  duplicateBoard: (boardId: string) => request(`/boards/${boardId}/duplicate`, { method: 'POST' }),
+  deleteBoard: (boardId: string) => request(`/boards/${boardId}`, { method: 'DELETE' }),
   // 工作区自定义分组
   listFolders: () => request('/board-folders'),
   createFolder: (name: string) => request('/board-folders', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -174,6 +177,7 @@ export const api = {
   listDashboards: () => request('/dashboards'),
   createDashboard: (name: string, scope: 'personal' | 'team' = 'personal') => request('/dashboards', { method: 'POST', body: JSON.stringify({ name, scope }) }),
   renameDashboard: (id: string, name: string) => request(`/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  duplicateDashboard: (id: string) => request(`/dashboards/${id}/duplicate`, { method: 'POST' }),
   deleteDashboard: (id: string) => request(`/dashboards/${id}`, { method: 'DELETE' }),
   getDashboard: (id: string) => request(`/dashboards/${id}`),
   addWidget: (dashboardId: string, dto: { type: string; title?: string; config?: any }) =>

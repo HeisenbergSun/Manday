@@ -164,6 +164,34 @@ export class DashboardService {
     return { ok: true };
   }
 
+  /** 复制 dashboard（含全部 widget） */
+  async duplicateDashboard(userId: string, id: string) {
+    const src = (await this.pg.query(`SELECT * FROM dashboards WHERE id=$1`, [id])).rows[0];
+    if (!src) throw new Error('NOT_FOUND');
+    if (!(await this.canAccess(userId, id))) throw new Error('NOT_FOUND');
+    const client = await this.pg.connect();
+    try {
+      await client.query('BEGIN');
+      const nb = await client.query(
+        `INSERT INTO dashboards (name, created_by, department_id) VALUES ($1,$2,$3) RETURNING id`,
+        [`${src.name}（副本）`, userId, src.department_id]);
+      const nid = nb.rows[0].id;
+      const widgets = (await client.query(`SELECT type, title, config, position FROM widgets WHERE dashboard_id=$1 ORDER BY position`, [id])).rows;
+      for (const w of widgets) {
+        await client.query(
+          `INSERT INTO widgets (dashboard_id, type, title, config, position) VALUES ($1,$2,$3,$4::jsonb,$5)`,
+          [nid, w.type, w.title, JSON.stringify(w.config ?? {}), w.position]);
+      }
+      await client.query('COMMIT');
+      return { id: nid, name: `${src.name}（副本）` };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   async deleteDashboard(userId: string, id: string) {
     if (!(await this.canAccess(userId, id))) throw new Error('NOT_FOUND');
     await this.pg.query(`DELETE FROM dashboards WHERE id=$1`, [id]);
@@ -381,6 +409,7 @@ export class DashboardController {
   @Get() list(@Req() req) { return this.svc.listDashboards(req.user.id); }
   @Post() create(@Req() req, @Body() b: { name: string; scope?: 'personal' | 'team' }) { return this.svc.createDashboard(req.user.id, b.name, b.scope ?? 'personal'); }
   @Get(':id') get(@Req() req, @Param('id') id: string) { return this.svc.getDashboard(req.user.id, id); }
+  @Post(':id/duplicate') duplicate(@Req() req, @Param('id') id: string) { return this.svc.duplicateDashboard(req.user.id, id); }
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameDashboard(req.user.id, id, b.name); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteDashboard(req.user.id, id); }
   @Post(':id/widgets') addWidget(@Req() req, @Param('id') id: string, @Body() b: { type: string; title?: string; config?: any }) { return this.svc.addWidget(req.user.id, id, b); }

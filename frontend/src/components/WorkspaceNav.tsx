@@ -24,6 +24,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
   // 两个 fixed 菜单：加号菜单 / board 分组菜单
   const [plusMenu, setPlusMenu] = useState<{ x: number; y: number } | null>(null);
   const [boardMenu, setBoardMenu] = useState<{ boardId: string; x: number; y: number } | null>(null);
+  const [dashMenu, setDashMenu] = useState<{ dashId: string; x: number; y: number } | null>(null);
 
   const reload = () => {
     api.getBoards().then((d) => setBoards(Array.isArray(d) ? d : [])).catch(() => {});
@@ -34,7 +35,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
 
   // 点击任意处关闭菜单
   useEffect(() => {
-    const close = () => { setPlusMenu(null); setBoardMenu(null); };
+    const close = () => { setPlusMenu(null); setBoardMenu(null); setDashMenu(null); };
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
   }, []);
@@ -77,6 +78,45 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
   const deleteFolder = async (f: Folder) => {
     if (!confirm(`删除分组「${f.name}」？分组内的 Board 会回到「未分组」，不会被删除。`)) return;
     try { await api.deleteFolder(f.id); reload(); }
+    catch (e) { alert(`删除失败：${(e as Error).message}`); }
+  };
+
+  // —— Board 级操作：复制 / 重命名 / 删除 ——
+  const duplicateBoard = async (b: BoardItem) => {
+    try { await api.duplicateBoard(b.id); setBoardMenu(null); reload(); }
+    catch (e) { alert(`复制失败：${(e as Error).message}`); }
+  };
+  const renameBoard = async (b: BoardItem) => {
+    const name = prompt('重命名 Board', b.name);
+    if (!name || !name.trim() || name.trim() === b.name) return;
+    try { await api.renameBoard(b.id, name.trim()); setBoardMenu(null); reload(); }
+    catch (e) { alert(`重命名失败：${(e as Error).message}`); }
+  };
+  const deleteBoard = async (b: BoardItem) => {
+    if (!confirm(`删除 Board「${b.name}」？\n\n该看板及其所有条目、列、分组将被永久删除，无法恢复。`)) return;
+    try { await api.deleteBoard(b.id); setBoardMenu(null); reload(); }
+    catch (e) { alert(`删除失败：${(e as Error).message}`); }
+  };
+
+  // —— Dashboard 级操作：复制 / 重命名 / 删除 ——
+  const openDashMenu = (d: DashItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const r = (e.target as HTMLElement).getBoundingClientRect();
+    setDashMenu({ dashId: d.id, x: Math.min(r.right - 170, window.innerWidth - 180), y: r.bottom + 2 });
+  };
+  const duplicateDash = async (d: DashItem) => {
+    try { await api.duplicateDashboard(d.id); setDashMenu(null); reload(); }
+    catch (e) { alert(`复制失败：${(e as Error).message}`); }
+  };
+  const renameDash = async (d: DashItem) => {
+    const name = prompt('重命名 Dashboard', d.name);
+    if (!name || !name.trim() || name.trim() === d.name) return;
+    try { await api.renameDashboard(d.id, name.trim()); setDashMenu(null); reload(); }
+    catch (e) { alert(`重命名失败：${(e as Error).message}`); }
+  };
+  const deleteDash = async (d: DashItem) => {
+    if (!confirm(`删除 Dashboard「${d.name}」？该仪表盘及其图表将被永久删除。`)) return;
+    try { await api.deleteDashboard(d.id); setDashMenu(null); reload(); }
     catch (e) { alert(`删除失败：${(e as Error).message}`); }
   };
 
@@ -151,6 +191,10 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>{d.is_team ? '👥' : '📈'}</span>{!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>}
             {!collapsed && d.is_team && <span style={{ fontSize: 10, color: '#a0a4b1' }}>团队</span>}
+            {!collapsed && (
+              <span data-dashboard-menu-trigger onClick={(e) => openDashMenu(d, e)} title="更多操作"
+                style={{ flexShrink: 0, color: '#a0a4b1', fontSize: 11, padding: '0 4px', borderRadius: 4, cursor: 'pointer' }}>⋯</span>
+            )}
           </div>
         ))}
 
@@ -231,6 +275,31 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
             <div style={{ borderTop: '1px solid #f0f1f5', margin: '4px 0' }} />
             <div onClick={() => newFolder(b.id)}
               style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#4f6ef7' }}>＋ 新建分组…</div>
+            <div style={{ borderTop: '1px solid #f0f1f5', margin: '4px 0' }} />
+            <div data-board-dup onClick={() => duplicateBoard(b)}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>⧉ 复制 Board</div>
+            <div data-board-rename onClick={() => renameBoard(b)}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>✎ 重命名 Board</div>
+            <div data-board-delete onClick={() => deleteBoard(b)}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#e2445c' }}>🗑 删除 Board</div>
+          </div>
+        );
+      })()}
+
+      {/* dashboard 操作菜单（fixed） */}
+      {dashMenu && (() => {
+        const d = dashboards.find((x) => x.id === dashMenu.dashId);
+        if (!d) return null;
+        return (
+          <div data-dash-menu onClick={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', left: dashMenu.x, top: dashMenu.y, zIndex: 200, background: '#fff',
+              borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,.18)', padding: 6, minWidth: 170, fontSize: 12, border: '1px solid #eef0f5' }}>
+            <div data-dash-dup onClick={() => duplicateDash(d)}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>⧉ 复制 Dashboard</div>
+            <div data-dash-rename onClick={() => renameDash(d)}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>✎ 重命名 Dashboard</div>
+            <div data-dash-delete onClick={() => deleteDash(d)}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#e2445c' }}>🗑 删除 Dashboard</div>
           </div>
         );
       })()}
