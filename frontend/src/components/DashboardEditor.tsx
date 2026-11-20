@@ -204,7 +204,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
   };
 
   return (
-    <div data-widget={widget.type} style={{ height: '100%', boxSizing: 'border-box', background: '#fff', borderRadius: 12, border: '1px solid #e6e8ef', padding: 14, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+    <div data-widget={widget.type} style={{ height: '100%', boxSizing: 'border-box', background: '#fff', borderRadius: 12, border: '1px solid #e6e8ef', padding: 14, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <b style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</b>
         <span style={{ fontSize: 11, color: '#a0a4b1', whiteSpace: 'nowrap' }}>{boardIds.length ? `${boardIds.length} 板` : ''}</span>
@@ -263,15 +263,19 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
           ))}</div>
         )}
       </div>
-      {/* 右下角调整大小手柄（draggable=false + 拖拽排序 dragstart 判断隔离） */}
+      {/* 右下角调整大小手柄（SVG 图标，避免字体缺字形显示成方框；z-index 限制在卡片内） */}
       <span onMouseDown={startResize} draggable={false} title="拖动调整大小" data-widget-resize
-        style={{ position: 'absolute', right: 4, bottom: 4, width: 20, height: 20, cursor: 'nwse-resize',
-          background: '#f2f4fa', border: '1px solid #c3c8d4', borderRadius: 5, color: '#7a7f8c',
-          fontSize: 13, lineHeight: '18px', textAlign: 'center', zIndex: 999, touchAction: 'none' }}>⤡</span>
+        style={{ position: 'absolute', right: 4, bottom: 4, width: 18, height: 18, cursor: 'nwse-resize',
+          background: '#f2f4fa', border: '1px solid #c3c8d4', borderRadius: 5, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 2, touchAction: 'none' }}>
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+          <path d="M1 10 L10 1 M5 10 L10 5 M9 10 L10 9" stroke="#7a7f8c" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </span>
       {/* 调整大小时的尺寸提示 */}
       {size && (
         <div style={{ position: 'absolute', right: 28, bottom: 6, background: '#3a3f4d', color: '#fff',
-          borderRadius: 6, padding: '2px 8px', fontSize: 11, zIndex: 6, pointerEvents: 'none' }}>
+          borderRadius: 6, padding: '2px 8px', fontSize: 11, zIndex: 3, pointerEvents: 'none' }}>
           {size.w} × {size.h}
         </div>
       )}
