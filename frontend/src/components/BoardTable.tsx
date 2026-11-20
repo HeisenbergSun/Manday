@@ -377,39 +377,62 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
 
   /** 单元格保存：name 走本体接口，其余走 LWW updateCell
    *  #56 智能合并重试：409 时取行最新 version → 重放保存一次；仍冲突才整板刷新 */
-  const saveCell = useCallback(async (row: GridRow, field: string, value: unknown) => {
-    if (field === '__attachments__') { await reloadBoard(); return; } // P3-2：附件上传后刷新（cell 由附件端点维护）
+  /** 底层写单元格（不含多选同步），返回是否成功；批量编辑/批量改状态复用 */
+  const writeCellDirect = useCallback(async (row: GridRow, field: string, value: unknown): Promise<boolean> => {
     try {
       if (field === 'name') {
         const r: any = await api.updateItem(row.id, { name: value as string });
         if (r?.version) bumpVersion(row.id, r.version);
-        return;
+        return true;
       }
       const { version } = await api.updateCell(row.id, field, value, row.version);
-      // 本地同步值 + 版本（applyPatch 自带 LWW 守卫，先于任何回声；不能再先 bumpVersion，否则补丁被当旧包丢弃）
       applyPatch(row.id, field, value, version);
+      return true;
     } catch (err: any) {
       if (err.message?.includes('CONFLICT') || err.code === 'CONFLICT') {
-        // #56：尝试用最新 version 重放一次（自动合并），失败才回退整板刷新
         const fresh: any = await api.item(row.id).catch(() => null);
         if (fresh?.version && fresh.version !== row.version) {
           try {
             const { version } = await api.updateCell(row.id, field, value, fresh.version);
             applyPatch(row.id, field, value, version);
             flash('该行已被他人修改，已自动合并保存');
-            return;
-          } catch { /* 重放仍冲突 → 走刷新兜底 */ }
+            return true;
+          } catch { /* 走刷新兜底 */ }
         }
         flash('该行已被他人修改，正在加载最新内容…');
         await reloadBoard();
+        return false;
       } else if (String(err.message ?? err).includes('FORBIDDEN')) {
         flash('该列仅负责人（owner）可编辑');
         await reloadBoard();
+        return false;
       } else {
         flash(`保存失败：${err.message ?? err}`);
+        return false;
       }
     }
   }, [bumpVersion, applyPatch, reloadBoard]);
+
+  const saveCell = useCallback(async (row: GridRow, field: string, value: unknown) => {
+    if (field === '__attachments__') { await reloadBoard(); return; } // P3-2：附件上传后刷新（cell 由附件端点维护）
+    const ok = await writeCellDirect(row, field, value);
+    // 多选同步：编辑选中行时，把同列值同步到其他选中行（排除 name，避免重名）
+    if (ok && field !== 'name' && selectedIds.size >= 2 && selectedIds.has(row.id)) {
+      const others = gridRows.filter((r) => selectedIds.has(r.id) && r.id !== row.id);
+      let synced = 0;
+      for (const o of others) {
+        try {
+          const { version } = await api.updateCell(o.id, field, value, o.version);
+          applyPatch(o.id, field, value, version);
+          synced++;
+        } catch { /* 跳过失败行 */ }
+      }
+      if (synced) {
+        const colName = columns.find((c: any) => c.id === field)?.name ?? '该列';
+        flash(`已同步「${colName}」到 ${synced} 个选中行`);
+      }
+    }
+  }, [writeCellDirect, selectedIds, gridRows, columns]);
 
   /** 拖拽排序落库 */
   const saveOrder = useCallback(async (orders: { id: string; position: number }[]) => {
@@ -522,21 +545,21 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     const rows = gridRows.filter((r) => selectedIds.has(r.id));
     let ok = 0, fail = 0;
     for (const r of rows) {
-      try { await saveCell(r, statusCol.id, label); ok++; } catch { fail++; }
+      try { if (await writeCellDirect(r, statusCol.id, label)) ok++; else fail++; } catch { fail++; }
     }
     flash(`批量改状态：成功 ${ok}${fail ? `，失败 ${fail}` : ''}`);
-  }, [statusCol, gridRows, selectedIds, saveCell]);
+  }, [statusCol, gridRows, selectedIds, writeCellDirect]);
 
   /** 批量编辑任意列（多选后对选中行统一写值） */
   const batchEditColumn = useCallback(async (col: any, value: unknown) => {
     const rows = gridRows.filter((r) => selectedIds.has(r.id));
     let ok = 0, fail = 0;
     for (const r of rows) {
-      try { await saveCell(r, col.id, value); ok++; } catch { fail++; }
+      try { if (await writeCellDirect(r, col.id, value)) ok++; else fail++; } catch { fail++; }
     }
     flash(`批量编辑「${col.name}」：成功 ${ok}${fail ? `，失败 ${fail}` : ''}`);
     setBatchEditOpen(false);
-  }, [gridRows, selectedIds, saveCell]);
+  }, [gridRows, selectedIds, writeCellDirect]);
 
   /** CSV 导出（第二十三批）：导出当前看板条目和列；#58 有筛选时仅导出筛选后行 */
   const exportRows = useCallback(() => {
