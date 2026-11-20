@@ -110,7 +110,11 @@ async function ensureMinorSchema() {
       -- 初始化已有 board 的 position（按创建时间排序），保证排序稳定
       UPDATE boards b SET position = t.rn FROM (
         SELECT id, row_number() OVER (ORDER BY created_at) AS rn FROM boards
-      ) t WHERE b.id = t.id AND b.position = 0;`);
+      ) t WHERE b.id = t.id AND b.position = 0;
+      ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS position DOUBLE PRECISION NOT NULL DEFAULT 0;
+      UPDATE dashboards d SET position = t.rn FROM (
+        SELECT id, row_number() OVER (ORDER BY created_at) AS rn FROM dashboards
+      ) t WHERE d.id = t.id AND d.position = 0;`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {
     console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);

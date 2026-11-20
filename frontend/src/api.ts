@@ -53,6 +53,7 @@ export const api = {
   listFolders: () => request('/board-folders'),
   createFolder: (name: string) => request('/board-folders', { method: 'POST', body: JSON.stringify({ name }) }),
   renameFolder: (folderId: string, name: string) => request(`/board-folders/${folderId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  reorderFolders: (order: string[]) => request('/board-folders/reorder', { method: 'POST', body: JSON.stringify({ order }) }),
   deleteFolder: (folderId: string) => request(`/board-folders/${folderId}`, { method: 'DELETE' }),
   addBoardToFolder: (folderId: string, boardId: string) => request(`/board-folders/${folderId}/boards`, { method: 'POST', body: JSON.stringify({ boardId }) }),
   removeBoardFromFolder: (folderId: string, boardId: string) => request(`/board-folders/${folderId}/boards/${boardId}`, { method: 'DELETE' }),
@@ -177,6 +178,7 @@ export const api = {
   // ---- 自定义 Dashboard（BI）----
   listDashboards: () => request('/dashboards'),
   createDashboard: (name: string, scope: 'personal' | 'team' = 'personal') => request('/dashboards', { method: 'POST', body: JSON.stringify({ name, scope }) }),
+  reorderDashboards: (order: string[]) => request('/dashboards/reorder', { method: 'POST', body: JSON.stringify({ order }) }),
   renameDashboard: (id: string, name: string) => request(`/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   duplicateDashboard: (id: string) => request(`/dashboards/${id}/duplicate`, { method: 'POST' }),
   deleteDashboard: (id: string) => request(`/dashboards/${id}`, { method: 'DELETE' }),

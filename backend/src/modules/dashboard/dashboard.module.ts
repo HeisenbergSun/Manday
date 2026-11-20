@@ -145,8 +145,16 @@ export class DashboardService {
        FROM dashboards d
        WHERE d.created_by = $1
           OR d.department_id IN (SELECT department_id FROM user_departments WHERE user_id = $1)
-       ORDER BY d.created_at`, [userId]);
+       ORDER BY d.position ASC, d.created_at`, [userId]);
     return rows;
+  }
+
+  /** dashboard 拖拽排序：批量更新 position */
+  async reorderDashboards(userId: string, order: string[]) {
+    for (let i = 0; i < order.length; i++) {
+      await this.pg.query(`UPDATE dashboards SET position=$1 WHERE id=$2 AND created_by=$3`, [i, order[i], userId]);
+    }
+    return { ok: true };
   }
 
   async createDashboard(userId: string, name: string, scope: 'personal' | 'team' = 'personal') {
@@ -408,6 +416,7 @@ export class DashboardController {
   // ---- 自定义 Dashboard CRUD ----
   @Get() list(@Req() req) { return this.svc.listDashboards(req.user.id); }
   @Post() create(@Req() req, @Body() b: { name: string; scope?: 'personal' | 'team' }) { return this.svc.createDashboard(req.user.id, b.name, b.scope ?? 'personal'); }
+  @Post('reorder') reorder(@Req() req, @Body() b: { order: string[] }) { return this.svc.reorderDashboards(req.user.id, b.order ?? []); }
   @Get(':id') get(@Req() req, @Param('id') id: string) { return this.svc.getDashboard(req.user.id, id); }
   @Post(':id/duplicate') duplicate(@Req() req, @Param('id') id: string) { return this.svc.duplicateDashboard(req.user.id, id); }
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameDashboard(req.user.id, id, b.name); }

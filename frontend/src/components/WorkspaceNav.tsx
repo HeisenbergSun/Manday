@@ -69,6 +69,30 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     api.reorderBoards(next.map((x) => x.id)).catch(() => reload());
   };
 
+  /** 分组拖拽排序 */
+  const reorderFolder = (fromId: string, toId: string) => {
+    const from = folders.findIndex((x) => x.id === fromId);
+    const to = folders.findIndex((x) => x.id === toId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...folders];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setFolders(next);
+    api.reorderFolders(next.map((x) => x.id)).catch(() => reload());
+  };
+
+  /** dashboard 拖拽排序 */
+  const reorderDash = (fromId: string, toId: string) => {
+    const from = dashboards.findIndex((x) => x.id === fromId);
+    const to = dashboards.findIndex((x) => x.id === toId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...dashboards];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setDashboards(next);
+    api.reorderDashboards(next.map((x) => x.id)).catch(() => reload());
+  };
+
   const newFolder = async (boardId?: string) => {
     const name = prompt('新建分组名称');
     if (!name || !name.trim()) return;
@@ -200,7 +224,10 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
           <div style={{ margin: '2px 0', fontSize: 11, color: '#a0a4b1', fontWeight: 600, padding: '0 8px', letterSpacing: .5 }}>仪表盘</div>
         )}
         {dashboards.map((d) => (
-          <div key={d.id} data-dashboard-item={d.name} onClick={() => onOpenCustomDashboard?.(d.id)}
+          <div key={d.id} data-dashboard-item={d.name} onClick={() => onOpenCustomDashboard?.(d.id)} draggable
+            onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', d.id); }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderDash(e.dataTransfer.getData('text/plain'), d.id); }}
             style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
               background: activeDashboardId === d.id ? '#eef1fe' : 'transparent',
               color: activeDashboardId === d.id ? '#4f6ef7' : '#25272c', fontWeight: activeDashboardId === d.id ? 600 : 400,
@@ -220,7 +247,10 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
           const isC = !!folderCollapsed[f.id];
           return (
             <div key={f.id}>
-              <div onClick={() => setFolderCollapsed((c) => ({ ...c, [f.id]: !c[f.id] }))}
+              <div onClick={() => setFolderCollapsed((c) => ({ ...c, [f.id]: !c[f.id] }))} draggable
+                onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', f.id); }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderFolder(e.dataTransfer.getData('text/plain'), f.id); }}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', cursor: 'pointer',
                   color: '#5a6072', fontSize: 12, fontWeight: 600, borderRadius: 6 }}>
                 <span>{isC ? '▸' : '▾'}</span>

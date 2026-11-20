@@ -564,6 +564,14 @@ export class BoardsService {
     return { ok: true };
   }
 
+  /** 分组拖拽排序：批量更新 position */
+  async reorderFolders(userId: string, order: string[]) {
+    for (let i = 0; i < order.length; i++) {
+      await this.pg.query(`UPDATE board_folders SET position=$1 WHERE id=$2 AND user_id=$3`, [i, order[i], userId]);
+    }
+    return { ok: true };
+  }
+
   async deleteFolder(userId: string, folderId: string) {
     await this.pg.query(`DELETE FROM board_folders WHERE id = $1 AND user_id = $2`, [folderId, userId]);
     return { ok: true };
@@ -594,6 +602,7 @@ export class BoardFoldersController {
   constructor(private svc: BoardsService) {}
   @Get() list(@Req() req) { return this.svc.listFolders(req.user.id); }
   @Post() create(@Req() req, @Body() b: { name: string }) { return this.svc.createFolder(req.user.id, b.name); }
+  @Post('reorder') reorder(@Req() req, @Body() b: { order: string[] }) { return this.svc.reorderFolders(req.user.id, b.order ?? []); }
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameFolder(req.user.id, id, b.name); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteFolder(req.user.id, id); }
   @Post(':id/boards') addBoard(@Req() req, @Param('id') id: string, @Body() b: { boardId: string }) { return this.svc.addBoardToFolder(req.user.id, id, b.boardId); }
