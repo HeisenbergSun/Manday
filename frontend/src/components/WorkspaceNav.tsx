@@ -117,14 +117,15 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     return { type: data.slice(0, i), id: data.slice(i + 1) };
   };
 
-  const newFolder = async (boardId?: string) => {
+  const newFolder = async (boardId?: string, dashboardId?: string) => {
     const name = prompt('新建分组名称');
     if (!name || !name.trim()) return;
     try {
       const f: any = await api.createFolder(name.trim());
       if (boardId && f?.id) await api.addBoardToFolder(f.id, boardId);
+      if (dashboardId && f?.id) await api.addDashboardToFolder(f.id, dashboardId);
       reload();
-      setPlusMenu(null); setBoardMenu(null);
+      setPlusMenu(null); setBoardMenu(null); setDashMenu(null);
     } catch (e) { alert(`新建分组失败：${(e as Error).message}`); }
   };
 
@@ -369,6 +370,21 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
           <div data-dash-menu onClick={(e) => e.stopPropagation()}
             style={{ position: 'fixed', left: dashMenu.x, top: dashMenu.y, zIndex: 200, background: '#fff',
               borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,.18)', padding: 6, minWidth: 170, fontSize: 12, border: '1px solid #eef0f5' }}>
+            <div style={{ color: '#a0a4b1', fontSize: 11, padding: '2px 8px 6px' }}>移动到分组</div>
+            {folders.map((f) => (
+              <div key={f.id} data-dash-menu-folder={f.name} onClick={() => { moveDashToFolder(d.id, f.id); setDashMenu(null); }}
+                style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>
+                {dashFolderOf(d.id) === f.id ? '✓ ' : ''}{f.name}
+              </div>
+            ))}
+            {dashFolderOf(d.id) && (
+              <div onClick={() => { moveDashToFolder(d.id, null); setDashMenu(null); }}
+                style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#7a7f8c' }}>从分组移除</div>
+            )}
+            <div style={{ borderTop: '1px solid #f0f1f5', margin: '4px 0' }} />
+            <div onClick={() => { newFolder(undefined, d.id); setDashMenu(null); }}
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#4f6ef7' }}>＋ 新建分组…</div>
+            <div style={{ borderTop: '1px solid #f0f1f5', margin: '4px 0' }} />
             <div data-dash-dup onClick={() => duplicateDash(d)}
               style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>⧉ 复制 Dashboard</div>
             <div data-dash-rename onClick={() => renameDash(d)}
