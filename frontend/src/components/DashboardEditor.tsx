@@ -204,14 +204,14 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
   };
 
   return (
-    <div data-widget={widget.type} style={{ height: '100%', background: '#fff', borderRadius: 12, border: '1px solid #e6e8ef', padding: 14, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+    <div data-widget={widget.type} style={{ height: '100%', boxSizing: 'border-box', background: '#fff', borderRadius: 12, border: '1px solid #e6e8ef', padding: 14, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <b style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</b>
         <span style={{ fontSize: 11, color: '#a0a4b1', whiteSpace: 'nowrap' }}>{boardIds.length ? `${boardIds.length} 板` : ''}</span>
         <span onClick={onEdit} title="编辑" data-widget-edit style={{ cursor: 'pointer', color: '#4f6ef7', fontSize: 13 }}>⚙</span>
         <span onClick={onDelete} title="删除" style={{ cursor: 'pointer', color: '#e2445c', fontSize: 13 }}>✕</span>
       </div>
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative', zIndex: 0 }}>
         {err && <span style={{ color: '#e2445c', fontSize: 12 }}>加载失败</span>}
         {!data && !err && <span style={{ color: '#a0a4b1', fontSize: 12 }}>加载中…</span>}
         {data && widget.type === 'number' && (
@@ -263,11 +263,18 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
           ))}</div>
         )}
       </div>
-      {/* 右下角调整大小手柄（draggable=false 避免被网格拖拽排序接管） */}
+      {/* 右下角调整大小手柄（draggable=false + 拖拽排序 dragstart 判断隔离） */}
       <span onMouseDown={startResize} draggable={false} title="拖动调整大小" data-widget-resize
         style={{ position: 'absolute', right: 4, bottom: 4, width: 20, height: 20, cursor: 'nwse-resize',
           background: '#f2f4fa', border: '1px solid #c3c8d4', borderRadius: 5, color: '#7a7f8c',
-          fontSize: 13, lineHeight: '18px', textAlign: 'center', zIndex: 5 }}>⤡</span>
+          fontSize: 13, lineHeight: '18px', textAlign: 'center', zIndex: 999, touchAction: 'none' }}>⤡</span>
+      {/* 调整大小时的尺寸提示 */}
+      {size && (
+        <div style={{ position: 'absolute', right: 28, bottom: 6, background: '#3a3f4d', color: '#fff',
+          borderRadius: 6, padding: '2px 8px', fontSize: 11, zIndex: 6, pointerEvents: 'none' }}>
+          {size.w} × {size.h}
+        </div>
+      )}
     </div>
   );
 }
@@ -347,7 +354,11 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
       <div data-dash-grid style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 104, gap: 14 }}>
         {(dash?.widgets ?? []).map((w) => (
           <div key={w.id} data-widget-slot draggable
-            onDragStart={(e) => e.dataTransfer.setData('text/plain', w.id)}
+            onDragStart={(e) => {
+              // 拖拽源是 resize 手柄时，取消排序拖拽，让 resize 的 mousemove 正常触发
+              if ((e.target as HTMLElement).closest('[data-widget-resize]')) { e.preventDefault(); return; }
+              e.dataTransfer.setData('text/plain', w.id);
+            }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); dropWidget(e.dataTransfer.getData('text/plain'), w.id); }}
             style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}`, minWidth: 0, overflow: 'hidden' }}>

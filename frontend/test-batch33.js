@@ -57,13 +57,11 @@ const req = async (h, method, path, body) => {
   const handle = await page.$('[data-widget-resize]');
   assert(!!handle, 'S1 定位到 resize 手柄');
   const box = await handle.boundingBox();
-  // 用 dispatchEvent 模拟（排除 page.mouse 对 React 合成事件的兼容问题）
-  await page.evaluate((b) => {
-    const el = document.querySelector('[data-widget-resize]');
-    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: b.x, clientY: b.y }));
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: b.x + 240, clientY: b.y + 120 }));
-    window.dispatchEvent(new MouseEvent('mouseup', { clientX: b.x + 240, clientY: b.y + 120 }));
-  }, box);
+  // 真实鼠标拖拽
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 240, box.y + box.height / 2 + 120, { steps: 15 });
+  await page.mouse.up();
   await sleep(2000);
   const d = await req(token, 'GET', `/dashboards/${dashId}`);
   const first = d.body.widgets[0];
