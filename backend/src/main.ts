@@ -105,7 +105,12 @@ async function ensureMinorSchema() {
       );
       CREATE INDEX IF NOT EXISTS idx_board_folder_items_folder ON board_folder_items(folder_id, position);
       ALTER TABLE widgets ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
-      ALTER TABLE widgets ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();`);
+      ALTER TABLE widgets ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+      ALTER TABLE boards ADD COLUMN IF NOT EXISTS position DOUBLE PRECISION NOT NULL DEFAULT 0;
+      -- 初始化已有 board 的 position（按创建时间排序），保证排序稳定
+      UPDATE boards b SET position = t.rn FROM (
+        SELECT id, row_number() OVER (ORDER BY created_at) AS rn FROM boards
+      ) t WHERE b.id = t.id AND b.position = 0;`);
     console.log('[bootstrap] minor schema OK');
   } catch (e) {
     console.warn('[bootstrap] minor schema 跳过/失败:', (e as Error).message);

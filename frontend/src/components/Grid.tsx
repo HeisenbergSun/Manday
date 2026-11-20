@@ -186,6 +186,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
+  const lastSelectedRef = useRef<string | null>(null); // shift 连续选择的锚点行
+  const shiftKeyRef = useRef(false); // checkbox 点击时是否按住 shift（change 事件拿不到 shiftKey）
   const dragId = useRef<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -470,8 +472,26 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   const toggleAll = () => {
     setSelected(allChecked ? new Set() : new Set(sortedRows.map((r) => r.id)));
   };
-  const toggleRow = (id: string) => {
-    setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleRow = (id: string, shiftKey = false) => {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (shiftKey && lastSelectedRef.current) {
+        // shift 连续选择：选中上次点击行 → 当前行之间的所有行
+        const ids = sortedRows.map((r) => r.id);
+        const a = ids.indexOf(lastSelectedRef.current);
+        const b = ids.indexOf(id);
+        if (a >= 0 && b >= 0) {
+          const lo = Math.min(a, b), hi = Math.max(a, b);
+          for (let i = lo; i <= hi; i++) n.add(ids[i]);
+        } else {
+          n.has(id) ? n.delete(id) : n.add(id);
+        }
+      } else {
+        n.has(id) ? n.delete(id) : n.add(id);
+      }
+      return n;
+    });
+    lastSelectedRef.current = id;
   };
 
   // ── 筛选操作 ──
@@ -1139,7 +1159,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               >
               <td style={tdStyle}>
                 <input type="checkbox" data-grid-check checked={selected.has(row.id)}
-                  onChange={() => toggleRow(row.id)} onClick={(e) => e.stopPropagation()} />
+                  onChange={() => toggleRow(row.id, shiftKeyRef.current)}
+                  onClick={(e) => { shiftKeyRef.current = e.shiftKey; e.stopPropagation(); }} />
               </td>
               <td style={tdStyle}>
                 <span data-grid-drag draggable

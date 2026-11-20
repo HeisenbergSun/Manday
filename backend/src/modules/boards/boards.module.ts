@@ -32,7 +32,7 @@ export class BoardsService {
        LEFT JOIN departments d ON d.id = b.department_id
        LEFT JOIN board_permissions bp ON bp.board_id = b.id AND bp.subject_type = 'user' AND bp.subject_id = $1
        WHERE b.is_archived = false AND ${VISIBLE_WHERE}
-       ORDER BY b.created_at DESC`,
+       ORDER BY b.position ASC, b.created_at DESC`,
       [userId],
     );
     return rows;
@@ -209,6 +209,14 @@ export class BoardsService {
     await this.pg.query(
       `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'board.delete',$2,'ui')`,
       [userId, boardId]);
+    return { ok: true };
+  }
+
+  /** 工作区 board 拖拽排序：批量更新 position */
+  async reorderBoards(userId: string, order: string[]) {
+    for (let i = 0; i < order.length; i++) {
+      await this.pg.query(`UPDATE boards SET position=$1 WHERE id=$2`, [i, order[i]]);
+    }
     return { ok: true };
   }
 
@@ -597,6 +605,7 @@ export class BoardsController {
   constructor(private svc: BoardsService) {}
   @Get() list(@Req() req) { return this.svc.listForUser(req.user.id); }
   @Post() create(@Req() req, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
+  @Post('reorder') reorder(@Req() req, @Body() b: { order: string[] }) { return this.svc.reorderBoards(req.user.id, b.order ?? []); }
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameBoard(id, req.user.id, b.name); }
   @Post(':id/duplicate') duplicate(@Req() req, @Param('id') id: string) { return this.svc.duplicateBoard(id, req.user.id); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteBoard(id, req.user.id); }

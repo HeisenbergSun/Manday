@@ -57,6 +57,18 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     } catch (e) { alert(`操作失败：${(e as Error).message}`); }
   };
 
+  /** 工作区 board 拖拽排序：把 from 移到 to 的位置（本地乐观 + 后端持久化） */
+  const reorderBoard = (fromId: string, toId: string) => {
+    const from = boards.findIndex((x) => x.id === fromId);
+    const to = boards.findIndex((x) => x.id === toId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...boards];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setBoards(next);
+    api.reorderBoards(next.map((x) => x.id)).catch(() => reload());
+  };
+
   const newFolder = async (boardId?: string) => {
     const name = prompt('新建分组名称');
     if (!name || !name.trim()) return;
@@ -133,13 +145,17 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
   };
 
   const boardRow = (b: BoardItem, indent = false) => (
-    <div key={b.id} onClick={() => onOpen(b)} title={b.name} data-board-item={b.name} style={{
-      padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-      background: activeId === b.id ? '#eef1fe' : 'transparent',
-      color: activeId === b.id ? '#4f6ef7' : '#25272c', fontWeight: activeId === b.id ? 600 : 400,
-      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      display: 'flex', alignItems: 'center', gap: 8, paddingLeft: indent ? 24 : 10,
-    }}>
+    <div key={b.id} onClick={() => onOpen(b)} title={b.name} data-board-item={b.name} draggable
+      onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', b.id); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderBoard(e.dataTransfer.getData('text/plain'), b.id); }}
+      style={{
+        padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+        background: activeId === b.id ? '#eef1fe' : 'transparent',
+        color: activeId === b.id ? '#4f6ef7' : '#25272c', fontWeight: activeId === b.id ? 600 : 400,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        display: 'flex', alignItems: 'center', gap: 8, paddingLeft: indent ? 24 : 10,
+      }}>
       <span style={{
         width: 8, height: 8, borderRadius: 3, flexShrink: 0,
         background: b.visibility === 'company' ? '#00c875' : b.visibility === 'department' ? '#579bfc' : '#9d3dd7',
@@ -147,7 +163,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
       {!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</span>}
       {!collapsed && (
         <span data-board-menu-trigger onClick={(e) => openBoardMenu(b, e)}
-          title="移动到分组"
+          title="更多操作"
           style={{ flexShrink: 0, color: '#a0a4b1', fontSize: 11, padding: '0 4px', borderRadius: 4, cursor: 'pointer' }}>⋯</span>
       )}
     </div>

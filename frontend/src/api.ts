@@ -48,6 +48,7 @@ export const api = {
   renameBoard: (boardId: string, name: string) => request(`/boards/${boardId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   duplicateBoard: (boardId: string) => request(`/boards/${boardId}/duplicate`, { method: 'POST' }),
   deleteBoard: (boardId: string) => request(`/boards/${boardId}`, { method: 'DELETE' }),
+  reorderBoards: (order: string[]) => request(`/boards/reorder`, { method: 'POST', body: JSON.stringify({ order }) }),
   // 工作区自定义分组
   listFolders: () => request('/board-folders'),
   createFolder: (name: string) => request('/board-folders', { method: 'POST', body: JSON.stringify({ name }) }),
