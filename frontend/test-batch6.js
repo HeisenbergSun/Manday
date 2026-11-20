@@ -37,6 +37,23 @@ const browser = await puppeteer.launch({
   await sleep(3000);
   const headers = await page.evaluate(() => ({ Authorization: 'Bearer ' + localStorage.getItem('manday_token') }));
 
+  // 自建测试 board（避免污染正式 board）+ date 列 + 2 条目，并导航过去
+  const bid = await page.evaluate(async (h) => {
+    const b = await (await fetch('/api/boards', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'B6-自研-' + Date.now(), visibility: 'private' }) })).json();
+    await fetch('/api/boards/' + b.id + '/columns', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '日期', type: 'date' }) });
+    await fetch('/api/boards/' + b.id + '/items', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '任务A' }) });
+    await fetch('/api/boards/' + b.id + '/items', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '任务B' }) });
+    return b.id;
+  }, headers);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(1500);
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('[data-board-item]')];
+    const target = rows.find((r) => (r.getAttribute('data-board-item') || '').startsWith('B6-自研'));
+    if (target) target.click();
+  });
+  await sleep(2000);
+
   // ---- L1: 自研表格渲染 ----
   let l1;
   for (let i = 0; i < 8; i++) {
@@ -54,10 +71,6 @@ const browser = await puppeteer.launch({
 
   // ---- L2: 单击编辑落库（需求3：双击改为单击） ----
   const myId = await page.evaluate(() => localStorage.getItem('userId'));
-  const bid = await page.evaluate(async (h) => {
-    const j = await (await fetch('/api/boards', { headers: h })).json();
-    return (Array.isArray(j) ? j : j.items)[0].id;
-  }, headers);
   const NAME = 'L2编辑' + Date.now();
   await page.evaluate(() => {
     const cell = document.querySelector('[data-grid-cell][data-col="name"]');
@@ -168,6 +181,15 @@ const browser = await puppeteer.launch({
   console.log('L5 after unlock status:', allowed);
   assert(allowed === 200 || allowed === 201, '解锁后编辑失败: ' + allowed);
   console.log('L5 列级权限 PASS');
+
+  // 清理 L5 动态创建的 board（张伟 owner 可删）
+  await page.evaluate(async (id, auth) => {
+    await fetch('/api/boards/' + id, { method: 'DELETE', headers: { Authorization: auth } });
+  }, bid5, zwToken);
+  // 清理自建测试 board
+  await page.evaluate(async (id, h) => {
+    await fetch('/api/boards/' + id, { method: 'DELETE', headers: h });
+  }, bid, headers);
 
   console.log('\n===== TOTAL ERRORS: ' + errors.length + ' =====');
   errors.forEach((e) => console.log('  ' + e));
