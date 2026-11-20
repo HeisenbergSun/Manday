@@ -56,13 +56,14 @@ function scalar(v: unknown): string {
 
 /** 通用下拉选择器（单击编辑用）：绝对定位面板，点选项即提交，点外部关闭。
  *  原生 <select> 在单击编辑模式下会因 autoFocus+onBlur+onChange 竞争而错乱，且无法回显不在选项中的值。 */
-function ChipDropdown({ value, options, onPick, onClose, colorOf, placeholder }: {
+function ChipDropdown({ value, options, onPick, onClose, colorOf, placeholder, onAddOption }: {
   value: string;
   options: { value: string; label: string; hint?: string }[];
   onPick: (v: string) => void;
   onClose: () => void;
   colorOf?: (o: { value: string; label: string; hint?: string }) => string | null;
   placeholder?: string;
+  onAddOption?: (label: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -109,6 +110,16 @@ function ChipDropdown({ value, options, onPick, onClose, colorOf, placeholder }:
           </div>
         );
       })}
+      {onAddOption && (
+        <div style={{ borderTop: '1px solid #f0f1f5', marginTop: 4, paddingTop: 4 }}>
+          <input data-option-add-inline placeholder="＋ 新建选项（回车添加）"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) onAddOption(v); (e.target as HTMLInputElement).value = ''; }
+            }}
+            style={{ width: '100%', padding: '6px 10px', border: 'none', borderBottom: '1px dashed #c3c8d4', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -153,6 +164,8 @@ type Props = {
   onChangeColumnType?: (colId: string, type: string, settings?: any) => Promise<void>;
   onDeleteColumn?: (colId: string) => Promise<void>;
   onDuplicateColumn?: (colId: string) => Promise<void>;
+  /** 单元格内联新建选项（status/dropdown/tags）：调父组件写 settings */
+  onAddColumnOption?: (colId: string, colType: string, label: string) => Promise<void>;
   onRenameGroup?: (gid: string, name: string) => Promise<void>;
   onAddGroup?: (name: string) => Promise<void>;
   onDeleteGroup?: (gid: string) => Promise<void>;
@@ -167,7 +180,7 @@ type Props = {
   onFilteredRowsChange?: (rows: GridRow[]) => void;
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem, filters: filtersProp, onFiltersChange, onFilteredRowsChange }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onAddColumnOption, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem, filters: filtersProp, onFiltersChange, onFilteredRowsChange }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -679,6 +692,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         const pick = (val: string) => { setDraft(val); setEditing(null); onEdit(row, col.id, val); };
         return <ChipDropdown value={draft} options={opts} colorOf={colorOf} onPick={pick}
           onClose={() => setEditing(null)}
+          onAddOption={col.type === 'people' ? undefined : (label) => onAddColumnOption?.(col.id, col.type, label)}
           placeholder={col.type === 'status' ? '— 清除状态 —' : col.type === 'people' ? '— 清除负责人 —' : '— 清空 —'} />;
       }
       if (col.type === 'tags') {
@@ -699,6 +713,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               {o.label}
             </span>;
           })}
+          <input data-option-add-inline placeholder="＋ 新标签" onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) { onAddColumnOption?.(col.id, col.type, v); setDraft(JSON.stringify([...current, v])); } (e.target as HTMLInputElement).value = ''; } }}
+            style={{ width: 64, padding: '2px 6px', borderRadius: 10, border: '1px dashed #c3c8d4', fontSize: 11, outline: 'none' }} />
           <button onClick={() => commit()} style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 6, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 11 }}>✓</button>
         </div>;
       }

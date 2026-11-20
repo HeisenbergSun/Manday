@@ -265,7 +265,9 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
       </div>
       {/* 右下角调整大小手柄（draggable=false 避免被网格拖拽排序接管） */}
       <span onMouseDown={startResize} draggable={false} title="拖动调整大小" data-widget-resize
-        style={{ position: 'absolute', right: 2, bottom: 2, width: 14, height: 14, cursor: 'nwse-resize', color: '#c3c8d4', fontSize: 11, lineHeight: 1 }}>⤡</span>
+        style={{ position: 'absolute', right: 4, bottom: 4, width: 20, height: 20, cursor: 'nwse-resize',
+          background: '#f2f4fa', border: '1px solid #c3c8d4', borderRadius: 5, color: '#7a7f8c',
+          fontSize: 13, lineHeight: '18px', textAlign: 'center', zIndex: 5 }}>⤡</span>
     </div>
   );
 }
@@ -342,13 +344,13 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
           </button>
         </div>
       )}
-      <div data-dash-grid style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 72, gap: 14 }}>
+      <div data-dash-grid style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 104, gap: 14 }}>
         {(dash?.widgets ?? []).map((w) => (
           <div key={w.id} data-widget-slot draggable
             onDragStart={(e) => e.dataTransfer.setData('text/plain', w.id)}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); dropWidget(e.dataTransfer.getData('text/plain'), w.id); }}
-            style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}`, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+            style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}`, minWidth: 0, overflow: 'hidden' }}>
             <WidgetCard dashboardId={dashboardId} widget={w}
               onDelete={() => removeWidget(w.id)} onEdit={() => setEditing(w)} onResize={(nw, nh) => resizeWidget(w, nw, nh)} onOpenItem={onOpenItem} />
           </div>

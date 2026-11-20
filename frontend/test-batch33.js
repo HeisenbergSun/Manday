@@ -120,6 +120,45 @@ const req = async (h, method, path, body) => {
   const colorAfter = (await req(token, 'GET', `/boards/${bid}`)).body.columns.find((c) => c.type === 'status').settings.labels[0].color;
   assert(colorBefore !== colorAfter, 'S3 status 标签换色生效');
 
+  // ---- S4 单元格内联新建选项 ----
+  const itm = await req(token, 'POST', `/boards/${bid}/items`, { name: 'B33-条目' });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2000);
+  await page.evaluate((n) => document.querySelector(`[data-board-item="${n}"]`)?.click(), NAME);
+  await sleep(2000);
+  // 点击 dropdown 列单元格
+  const cell = await page.evaluate((cid) => {
+    const td = document.querySelector(`[data-col="${cid}"][data-grid-cell]`);
+    if (!td) return false;
+    td.click(); return true;
+  }, dropCol.body.id);
+  await sleep(600);
+  // 在 ChipDropdown 里输入新选项
+  await page.evaluate(() => {
+    const input = document.querySelector('[data-option-add-inline]');
+    if (input) {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '内联新选项');
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    }
+  });
+  await sleep(1500);
+  const opts = (await req(token, 'GET', `/boards/${bid}`)).body.columns.find((c) => c.type === 'dropdown').settings.options;
+  assert((opts ?? []).some((o) => o.label === '内联新选项'), 'S4 单元格内联新建选项「内联新选项」');
+
+  // ---- S5 widget 尺寸正常（行高 104 后默认高 ~208px）----
+  await page.evaluate((n) => document.querySelector(`[data-dashboard-item="${n}"]`)?.click(), NAME + '-Dash');
+  await sleep(2500);
+  const slotH = await page.evaluate(() => document.querySelector('[data-widget-slot]')?.getBoundingClientRect().height ?? 0);
+  assert(slotH >= 200, `S5 widget 默认高度正常（实际 ${Math.round(slotH)}px）`);
+  const handleVisible = await page.evaluate(() => {
+    const h = document.querySelector('[data-widget-resize]');
+    if (!h) return false;
+    const r = h.getBoundingClientRect();
+    return r.width >= 18 && r.height >= 18;
+  });
+  assert(handleVisible, 'S5 resize 手柄可见且尺寸正常');
+
   // 清理
   await req(token, 'DELETE', `/dashboards/${dashId}`);
   await req(token, 'DELETE', `/boards/${bid}`);

@@ -1025,6 +1025,10 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                 flash('列已复制');
               } catch (e) { flash(`复制列失败：${(e as Error).message}`); }
             }}
+            onAddColumnOption={async (colId, colType, label) => {
+              const col = columns.find((c: any) => c.id === colId);
+              if (col) await addColumnOption(col, label);
+            }}
             onRenameGroup={async (gid, name) => {
               try {
                 await api.renameGroup(boardId, gid, name);
