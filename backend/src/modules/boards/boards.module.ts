@@ -220,6 +220,16 @@ export class BoardsService {
     return { ok: true };
   }
 
+  /** 工作区统一排序：board + dashboard 共享 position 空间，实现混排拖动 */
+  async reorderWorkspace(userId: string, items: { type: string; id: string }[]) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.type === 'board') await this.pg.query(`UPDATE boards SET position=$1 WHERE id=$2`, [i, it.id]);
+      else if (it.type === 'dashboard') await this.pg.query(`UPDATE dashboards SET position=$1 WHERE id=$2`, [i, it.id]);
+    }
+    return { ok: true };
+  }
+
   /** 回收站（P0 刚需）：列出已删除条目，支持恢复 */
   async recycleBin(boardId: string, userId: string) {
     const userRole = await this.resolveRole(boardId, userId);
@@ -642,6 +652,7 @@ export class BoardsController {
   @Get() list(@Req() req) { return this.svc.listForUser(req.user.id); }
   @Post() create(@Req() req, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
   @Post('reorder') reorder(@Req() req, @Body() b: { order: string[] }) { return this.svc.reorderBoards(req.user.id, b.order ?? []); }
+  @Post('workspace-reorder') workspaceReorder(@Req() req, @Body() b: { items: { type: string; id: string }[] }) { return this.svc.reorderWorkspace(req.user.id, b.items ?? []); }
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameBoard(id, req.user.id, b.name); }
   @Post(':id/duplicate') duplicate(@Req() req, @Param('id') id: string) { return this.svc.duplicateBoard(id, req.user.id); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteBoard(id, req.user.id); }

@@ -7,9 +7,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 
-interface BoardItem { id: string; name: string; my_role: string; department_name?: string; visibility: string; }
+interface BoardItem { id: string; name: string; my_role: string; department_name?: string; visibility: string; position?: number; }
 interface Folder { id: string; name: string; position: number; boardIds: string[]; dashboardIds?: string[]; }
-interface DashItem { id: string; name: string; is_team?: boolean; is_owner?: boolean; }
+interface DashItem { id: string; name: string; is_team?: boolean; is_owner?: boolean; position?: number; }
 
 export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onOpen, onNewBoard, onNewDashboard, onOpenDashboard, onOpenCustomDashboard }: {
   activeId?: string; dashboardActive?: boolean; activeDashboardId?: string | null;
@@ -117,6 +117,26 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     return { type: data.slice(0, i), id: data.slice(i + 1) };
   };
 
+  // 未分组区：board + dashboard 合并按 position 混排
+  const ungroupedItems: { type: 'board' | 'dash'; id: string; pos: number; b?: BoardItem; d?: DashItem }[] = [
+    ...boards.filter((b) => !folderOf(b.id)).map((b) => ({ type: 'board' as const, id: b.id, pos: b.position ?? 0, b })),
+    ...dashboards.filter((d) => !dashFolderOf(d.id)).map((d) => ({ type: 'dash' as const, id: d.id, pos: d.position ?? 0, d })),
+  ].sort((a, b) => a.pos - b.pos);
+
+  /** 未分组区混排排序：board + dashboard 统一 position，拖动后调 workspace-reorder */
+  const reorderMixed = (fromType: string, fromId: string, toId: string) => {
+    const items = [...ungroupedItems];
+    const fromIdx = items.findIndex((x) => x.type === fromType && x.id === fromId);
+    const toIdx = items.findIndex((x) => x.id === toId);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+    const [moved] = items.splice(fromIdx, 1);
+    items.splice(toIdx, 0, moved);
+    // 本地乐观：按新顺序更新 position
+    setBoards((bs) => bs.map((b) => { const ni = items.findIndex((x) => x.id === b.id); return ni >= 0 ? { ...b, position: ni } : b; }));
+    setDashboards((ds) => ds.map((d) => { const ni = items.findIndex((x) => x.id === d.id); return ni >= 0 ? { ...d, position: ni } : d; }));
+    api.reorderWorkspace(items.map((x) => ({ type: x.type, id: x.id }))).catch(() => reload());
+  };
+
   const newFolder = async (boardId?: string, dashboardId?: string) => {
     const name = prompt('新建分组名称');
     if (!name || !name.trim()) return;
@@ -193,11 +213,11 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     setPlusMenu({ x: Math.min(r.left, window.innerWidth - 190), y: r.bottom + 4 });
   };
 
-  const boardRow = (b: BoardItem, indent = false) => (
+  const boardRow = (b: BoardItem, indent = false, inFolder = false) => (
     <div key={b.id} onClick={() => onOpen(b)} title={b.name} data-board-item={b.name} draggable
       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', 'board:' + b.id); }}
       onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'board') reorderBoard(t.id, b.id); else if (t.type === 'dash') moveDashToFolder(t.id, folderOf(b.id) ?? null); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (inFolder) { if (t.type === 'board') reorderBoard(t.id, b.id); else if (t.type === 'dash') moveDashToFolder(t.id, folderOf(b.id) ?? null); } else reorderMixed(t.type, t.id, b.id); }}
       style={{
         padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
         background: activeId === b.id ? '#eef1fe' : 'transparent',
@@ -218,11 +238,11 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     </div>
   );
 
-  const dashRow = (d: DashItem, indent = false) => (
+  const dashRow = (d: DashItem, indent = false, inFolder = false) => (
     <div key={d.id} data-dashboard-item={d.name} onClick={() => onOpenCustomDashboard?.(d.id)} draggable
       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', 'dash:' + d.id); }}
       onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'dash') reorderDash(t.id, d.id); else if (t.type === 'board') moveToFolder(t.id, dashFolderOf(d.id) ?? null); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (inFolder) { if (t.type === 'dash') reorderDash(t.id, d.id); else if (t.type === 'board') moveToFolder(t.id, dashFolderOf(d.id) ?? null); } else reorderMixed(t.type, t.id, d.id); }}
       style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
         background: activeDashboardId === d.id ? '#eef1fe' : 'transparent',
         color: activeDashboardId === d.id ? '#4f6ef7' : '#25272c', fontWeight: activeDashboardId === d.id ? 600 : 400,
@@ -290,8 +310,8 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
                 )}
               </div>
               {!isC && (<>
-                {list.map((b) => boardRow(b, true))}
-                {dashList.map((d) => dashRow(d, true))}
+                {list.map((b) => boardRow(b, true, true))}
+                {dashList.map((d) => dashRow(d, true, true))}
               </>)}
             </div>
           );
@@ -304,8 +324,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
           {!collapsed && (
             <div style={{ fontSize: 11, color: '#b0b4c0', fontWeight: 600, padding: '0 8px', letterSpacing: .5 }}>未分组</div>
           )}
-          {boards.filter((b) => !folderOf(b.id)).map((b) => boardRow(b))}
-          {dashboards.filter((d) => !dashFolderOf(d.id)).map((d) => dashRow(d))}
+          {ungroupedItems.map((it) => it.type === 'board' ? boardRow(it.b!, false, false) : dashRow(it.d!, false, false))}
         </div>
       </div>
 

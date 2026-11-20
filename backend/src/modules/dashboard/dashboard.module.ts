@@ -140,7 +140,7 @@ export class DashboardService {
 
   async listDashboards(userId: string) {
     const { rows } = await this.pg.query(
-      `SELECT d.id, d.name, d.created_at, d.created_by = $1 AS is_owner,
+      `SELECT d.id, d.name, d.created_at, d.position, d.created_by = $1 AS is_owner,
               (d.department_id IS NOT NULL) AS is_team
        FROM dashboards d
        WHERE d.created_by = $1

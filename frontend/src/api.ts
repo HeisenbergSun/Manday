@@ -49,6 +49,7 @@ export const api = {
   duplicateBoard: (boardId: string) => request(`/boards/${boardId}/duplicate`, { method: 'POST' }),
   deleteBoard: (boardId: string) => request(`/boards/${boardId}`, { method: 'DELETE' }),
   reorderBoards: (order: string[]) => request(`/boards/reorder`, { method: 'POST', body: JSON.stringify({ order }) }),
+  reorderWorkspace: (items: { type: string; id: string }[]) => request(`/boards/workspace-reorder`, { method: 'POST', body: JSON.stringify({ items }) }),
   reorderColumns: (boardId: string, order: string[]) => request(`/boards/${boardId}/columns/reorder`, { method: 'POST', body: JSON.stringify({ order }) }),
   // 工作区自定义分组
   listFolders: () => request('/board-folders'),
