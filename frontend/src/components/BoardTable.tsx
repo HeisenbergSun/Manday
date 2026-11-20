@@ -1070,6 +1070,9 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                 flash('列已复制');
               } catch (e) { flash(`复制列失败：${(e as Error).message}`); }
             }}
+            onReorderColumn={async (order) => {
+              try { await api.reorderColumns(boardId, order); } catch { /* 静默，本地已换序 */ }
+            }}
             onAddColumnOption={async (colId, colType, label) => {
               const col = columns.find((c: any) => c.id === colId);
               if (col) await addColumnOption(col, label);

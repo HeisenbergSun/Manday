@@ -164,6 +164,8 @@ type Props = {
   onChangeColumnType?: (colId: string, type: string, settings?: any) => Promise<void>;
   onDeleteColumn?: (colId: string) => Promise<void>;
   onDuplicateColumn?: (colId: string) => Promise<void>;
+  /** 列拖拽换序持久化 */
+  onReorderColumn?: (order: string[]) => Promise<void>;
   /** 单元格内联新建选项（status/dropdown/tags）：调父组件写 settings */
   onAddColumnOption?: (colId: string, colType: string, label: string) => Promise<void>;
   onRenameGroup?: (gid: string, name: string) => Promise<void>;
@@ -182,7 +184,7 @@ type Props = {
   clearSignal?: number;
 };
 
-export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onAddColumnOption, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem, filters: filtersProp, onFiltersChange, onFilteredRowsChange, clearSignal }: Props) {
+export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, onSelectionChange, editable, isOwner, sortBy, sortDir, onSortChange, groups, boardId, onAddColumn, onRenameColumn, onChangeColumnType, onDeleteColumn, onDuplicateColumn, onReorderColumn, onAddColumnOption, onRenameGroup, onAddGroup, onDeleteGroup, onDuplicateGroup, onDuplicateItem, onDeleteItem, onMoveItem, filters: filtersProp, onFiltersChange, onFilteredRowsChange, clearSignal }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; field: string } | null>(null);
   const [draft, setDraft] = useState('');
@@ -544,6 +546,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     if (from < 0 || to < 0) return;
     ids.splice(to, 0, ...ids.splice(from, 1));
     setColumnOrder(ids);
+    onReorderColumn?.(ids).catch(() => {});
   };
 
   // ── 分组折叠 ──

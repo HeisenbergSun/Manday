@@ -276,6 +276,16 @@ export class BoardsService {
     return rows[0];
   }
 
+  /** 列拖拽换序：批量更新 board_columns.position（name 列不在列里，固定首列） */
+  async reorderColumns(boardId: string, userId: string, order: string[]) {
+    const userRole = await this.resolveRole(boardId, userId);
+    if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可调整列顺序');
+    for (let i = 0; i < order.length; i++) {
+      await this.pg.query(`UPDATE board_columns SET position=$1 WHERE id=$2 AND board_id=$3`, [i * 1000, order[i], boardId]);
+    }
+    return { ok: true };
+  }
+
   async renameColumn(boardId: string, colId: string, userId: string, dto: { name?: string; type?: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
     if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可修改列设置');
@@ -623,6 +633,9 @@ export class BoardsController {
   }
   @Post(':id/columns') addColumn(@Req() req, @Param('id') id: string, @Body() b: { name: string; type: string; settings?: any }) {
     return this.svc.addColumn(id, req.user.id, b);
+  }
+  @Post(':id/columns/reorder') reorderColumns(@Req() req, @Param('id') id: string, @Body() b: { order: string[] }) {
+    return this.svc.reorderColumns(id, req.user.id, b.order ?? []);
   }
   @Patch(':id/columns/:colId') renameColumn(@Req() req, @Param('id') id: string, @Param('colId') colId: string, @Body() b: { name?: string; type?: string; settings?: any }) {
     return this.svc.renameColumn(id, colId, req.user.id, b);
