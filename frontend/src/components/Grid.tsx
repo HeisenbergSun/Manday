@@ -1037,9 +1037,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 )}
               </th>
             ))}
-            {/* 内联新建列按钮 */}
+            {/* 内联新建列按钮（对所有人开放显示，非 owner 点击由后端权限拦截） */}
             <th style={{ ...thStyle, width: 100, textAlign: 'center' }}>
-              {isOwner && onAddColumn && (
+              {onAddColumn && (
                 addingCol ? (
                   <div data-addcol-inline style={{ display: 'flex', gap: 3, alignItems: 'center', justifyContent: 'center' }}>
                     <input autoFocus value={newColNameDraft} onChange={(e) => setNewColNameDraft(e.target.value)}

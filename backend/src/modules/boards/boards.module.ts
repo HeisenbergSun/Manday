@@ -237,7 +237,7 @@ export class BoardsService {
     return { restored: itemIds.length };
   }
 
-  /** —— 列管理 ——（P1-1：结构操作仅 owner） */
+  /** —— 列管理 ——（P1-1：结构操作仅 owner；加号按钮前端对所有人可见，非 owner 由这里 403 拦截） */
   async addColumn(boardId: string, userId: string, dto: { name: string; type: string; settings?: any }) {
     const userRole = await this.resolveRole(boardId, userId);
     if (!canEditStructure(userRole)) throw new ForbiddenException('仅看板负责人可添加列');
