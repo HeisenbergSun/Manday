@@ -102,7 +102,7 @@ export function parseWorkbook(data: ArrayBuffer): ParsedSheet {
   return { headers: [], rows: [] };
 }
 
-const NAME_KEYS = ['条目', '名称', '任务', 'item', 'name', 'task', 'title'];
+const NAME_KEYS = ['条目', '条目名', '名称', '任务', '任务名', '任务名称', '标题', '主题', '事项', '事项名称', '内容', 'item', 'name', 'task', 'title', 'todo', 'summary', 'subject'];
 
 export interface ConvertCtx {
   columns: ImportCol[];
@@ -121,8 +121,15 @@ export function convertRow(
   headerMap: Record<string, ImportCol | 'name' | null>,
   users: UserLike[] = [],
 ): ConvertedRow | null {
-  const name = NAME_KEYS.map((k) => row[k]).find((v) => v != null && String(v).trim() !== '');
-  if (name == null || String(name).trim() === '') return null;
+  // 优先从 headerMap 里找映射为「条目名」的表头（比硬编码 NAME_KEYS 更可靠）
+  let nameVal: unknown;
+  for (const [h, m] of Object.entries(headerMap)) {
+    if (m === 'name') { nameVal = row[h]; break; }
+  }
+  if (nameVal == null || String(nameVal).trim() === '') {
+    nameVal = NAME_KEYS.map((k) => row[k]).find((v) => v != null && String(v).trim() !== '');
+  }
+  if (nameVal == null || String(nameVal).trim() === '') return null;
   const cells: ConvertedCell[] = [];
   for (const [header, col] of Object.entries(headerMap)) {
     if (!col || col === 'name') continue;
@@ -130,7 +137,7 @@ export function convertRow(
     if (v == null || String(v).trim() === '') continue;
     cells.push({ columnId: col.id, value: convertValue(v, col, users) });
   }
-  return { name: String(name).trim(), cells };
+  return { name: String(nameVal).trim(), cells };
 }
 
 /** 按列类型转换单元格值 */
@@ -141,11 +148,19 @@ export function convertValue(v: unknown, col: ImportCol, users: UserLike[] = [])
       return parseDateLike(String(v)) ?? String(v).trim();
     }
     case 'number': {
-      const n = Number(v);
+      if (typeof v === 'number') return v;
+      // 去千分位逗号、货币符号、单位（元/￥/$/€ 等），避免 "5,000元" 变 NaN
+      const cleaned = String(v).replace(/[,，\s]/g, '').replace(/[元￥$€¥]/g, '');
+      const n = Number(cleaned);
       return isNaN(n) ? String(v).trim() : n;
     }
     case 'checkbox': return parseBool(v) ?? false;
     case 'people': return parsePeople(v, users);
+    case 'tags': {
+      // tags 存储为字符串数组（逗号/、/;分隔），与 people 一致
+      const arr = Array.isArray(v) ? v.map(String) : String(v).split(/[,、;；]/).map((s) => s.trim()).filter(Boolean);
+      return arr;
+    }
     case 'rating': {
       const n = Math.max(0, Math.min(5, Math.round(Number(v) || 0)));
       return n;
