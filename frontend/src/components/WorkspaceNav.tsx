@@ -264,12 +264,6 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
       </div>
 
       <div data-board-list style={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {/* 自定义仪表盘（未分组的） */}
-        {!collapsed && dashboards.some((d) => !dashFolderOf(d.id)) && (
-          <div style={{ margin: '2px 0', fontSize: 11, color: '#a0a4b1', fontWeight: 600, padding: '0 8px', letterSpacing: .5 }}>仪表盘</div>
-        )}
-        {dashboards.filter((d) => !dashFolderOf(d.id)).map((d) => dashRow(d))}
-
         {/* Board 分组（含 board + dashboard） */}
         {folders.map((f) => {
           const list = boards.filter((b) => f.boardIds.includes(b.id));
@@ -308,7 +302,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'board' && folderOf(t.id)) moveToFolder(t.id, null); else if (t.type === 'dash' && dashFolderOf(t.id)) moveDashToFolder(t.id, null); }}>
           {!collapsed && (
-            <div style={{ fontSize: 11, color: '#b0b4c0', fontWeight: 600, padding: '0 8px', letterSpacing: .5 }}>未分组（拖到这里移出分组）</div>
+            <div style={{ fontSize: 11, color: '#b0b4c0', fontWeight: 600, padding: '0 8px', letterSpacing: .5 }}>未分组</div>
           )}
           {boards.filter((b) => !folderOf(b.id)).map((b) => boardRow(b))}
           {dashboards.filter((d) => !dashFolderOf(d.id)).map((d) => dashRow(d))}
