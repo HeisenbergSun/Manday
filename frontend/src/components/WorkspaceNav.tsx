@@ -196,7 +196,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     <div key={b.id} onClick={() => onOpen(b)} title={b.name} data-board-item={b.name} draggable
       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', 'board:' + b.id); }}
       onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'board') reorderBoard(t.id, b.id); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'board') reorderBoard(t.id, b.id); else if (t.type === 'dash') moveDashToFolder(t.id, folderOf(b.id) ?? null); }}
       style={{
         padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
         background: activeId === b.id ? '#eef1fe' : 'transparent',
@@ -221,7 +221,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
     <div key={d.id} data-dashboard-item={d.name} onClick={() => onOpenCustomDashboard?.(d.id)} draggable
       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', 'dash:' + d.id); }}
       onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'dash') reorderDash(t.id, d.id); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'dash') reorderDash(t.id, d.id); else if (t.type === 'board') moveToFolder(t.id, dashFolderOf(d.id) ?? null); }}
       style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
         background: activeDashboardId === d.id ? '#eef1fe' : 'transparent',
         color: activeDashboardId === d.id ? '#4f6ef7' : '#25272c', fontWeight: activeDashboardId === d.id ? 600 : 400,
@@ -302,23 +302,15 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
           );
         })}
 
-        {/* 未分组 Board + Dashboard（空白处放置 = 移出分组） */}
-        <div data-ungrouped-drop style={{ display: 'flex', flexDirection: 'column', gap: 2, minHeight: 20 }}
+        {/* 未分组 Board + Dashboard（拖到这里 = 移出分组） */}
+        <div data-ungrouped-drop style={{ display: 'flex', flexDirection: 'column', gap: 2, minHeight: 44, borderTop: '1px dashed #e6e8ef', paddingTop: 6, marginTop: 4 }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (t.type === 'board' && folderOf(t.id)) moveToFolder(t.id, null); else if (t.type === 'dash' && dashFolderOf(t.id)) moveDashToFolder(t.id, null); }}>
+          {!collapsed && (
+            <div style={{ fontSize: 11, color: '#b0b4c0', fontWeight: 600, padding: '0 8px', letterSpacing: .5 }}>未分组（拖到这里移出分组）</div>
+          )}
           {boards.filter((b) => !folderOf(b.id)).map((b) => boardRow(b))}
           {dashboards.filter((d) => !dashFolderOf(d.id)).map((d) => dashRow(d))}
-        </div>
-      </div>
-
-      <div style={{ borderTop: '1px solid #e6e8ef', paddingTop: 6, flexShrink: 0 }}>
-        <div style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, color: '#7a7f8c', cursor: 'pointer' }}
-          onClick={() => newFolder()}>
-          {collapsed ? '🗂' : '＋ 新建分组'}
-        </div>
-        <div style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, color: '#7a7f8c', cursor: 'pointer' }}
-          onClick={onNewBoard}>
-          {collapsed ? '⊕' : '＋ 新建 Board'}
         </div>
       </div>
 
