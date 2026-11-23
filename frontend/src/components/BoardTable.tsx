@@ -7,6 +7,7 @@ import { BoardGrid, type GridRow, type FilterCondition } from './Grid';
 import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { UI, TAG, doneLabelsOf, soften } from '../theme';
+import { Icon } from './Icons';
 import { AutomationPanel } from './AutomationPanel';
 import { parseWorkbook, mapHeaders, convertRow, inferType, type ImportCol } from '../importExcel';
 import { loadCompanyUsers } from '../people';
@@ -660,24 +661,28 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
       <div style={{ display: 'flex', gap: 8, padding: '10px 12px', alignItems: 'center', position: 'relative' }}>
         <button onClick={addItemRow} disabled={creating}
           style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff',
-            cursor: creating ? 'wait' : 'pointer', fontSize: 13, fontWeight: 500 }}>
-          {creating ? '创建中…' : '＋ 新建条目'}
+            cursor: creating ? 'wait' : 'pointer', fontSize: 13, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="plus" size={15} color="#fff" strokeWidth={2.2} />
+          {creating ? '创建中…' : '新建条目'}
         </button>
         <button onClick={deleteSelected}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#e2445c' }}>
-          🗑 删除选中
+            cursor: 'pointer', fontSize: 13, color: '#e2445c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="trash" size={15} />
+          删除选中
         </button>
         <button data-members-trigger="1" onClick={() => setMembersOpen(true)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
-          👥 成员
+            cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="users" size={15} />
+          成员
         </button>
         {membersOpen && <MembersModal boardId={boardId} onClose={() => setMembersOpen(false)} flash={flash} />}
         <button data-mgr-trigger="1" onClick={() => setMgrOpen(!mgrOpen)}
-          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#eef1fe' : '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
-          ⚙ 列与分组
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#e5eaff' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="board" size={15} />
+          列与分组
         </button>
         {mgrOpen && (
           <div data-mgr-panel="1" style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
@@ -850,8 +855,9 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
         {autoOpen && <div data-auto-panel="1"><AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} /></div>}
         <button data-export-xlsx onClick={exportXLSX}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#00a25b' }}>
-          📗 导出 Excel{tableFilters.length ? '（筛选后）' : ''}
+            cursor: 'pointer', fontSize: 13, color: '#00a25b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="download" size={15} />
+          导出 Excel{tableFilters.length ? '（筛选后）' : ''}
         </button>
         <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
           onChange={(e) => {
@@ -861,8 +867,9 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           }} />
         <button data-import-excel onClick={() => importFileRef.current?.click()} disabled={importing}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: importing ? 'wait' : 'pointer', fontSize: 13, color: '#00a25b' }}>
-          {importing ? '导入中…' : '📤 导入 Excel'}
+            cursor: importing ? 'wait' : 'pointer', fontSize: 13, color: '#00a25b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="upload" size={15} />
+          {importing ? '导入中…' : '导入 Excel'}
         </button>
         <button data-views-trigger="1" onClick={() => setViewsOpen(!viewsOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',

@@ -100,14 +100,14 @@ const browser = await puppeteer.launch({
   await sleep(1200);
   // 注意：prefs defaultView=kanban 会把视图切到看板——切回表格
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('▤ 表格'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('表格'));
     if (b) b.click();
   });
   await sleep(800);
-  const viewBtn = await page.evaluate(() => !![...document.querySelectorAll('button')].find((x) => x.textContent.includes('⧉ 视图')));
+  const viewBtn = await page.evaluate(() => !![...document.querySelectorAll('button')].find((x) => x.textContent.includes('视图')));
   assert(viewBtn, 'V5 工具条出现「⧉ 视图」按钮');
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('⧉ 视图'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('视图'));
     b.click();
   });
   await sleep(600);
@@ -127,7 +127,7 @@ const browser = await puppeteer.launch({
   assert(sorted, `V5 表头点击排序生效 ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
   // 保存为视图（面板可能已被上一次点击切换为关闭，确保打开）
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('⧉ 视图'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('视图'));
     if (b && !document.querySelector('[data-views-panel]')) b.click();
   });
   await sleep(400);

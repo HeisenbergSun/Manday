@@ -14,6 +14,19 @@ import { DashboardPage } from './components/DashboardPage';
 import { DashboardEditor } from './components/DashboardEditor';
 import { NewBoardModal } from './components/NewBoardModal';
 import { OnboardingModal } from './components/OnboardingModal';
+import { Icon } from './components/Icons';
+
+/** 视图导航配置（SVG 图标 + 文案） */
+const VIEWS = [
+  { id: 'table', icon: 'table', label: '表格' },
+  { id: 'kanban', icon: 'kanban', label: '看板' },
+  { id: 'calendar', icon: 'calendar', label: '日历' },
+  { id: 'gantt', icon: 'gantt', label: '甘特' },
+  { id: 'workload', icon: 'users', label: 'Workload' },
+  { id: 'insights', icon: 'chart', label: '分析' },
+  { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
+  { id: 'trash', icon: 'trash', label: '回收站' },
+] as const;
 import { useItems, useUi } from './store';
 import { api, getToken, clearToken } from './api';
 import { joinBoard, leaveBoard } from './socket';
@@ -207,17 +220,19 @@ export function App() {
             </button>
           ) : workspaceDashboard || !activeBoard ? (
             <button onClick={() => { setWorkspaceDashboard(true); setActiveBoard(null); setActiveDashboardId(null); }}
-              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-                background: '#eef1fe', color: '#4f6ef7', fontWeight: 600 }}>
-              📊 工作台
+              style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
+                background: '#e5eaff', color: '#4f6ef7', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="workspace" size={15} />
+              工作台
             </button>
           ) : (
-            (['table', 'kanban', 'calendar', 'gantt', 'workload', 'insights', 'dashboard', 'trash'] as const).map((v) => (
-              <button key={v} onClick={() => setView(v)}
-                style={{ padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-                  background: view === v ? '#eef1fe' : 'transparent', color: view === v ? '#4f6ef7' : '#7a7f8c',
-                  fontWeight: view === v ? 600 : 400 }}>
-                {v === 'table' ? '▤ 表格' : v === 'kanban' ? '▦ 看板' : v === 'calendar' ? '📅 日历' : v === 'gantt' ? '📈 甘特' : v === 'workload' ? '🧑‍💼 Workload' : v === 'insights' ? '🪭 分析' : v === 'dashboard' ? '📊 Dashboard' : '🗑 回收站'}
+            VIEWS.map((v) => (
+              <button key={v.id} onClick={() => setView(v.id)}
+                style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
+                  background: view === v.id ? '#e5eaff' : 'transparent', color: view === v.id ? '#4f6ef7' : '#7a7f8c',
+                  fontWeight: view === v.id ? 600 : 400, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Icon name={v.icon} size={15} />
+                {v.label}
               </button>
             ))
           )}
@@ -228,7 +243,10 @@ export function App() {
           <button onClick={() => { clearToken(); localStorage.removeItem('userId'); location.reload(); }}
             style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 12 }}>退出</button>
           <NotificationBell />
-          <button onClick={toggleAI} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontWeight: 500 }}>✦ AI 助手</button>
+          <button onClick={toggleAI} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="sparkle" size={14} color="#fff" strokeWidth={2.2} />
+            AI 助手
+          </button>
         </div>
       </header>
 
@@ -255,8 +273,9 @@ export function App() {
             <DashboardEditor dashboardId={activeDashboardId} onBack={() => setActiveDashboardId(null)} onOpenItem={setDetailId} />
           ) : workspaceDashboard || !activeBoard ? (
             <div style={{ padding: 16 }}>
-              <div style={{ fontSize: 17, fontWeight: 800, color: '#25272c', margin: '4px 4px 16px' }}>
-                📊 工作台 <span style={{ fontSize: 12, fontWeight: 400, color: '#7a7f8c' }}>· 跨 {allBoards.length} 个 Board 的全局总览</span>
+              <div style={{ fontSize: 17, fontWeight: 800, color: '#25272c', margin: '4px 4px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="workspace" size={18} color="#4f6ef7" />
+                工作台 <span style={{ fontSize: 12, fontWeight: 400, color: '#7a7f8c' }}>· 跨 {allBoards.length} 个 Board 的全局总览</span>
               </div>
               <DashboardPage boardIds={allBoards.map((b) => b.id)} onOpenItem={(id) => setDetailId(id)} />
             </div>

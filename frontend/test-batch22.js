@@ -127,7 +127,7 @@ const browser = await puppeteer.launch({
 
   // V1：回到表格视图 → 打开视图面板 → 一键套用预设视图集
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('▤ 表格'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('表格'));
     if (b) b.click();
   });
   await sleep(900);

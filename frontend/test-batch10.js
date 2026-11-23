@@ -119,7 +119,7 @@ const browser = await puppeteer.launch({
 
   // ---- W4 看板按状态模式 ----
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('▦ 看板'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('看板'));
     if (b) b.click();
   });
   await sleep(800);
@@ -187,7 +187,7 @@ const browser = await puppeteer.launch({
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(1500);
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('📈 甘特'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('甘特'));
     if (b) b.click();
   });
   await sleep(800);

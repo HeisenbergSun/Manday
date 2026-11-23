@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { Icon } from './Icons';
 
 interface BoardItem { id: string; name: string; my_role: string; department_name?: string; visibility: string; position?: number; }
 interface Folder { id: string; name: string; position: number; boardIds: string[]; dashboardIds?: string[]; }
@@ -248,7 +249,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
         color: activeDashboardId === d.id ? '#4f6ef7' : '#25272c', fontWeight: activeDashboardId === d.id ? 600 : 400,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         display: 'flex', alignItems: 'center', gap: 8, paddingLeft: indent ? 24 : 10 }}>
-      <span>{d.is_team ? '👥' : '📈'}</span>
+      <Icon name={d.is_team ? 'team' : 'dashboard'} size={15} />
       {!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>}
       {!collapsed && d.is_team && <span style={{ fontSize: 10, color: '#a0a4b1' }}>团队</span>}
       {!collapsed && (
@@ -278,9 +279,9 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
       {/* 工作台入口 */}
       <div data-workspace-dashboard onClick={() => onOpenDashboard?.()}
         style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-          background: dashboardActive ? '#eef1fe' : 'transparent', color: dashboardActive ? '#4f6ef7' : '#25272c',
+          background: dashboardActive ? '#e5eaff' : 'transparent', color: dashboardActive ? '#4f6ef7' : '#25272c',
           fontWeight: dashboardActive ? 600 : 500, display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
-        <span>📊</span>{!collapsed && <span>工作台</span>}
+        <Icon name="workspace" size={15} />{!collapsed && <span>工作台</span>}
       </div>
 
       <div data-board-list style={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -334,11 +335,11 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
           style={{ position: 'fixed', left: plusMenu.x, top: plusMenu.y, zIndex: 200, background: '#fff',
             borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,.18)', padding: 6, minWidth: 180, fontSize: 13, border: '1px solid #eef0f5' }}>
           <div onClick={() => { setPlusMenu(null); onNewBoard?.(); }}
-            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>▤ 新建 Board</div>
+            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}><Icon name="board" size={15} /> 新建 Board</div>
           <div data-plus-dashboard onClick={() => { setPlusMenu(null); onNewDashboard?.(); }}
-            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>📊 新建 Dashboard</div>
+            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}><Icon name="dashboard" size={15} /> 新建 Dashboard</div>
           <div onClick={() => { setPlusMenu(null); newFolder(); }}
-            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>🗂 新建分组</div>
+            style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}><Icon name="folderPlus" size={15} /> 新建分组</div>
         </div>
       )}
 
