@@ -190,12 +190,12 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     if (busy) return;
     setBusy(true);
     const presets = [
-      { name: '⚡ 表格', viewType: 'table', config: {} },
-      { name: '⚡ 看板', viewType: 'kanban', config: {} },
-      { name: '⚡ 日历', viewType: 'calendar', config: {} },
-      { name: '⚡ 甘特', viewType: 'gantt', config: {} },
-      { name: '⚡ Workload', viewType: 'workload', config: {} },
-      { name: '⚡ 分析', viewType: 'insights', config: {} },
+      { name: '表格', viewType: 'table', config: {} },
+      { name: '看板', viewType: 'kanban', config: {} },
+      { name: '日历', viewType: 'calendar', config: {} },
+      { name: '甘特', viewType: 'gantt', config: {} },
+      { name: 'Workload', viewType: 'workload', config: {} },
+      { name: '分析', viewType: 'insights', config: {} },
     ];
     try {
       for (const p of presets) {
@@ -848,9 +848,10 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           </button>
         )}
         <button data-auto-trigger="1" onClick={() => setAutoOpen(!autoOpen)}
-          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: autoOpen ? '#eef1fe' : '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
-          ⚡ 自动化
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: autoOpen ? '#e5eaff' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="bolt" size={14} strokeWidth={2} />
+          自动化
         </button>
         {autoOpen && <div data-auto-panel="1"><AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} /></div>}
         <button data-export-xlsx onClick={exportXLSX}
@@ -917,9 +918,6 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             </div>
           </div>
         )}
-        <span style={{ fontSize: 12, color: '#7a7f8c', marginLeft: 'auto' }}>
-          {gridRows.length} 条目 · 单击编辑 · 拖 ⠿ 排序 · ↑↓/Enter/Space 快捷键 · 勾选 3 行以上出批量工具条
-        </span>
       </div>
       {/* toast 统一走右下角全局 ToastHost（第二十批） */}      {/* #57 导入预览确认弹窗 */}
       {importPreview && (

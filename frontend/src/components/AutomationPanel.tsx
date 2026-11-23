@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useItems } from '../store';
+import { Icon } from './Icons';
 
 /** 句子模板：每个空位是一个下拉（值映射为 trigger/action JSON） */
 type SentenceSpec = {
@@ -142,7 +143,7 @@ export function AutomationPanel({ boardId, onClose, flash }: { boardId: string; 
     <div data-automation-panel="1" style={{ position: 'absolute', top: 52, left: 12, zIndex: 60, background: '#fff', borderRadius: 12,
       boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 560, maxHeight: '72vh', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-        <b style={{ fontSize: 14 }}>⚡ 自动化</b>
+        <b style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="bolt" size={15} strokeWidth={2} color="#4f6ef7" />自动化</b>
         <button onClick={onClose} style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
       </div>
       <SentenceRule boardId={boardId} onDone={load} flash={flash} />
