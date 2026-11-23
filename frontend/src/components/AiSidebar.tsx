@@ -4,6 +4,7 @@
  */
 import { useState, useRef } from 'react';
 import { aiChatStream, api } from '../api';
+import { Icon } from './Icons';
 
 interface Msg { role: 'user' | 'ai'; content: string; confirm?: { toolCallId: string; tool: string; summary: string; payload: unknown }; applied?: boolean; }
 
@@ -80,7 +81,7 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
       flexDirection: 'column', flexShrink: 0,
     }}>
       <header style={{ padding: '12px 16px', borderBottom: '1px solid #e6e8ef', display: 'flex', gap: 10, alignItems: 'center' }}>
-        <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#4f6ef7,#9d3dd7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✦</div>
+        <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#4f6ef7,#9d3dd7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="sparkle" size={16} color="#fff" strokeWidth={2.2} /></div>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>AI 助手 · WorkBuddy</div>
           <div style={{ fontSize: 11, color: '#7a7f8c' }}>已连接 Scania WorkBuddy 企业版</div>

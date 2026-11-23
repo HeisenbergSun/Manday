@@ -66,7 +66,7 @@ function MembersModal({ boardId, onClose, flash }: { boardId: string; onClose: (
     <div data-members-panel="1" style={{ position: 'absolute', top: 52, left: 12, zIndex: 60, background: '#fff', borderRadius: 12,
       boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 380 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-        <b style={{ fontSize: 14 }}>👥 成员与权限</b>
+        <b style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="users" size={15} color="#4f6ef7" />成员与权限</b>
         <button onClick={onClose} style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
       </div>
       {members.map((m) => (
@@ -688,7 +688,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
             cursor: 'pointer', fontSize: 13, color: '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="search" size={15} />
-          快速搜索
+          搜索
         </button>
         <button onClick={() => setPeopleFilterOpen((v) => !v)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: peopleFilter ? '#e5eaff' : '#fff',
@@ -709,12 +709,6 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             ))}
           </div>
         )}
-        <button onClick={() => window.dispatchEvent(new Event('manday:toggle-filter'))}
-          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="filter" size={15} />
-          筛选
-        </button>
         <button data-mgr-trigger="1" onClick={() => setMgrOpen(!mgrOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#e5eaff' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -726,7 +720,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             boxShadow: '0 8px 30px rgba(20,30,70,.15)', padding: 16, width: 440, maxHeight: '70vh', overflow: 'auto' }}>
             {!isOwner && (
               <div style={{ marginBottom: 10, padding: '8px 12px', background: '#fff8e6', borderRadius: 8, fontSize: 12, color: '#b8860b' }}>
-                🔒 仅看板负责人可修改结构（列/分组）；你可以编辑条目内容
+                仅看板负责人可修改结构（列/分组）；你可以编辑条目内容
               </div>
             )}
             {isOwner && (<>
@@ -773,7 +767,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
               return (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
                 <span style={{ color: '#7a7f8c', fontSize: 11, width: 44 }}>{typeLabel(c.type)}</span>
-                <span style={{ flex: 1 }}>{c.name}{ep === 'owner' ? ' ✏️🔒' : ''}{vp === 'owner' ? ' 👁🔒' : ''}</span>
+                <span style={{ flex: 1 }}>{c.name}{ep === 'owner' ? ' ' : ''}{vp === 'owner' ? ' ' : ''}</span>
                 {c.type === 'status' && (
                   <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 200 }} data-label-chips={c.id}>
                     {(c.settings?.labels ?? []).map((l: any) => {
@@ -881,7 +875,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           <button onClick={removeSamples} data-remove-samples="1"
             style={{ padding: '6px 14px', borderRadius: 8, border: '1px dashed #b8860b', background: '#fff8e6',
               cursor: 'pointer', fontSize: 13, color: '#b8860b' }}>
-            🧹 删除 {sampleIds.length} 条示例
+            删除 {sampleIds.length} 条示例
           </button>
         )}
         <button data-auto-trigger="1" onClick={() => setAutoOpen(!autoOpen)}
@@ -912,7 +906,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
         <button data-views-trigger="1" onClick={() => setViewsOpen(!viewsOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
-          ⧉ 视图{activeViewId ? `：${views.find((v) => v.id === activeViewId)?.name ?? ''}${views.find((v) => v.id === activeViewId)?.locked ? ' 🔒' : ''}` : ''}
+          ⧉ 视图{activeViewId ? `：${views.find((v) => v.id === activeViewId)?.name ?? ''}${views.find((v) => v.id === activeViewId)?.locked ? ' ' : ''}` : ''}
         </button>
         {viewsOpen && (
           <div data-views-panel="1" style={{ position: 'absolute', top: 52, left: 12, zIndex: 50, background: '#fff', borderRadius: 12,
@@ -924,12 +918,12 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                 borderBottom: '1px solid #f0f1f5', fontSize: 13 }}>
                 <span onClick={() => applyView(v)} title="点击应用视图"
                   style={{ flex: 1, cursor: 'pointer', color: activeViewId === v.id ? '#4f6ef7' : '#1f2330', fontWeight: activeViewId === v.id ? 600 : 400 }}>
-                  {v.name}{v.locked ? ' 🔒' : ''}
+                  {v.name}{v.locked ? ' ' : ''}
                   {sortBy && v.id === activeViewId ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
                 </span>
                 {isOwner && (
                   <button onClick={() => setViewLock(v, !v.locked)} title={v.locked ? '解锁' : '锁定（仅负责人可改配置）'}
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13 }}>{v.locked ? '🔓' : '🔒'}</button>
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13 }}>{v.locked ? '' : ''}</button>
                 )}
                 <button onClick={() => setDefaultView(v)} title="设为我的默认视图"
                   style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#b8860b' }}>★</button>
@@ -951,7 +945,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             </div>
             <div style={{ marginTop: 10, fontSize: 12, color: '#7a7f8c', lineHeight: 1.7 }}>
               当前排序：{sortBy ? `${sortBy === 'name' ? '条目' : columns.find((c: any) => c.id === sortBy)?.name ?? sortBy} ${sortDir === 'desc' ? '降序' : '升序'}` : '未排序'}<br />
-              🔒 锁定后仅负责人可改配置 · ★ 设为我的默认视图（只影响自己）
+              锁定后仅负责人可改配置 · ★ 设为我的默认视图（只影响自己）
             </div>
           </div>
         )}
@@ -962,7 +956,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, width: 620, maxHeight: '80vh', overflow: 'auto',
             boxShadow: '0 12px 40px rgba(0,0,0,.25)' }}>
-            <b style={{ fontSize: 15 }}>📥 导入预览 — {importPreview.fileName}</b>
+            <b style={{ fontSize: 15 }}>导入预览 — {importPreview.fileName}</b>
             <div style={{ fontSize: 12, color: '#7a7f8c', margin: '6px 0 10px' }}>
               共 {importPreview.sheet.rows.length} 行数据 · 确认后写入当前看板
             </div>
@@ -1017,7 +1011,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           )}
           <button data-batch-delete onClick={() => { deleteSelected(); }}
             style={{ border: 'none', background: 'transparent', color: '#ff9aa9', cursor: 'pointer', fontSize: 13 }}>
-            🗑 移入回收站</button>
+            移入回收站</button>
           <button data-batch-edit onClick={() => setBatchEditOpen(true)}
             style={{ border: 'none', background: 'transparent', color: '#9db8ff', cursor: 'pointer', fontSize: 13 }}>
             ✎ 批量编辑</button>
@@ -1045,10 +1039,10 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           {gridRows.length === 0 && (
             <div data-empty-hint style={{ margin: 24, padding: '32px 20px', textAlign: 'center', background: '#f7f8fb',
               borderRadius: 12, border: '1px dashed #d5d9e3' }}>
-              <div style={{ fontSize: 26, marginBottom: 8 }}>🪄</div>
+              <div style={{ fontSize: 26, marginBottom: 8 }}></div>
               <b style={{ fontSize: 14 }}>这个 Board 还没有条目</b>
               <div style={{ color: '#7a7f8c', fontSize: 12, marginTop: 6 }}>
-                点左上角「＋ 新建条目」开始，或用「⚙ 列与分组」先建状态/人员/日期列
+                点左上角「＋ 新建条目」开始，或用「列与分组」先建状态/人员/日期列
               </div>
               {isOwner && columns.length === 0 && (
                 <button data-quick-columns onClick={addCommonColumns}

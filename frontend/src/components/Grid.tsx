@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UI, TAG, doneLabelsOf, soften, GROUP_PALETTE } from '../theme';
 import { api } from '../api';
+import { Icon } from './Icons';
 
 export type GridRow = { id: string; name: string; version: number; position: number; values: Record<string, unknown>; group_id?: string; subtasks?: { total: number; done: number } };
 export type GridColumn = { id: string; name: string; type: string; settings: any; restricted?: boolean };
@@ -902,8 +903,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       {/* ── 筛选栏 ── */}
       <div data-filter-bar style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderBottom: '1px solid #eef0f5', flexWrap: 'wrap', background: '#fafbfe' }}>
         <button data-filter-toggle onClick={() => setFilterBarOpen((v) => !v)}
-          style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #e6e8ef', background: filterBarOpen ? '#eef1fe' : '#fff', cursor: 'pointer', fontSize: 12, color: '#4f6ef7' }}>
-          {'\u{1F50D}'} 筛选{filters.length ? ` (${filters.length})` : ''}
+          style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #e6e8ef', background: filterBarOpen ? '#eef1fe' : '#fff', cursor: 'pointer', fontSize: 12, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Icon name="filter" size={13} />
+          筛选{filters.length ? ` (${filters.length})` : ''}
         </button>
         {filterBarOpen && (
           <>

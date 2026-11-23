@@ -42,7 +42,7 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
   const thenOptions = [
     { v: 'notify', label: '通知相关负责人' },
     { v: 'move_group', label: '移动到分组' },
-    { v: 'update_field', label: '把优先级改为「⚠ 逾期」' },
+    { v: 'update_field', label: '把优先级改为「逾期」' },
   ];
 
   const create = async () => {
@@ -58,7 +58,7 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
       const g = groups.find((x: any) => x.name === group);
       if (!g) { flash('请选择目标分组'); return; }
       action = { type: 'move_group', groupId: g.id }; name += `移动到「${group}」`;
-    } else { action = { type: 'update_field', columnId: 'prio', value: '⚠ 逾期' }; name += '优先级标逾期'; }
+    } else { action = { type: 'update_field', columnId: 'prio', value: '逾期' }; name += '优先级标逾期'; }
     setBusy(true);
     try {
       await api.autoCreate(boardId, { trigger, action, name, source: 'ui-sentence' });
@@ -104,7 +104,7 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
         </button>
       </div>
       {when === 'status_changed' && !statusLabels.length && (
-        <div style={{ fontSize: 12, color: '#b8860b', marginTop: 6 }}>⚠ 这个 Board 没有状态列——句子里的「状态」先用通用标签，请先去表格视图加状态列</div>
+        <div style={{ fontSize: 12, color: '#b8860b', marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}><Icon name="warning" size={14} /> 这个 Board 没有状态列——句子里的「状态」先用通用标签，请先去表格视图加状态列</div>
       )}
     </div>
   );

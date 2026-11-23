@@ -40,7 +40,7 @@ function TrashView({ boardId }: { boardId: string }) {
 
   return (
     <div style={{ padding: 20 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>🗑 回收站（{rows.length}）</div>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="trash" size={16} /> 回收站（{rows.length}）</div>
       {msg && <div style={{ background: '#eef1fe', color: '#4f6ef7', borderRadius: 8, padding: '7px 12px',
         fontSize: 12, marginBottom: 10 }}>{msg}</div>}
       {rows.map((r) => (
