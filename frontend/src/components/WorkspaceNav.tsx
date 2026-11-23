@@ -220,7 +220,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const t = parseDrag(e.dataTransfer.getData('text/plain')); if (inFolder) { if (t.type === 'board') reorderBoard(t.id, b.id); else if (t.type === 'dash') moveDashToFolder(t.id, folderOf(b.id) ?? null); } else reorderMixed(t.type, t.id, b.id); }}
       style={{
         padding: '8px 10px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-        background: activeId === b.id ? '#eef1fe' : 'transparent',
+        background: activeId === b.id ? '#e5eaff' : 'transparent',
         color: activeId === b.id ? '#4f6ef7' : '#25272c', fontWeight: activeId === b.id ? 600 : 400,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         display: 'flex', alignItems: 'center', gap: 8, paddingLeft: indent ? 24 : 10,

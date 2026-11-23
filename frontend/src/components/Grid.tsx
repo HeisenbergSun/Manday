@@ -940,7 +940,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
-          <tr style={{ position: 'sticky', top: 0, background: '#f6f7fb', zIndex: 2 }}>
+          <tr style={{ position: 'sticky', top: 0, background: '#eef1f6', zIndex: 2, boxShadow: '0 1px 0 #e6e8ef' }}>
             <th style={{ ...thStyle, width: 36 }}>
               <input type="checkbox" checked={allChecked} onChange={toggleAll} data-grid-check-all />
             </th>
@@ -1218,8 +1218,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 return (
                 <td key={c.id} data-col={c.id} data-grid-cell={row.id}
                   style={isDropdownEdit
-                    ? { ...tdStyle, width: colWidth(c.id), position: 'relative', overflow: 'visible' }
-                    : { ...tdStyle, width: colWidth(c.id) }}
+                    ? { ...tdStyle, width: colWidth(c.id), position: 'relative', overflow: 'visible', textAlign: (c.type === 'number' || c.type === 'formula') ? 'right' : undefined }
+                    : { ...tdStyle, width: colWidth(c.id), textAlign: (c.type === 'number' || c.type === 'formula') ? 'right' : undefined }}
                   onClick={() => !c.restricted && !editing && startEdit(row.id, c.id,
                     c.type === 'checkbox' ? String(row.values[c.id] === true)
                     : c.type === 'tags' ? JSON.stringify(row.values[c.id] ?? [])
@@ -1312,11 +1312,11 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
 }
 
 const thStyle: React.CSSProperties = {
-  padding: '8px 10px', fontSize: 12, color: '#7a7f8c', fontWeight: 600,
+  padding: '9px 10px', fontSize: 12, color: '#5a6072', fontWeight: 600,
   borderBottom: '1px solid #e6e8ef', whiteSpace: 'nowrap', position: 'relative',
 };
 const tdStyle: React.CSSProperties = {
-  padding: '6px 10px', borderBottom: '1px solid #eef0f5', whiteSpace: 'nowrap',
+  padding: '8px 10px', borderBottom: '1px solid #eef0f5', whiteSpace: 'nowrap',
   overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220,
 };
 const editorStyle: React.CSSProperties = {

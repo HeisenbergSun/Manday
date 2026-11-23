@@ -74,12 +74,15 @@ function Login({ onLogin }: { onLogin: (u: { id: string; name: string; email: st
 
   return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f6f7fb' }}>
-      <div style={{ width: 360, background: '#fff', borderRadius: 14, padding: 32, boxShadow: '0 6px 24px rgba(0,0,0,.08)' }}>
-        <div style={{ fontWeight: 800, fontSize: 22, color: '#4f6ef7', marginBottom: 4 }}>Manday</div>
-        <div style={{ color: '#7a7f8c', fontSize: 13, marginBottom: 24 }}>轻量版工作管理平台</div>
+      <div style={{ width: 360, background: '#fff', borderRadius: 16, padding: 36, boxShadow: '0 12px 40px rgba(20,30,70,.12)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#4f6ef7,#7b5cf0)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 18, boxShadow: '0 3px 10px rgba(79,110,247,.35)' }}>M</div>
+          <div style={{ fontWeight: 800, fontSize: 22, color: '#25272c', letterSpacing: .3 }}>Manday</div>
+        </div>
+        <div style={{ color: '#7a7f8c', fontSize: 13, marginBottom: 26 }}>轻量版工作管理平台</div>
         <button onClick={devLogin} disabled={busy}
-          style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: '#4f6ef7', color: '#fff',
-            fontSize: 15, fontWeight: 600, cursor: busy ? 'wait' : 'pointer' }}>
+          style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#4f6ef7,#5b7cf6)', color: '#fff',
+            fontSize: 15, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', boxShadow: '0 4px 12px rgba(79,110,247,.3)' }}>
           {busy ? '登录中…' : '一键登录（开发账号）'}
         </button>
         {err && <div style={{ marginTop: 12, color: '#e5484d', fontSize: 12, wordBreak: 'break-all' }}>{err}</div>}
@@ -187,11 +190,14 @@ export function App() {
           header [data-desktop-hint] { display: none !important; }
         }
       `}</style>
-      <header style={{ height: 52, background: '#fff', borderBottom: '1px solid #e6e8ef', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16 }}>
+      <header style={{ height: 52, background: '#fff', borderBottom: '1px solid #e6e8ef', boxShadow: '0 1px 3px rgba(20,30,70,.04)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16 }}>
         <button data-mobile-burger onClick={() => setMobileNavOpen((v) => !v)}
           style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
             cursor: 'pointer', fontSize: 15, alignItems: 'center' }}>☰</button>
-        <div style={{ fontWeight: 800, fontSize: 17, color: '#4f6ef7' }}>Manday</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#4f6ef7,#7b5cf0)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 14, boxShadow: '0 2px 8px rgba(79,110,247,.35)' }}>M</div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: '#25272c', letterSpacing: .3 }}>Manday</div>
+        </div>
         <nav style={{ display: 'flex', gap: 4 }}>
           {activeDashboardId ? (
             <button onClick={() => setActiveDashboardId(null)}

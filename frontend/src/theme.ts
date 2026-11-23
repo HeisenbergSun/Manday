@@ -16,6 +16,16 @@ export const UI = {
   bg: '#fff',
 } as const;
 
+/** 阴影 token（与 global.css 的 --shadow-* 对应，供内联样式复用） */
+export const SHADOW = {
+  sm: '0 1px 3px rgba(20,30,70,.08), 0 1px 2px rgba(20,30,70,.04)',
+  md: '0 4px 16px rgba(20,30,70,.10)',
+  lg: '0 12px 32px rgba(20,30,70,.16)',
+} as const;
+
+/** 圆角 token */
+export const RADIUS = { sm: 6, md: 8, lg: 12 } as const;
+
 export const TAG = {
   done: '#00c875',
   working: '#579bfc',

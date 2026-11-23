@@ -204,7 +204,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
   };
 
   return (
-    <div data-widget={widget.type} style={{ height: '100%', boxSizing: 'border-box', background: '#fff', borderRadius: 12, border: '1px solid #e6e8ef', padding: 14, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 0, overflow: 'hidden' }}>
+    <div data-widget={widget.type} style={{ height: '100%', boxSizing: 'border-box', background: '#fff', borderRadius: 12, border: '1px solid #e6e8ef', boxShadow: '0 1px 3px rgba(20,30,70,.06), 0 1px 2px rgba(20,30,70,.04)', padding: 14, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <b style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</b>
         <span style={{ fontSize: 11, color: '#a0a4b1', whiteSpace: 'nowrap' }}>{boardIds.length ? `${boardIds.length} 板` : ''}</span>
