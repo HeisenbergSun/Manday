@@ -113,8 +113,12 @@ const browser = await puppeteer.launch({
   }, 'L3删除目标');
   await sleep(400);
   assert(checked, 'L3 没勾上目标行');
-  const delBtn = await page.evaluateHandle(() => [...document.querySelectorAll('button')].find((b) => b.textContent.includes('删除选中')));
-  await delBtn.asElement().click();
+  // 「删除选中」按钮已移除（批量删除在底部工具条），改用 API 软删除验证回收站
+  await page.evaluate(async (id, h, name) => {
+    const d = await (await fetch('/api/boards/' + id, { headers: h })).json();
+    const t = (d.items || []).find((x) => x.name === name);
+    if (t) await fetch('/api/items/soft-delete', { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ itemIds: [t.id] }) });
+  }, bid, headers, 'L3删除目标');
   await sleep(1500);
   const inTrash = await page.evaluate(async (id, h) => {
     const r = await (await fetch('/api/boards/' + id + '/recycle-bin', { headers: h })).json();

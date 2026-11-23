@@ -7,26 +7,27 @@
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api';
+import { Icon } from './Icons';
 
 const COLORS = ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d3dd7', '#00d1d1', '#ff8a65', '#a25ddc'];
 const WIDGET_TYPES: { type: string; label: string; icon: string; desc: string }[] = [
-  { type: 'number', label: '数字卡', icon: '🔢', desc: '多 Board 多指标聚合' },
-  { type: 'bar', label: '柱状图', icon: '📊', desc: '跨 Board 分组统计' },
-  { type: 'pie', label: '饼图', icon: '🥧', desc: '分组占比' },
-  { type: 'line', label: '折线图', icon: '📈', desc: '按日期趋势' },
-  { type: 'area', label: '面积图', icon: '🏔️', desc: '按日期趋势（填充）' },
-  { type: 'combo', label: '双轴图', icon: '📶', desc: '柱 + 线双指标' },
-  { type: 'gantt', label: '甘特图', icon: '📅', desc: '条目时间条' },
-  { type: 'battery', label: '进度条', icon: '🔋', desc: '完成百分比' },
-  { type: 'table', label: '表格', icon: '📋', desc: '条目列表' },
-  { type: 'rank', label: '成员排行', icon: '👥', desc: '未完成负载' },
-  { type: 'activity', label: '动态流', icon: '🕒', desc: '近期操作' },
+  { type: 'number', label: '数字卡', icon: 'number', desc: '多 Board 多指标聚合' },
+  { type: 'bar', label: '柱状图', icon: 'chart', desc: '跨 Board 分组统计' },
+  { type: 'pie', label: '饼图', icon: 'pie', desc: '分组占比' },
+  { type: 'line', label: '折线图', icon: 'line', desc: '按日期趋势' },
+  { type: 'area', label: '面积图', icon: 'line', desc: '按日期趋势（填充）' },
+  { type: 'combo', label: '双轴图', icon: 'chart', desc: '柱 + 线双指标' },
+  { type: 'gantt', label: '甘特图', icon: 'gantt', desc: '条目时间条' },
+  { type: 'battery', label: '进度条', icon: 'progress', desc: '完成百分比' },
+  { type: 'table', label: '表格', icon: 'table', desc: '条目列表' },
+  { type: 'rank', label: '成员排行', icon: 'users', desc: '未完成负载' },
+  { type: 'activity', label: '动态流', icon: 'activity', desc: '近期操作' },
 ];
 
 /** 仪表盘模板：一键生成一组 widget（列名按模板约定，创建时绑定用户选定的 board） */
 const TEMPLATES: { name: string; icon: string; desc: string; widgets: { type: string; title: string; config: any }[] }[] = [
   {
-    name: '项目总览', icon: '📋', desc: '进度 + 状态分布 + 预算 + 甘特 + 表格',
+    name: '项目总览', icon: 'dashboard', desc: '进度 + 状态分布 + 预算 + 甘特 + 表格',
     widgets: [
       { type: 'battery', title: '完成进度', config: {} },
       { type: 'bar', title: '状态分布', config: { groupBy: '状态', metric: 'count' } },
@@ -36,7 +37,7 @@ const TEMPLATES: { name: string; icon: string; desc: string; widgets: { type: st
     ],
   },
   {
-    name: '团队负载', icon: '👥', desc: '成员排行 + 动态 + 逾期',
+    name: '团队负载', icon: 'users', desc: '成员排行 + 动态 + 逾期',
     widgets: [
       { type: 'rank', title: '成员负载排行', config: {} },
       { type: 'activity', title: '近期动态', config: {} },
@@ -44,7 +45,7 @@ const TEMPLATES: { name: string; icon: string; desc: string; widgets: { type: st
     ],
   },
   {
-    name: '销售漏斗', icon: '🥧', desc: '按阶段占比 + 金额汇总 + 趋势',
+    name: '销售漏斗', icon: 'pie', desc: '按阶段占比 + 金额汇总 + 趋势',
     widgets: [
       { type: 'pie', title: '阶段占比', config: { groupBy: '阶段' } },
       { type: 'number', title: '金额', config: { column: '金额', aggs: ['sum', 'avg'] } },
@@ -403,7 +404,7 @@ function TemplateModal({ boards, onClose, onCreate }: {
         {TEMPLATES.map((t) => (
           <div key={t.name} data-template={t.name} onClick={() => { if (boardId) onCreate(t, boardId); }}
             style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, border: '1px solid #e6e8ef', borderRadius: 10, cursor: boardId ? 'pointer' : 'not-allowed', marginBottom: 10, opacity: boardId ? 1 : 0.55 }}>
-            <span style={{ fontSize: 24 }}>{t.icon}</span>
+            <Icon name={t.icon} size={22} color="#4f6ef7" />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{t.name}</div>
               <div style={{ fontSize: 12, color: '#7a7f8c' }}>{t.desc}</div>
@@ -497,7 +498,7 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
           {WIDGET_TYPES.map((t) => (
             <div key={t.type} data-widget-type={t.type} onClick={() => setType(t.type)}
               style={{ padding: 10, border: type === t.type ? '2px solid #4f6ef7' : '1px solid #e6e8ef', borderRadius: 10, cursor: 'pointer', textAlign: 'center', background: type === t.type ? '#eef1fe' : '#fafbfd' }}>
-              <div style={{ fontSize: 20 }}>{t.icon}</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 2 }}><Icon name={t.icon} size={20} color={type === t.type ? '#4f6ef7' : '#5a6072'} /></div>
               <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4 }}>{t.label}</div>
             </div>
           ))}

@@ -206,6 +206,13 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     else setInternalFilters(next);
   };
 
+  // 工具条「筛选」按钮 → 展开/收起筛选栏（事件通信，避免提升状态）
+  useEffect(() => {
+    const onToggle = () => setFilterBarOpen((v) => !v);
+    window.addEventListener('manday:toggle-filter', onToggle);
+    return () => window.removeEventListener('manday:toggle-filter', onToggle);
+  }, []);
+
   // ── 列状态（隐藏/冻结/宽度/顺序） ──
   const [columnStates, setColumnStates] = useState<Record<string, ColumnState>>({});
   const [columnOrder, setColumnOrder] = useState<string[] | null>(null);

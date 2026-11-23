@@ -29,6 +29,12 @@ const PATHS: Record<string, React.ReactNode> = {
   pencil: (<><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></>),
   copy: (<><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>),
   bolt: (<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />),
+  filter: (<path d="M22 3H2l8 9.46V19l4 2v-8.54z" />),
+  pie: (<><path d="M21.21 15.89A10 10 0 1 1 8 2.83" /><path d="M22 12A10 10 0 0 0 12 2v10z" /></>),
+  line: (<><path d="M3 3v18h18" /><polyline points="19 9 14 14 10 10 5 15" /></>),
+  activity: (<><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>),
+  progress: (<><rect x="2" y="8" width="20" height="8" rx="2" /><rect x="2" y="8" width="12" height="8" rx="2" /></>),
+  number: (<><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></>),
 };
 
 export function Icon({ name, size = 16, color = 'currentColor', strokeWidth = 1.8, style }: {

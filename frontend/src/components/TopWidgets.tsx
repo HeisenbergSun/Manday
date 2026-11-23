@@ -3,6 +3,7 @@
  */
 import { useEffect, useState, useRef } from 'react';
 import { api } from '../api';
+import { Icon } from './Icons';
 
 export function NotificationBell() {
   const [count, setCount] = useState(0);
@@ -25,8 +26,8 @@ export function NotificationBell() {
   return (
     <div style={{ position: 'relative' }}>
       <button onClick={() => setOpen(!open)} style={{
-        position: 'relative', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17 }}>
-        🔔
+        position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'inline-flex', alignItems: 'center' }}>
+        <Icon name="bell" size={19} color="#5a6072" />
         {count > 0 && <span style={{
           position: 'absolute', top: -4, right: -8, background: '#e2445c', color: '#fff',
           fontSize: 10, borderRadius: 10, padding: '1px 5px' }}>{count > 99 ? '99+' : count}</span>}
@@ -39,9 +40,9 @@ export function NotificationBell() {
           {items.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#7a7f8c', fontSize: 13 }}>没有未读</div>}
           {/* 统一落点三分区（P0-9）：提及我的 / 分配与到期 / 看板动态 */}
           {([
-            ['mention', '💬 提及我的', ['mention']],
-            ['assign', '📌 分配与到期', ['assign', 'due']],
-            ['board', '📋 看板动态', ['automation', 'daily_digest']],
+            ['mention', '提及我的', ['mention']],
+            ['assign', '分配与到期', ['assign', 'due']],
+            ['board', '看板动态', ['automation', 'daily_digest']],
           ] as [string, string, string[]][]).map(([key, title, types]) => {
             const list = items.filter((n) => types.includes(n.type));
             if (!list.length) return null;
@@ -75,8 +76,13 @@ export function CommandPalette() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setOpen(!open); }
       if (e.key === 'Escape') setOpen(false);
     };
+    const onOpenSearch = () => setOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('manday:open-search', onOpenSearch);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('manday:open-search', onOpenSearch);
+    };
   }, [open]);
 
   useEffect(() => {

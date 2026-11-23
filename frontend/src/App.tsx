@@ -219,8 +219,6 @@ export function App() {
           )}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span data-desktop-hint style={{ color: '#7a7f8c', fontSize: 12 }}>⌘K 搜索</span>
-          <span style={{ color: '#7a7f8c', fontSize: 12 }}>{user.name || user.email || '已登录'}</span>
           <button onClick={() => { clearToken(); localStorage.removeItem('userId'); location.reload(); }}
             style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 12 }}>退出</button>
           <NotificationBell />

@@ -128,6 +128,11 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   const [mgrOpen, setMgrOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [autoOpen, setAutoOpen] = useState(false);
+  // 成员筛选（工具条「成员」按钮按人员筛选）
+  const [peopleFilter, setPeopleFilter] = useState<string>('');
+  const [peopleFilterOpen, setPeopleFilterOpen] = useState(false);
+  const [companyUsers, setCompanyUsers] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => { api.listUsers().then((u: any) => setCompanyUsers(Array.isArray(u) ? u : [])).catch(() => {}); }, []);
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState('text');
   const [newColFormula, setNewColFormula] = useState('');
@@ -273,6 +278,20 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     () => columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings ?? {}, restricted: !!c.restricted })),
     [columns],
   );
+
+  // 成员筛选：按选中的负责人过滤条目
+  const peopleCol = columns.find((c: any) => c.type === 'people');
+  const filteredRows = useMemo(() => {
+    if (!peopleFilter || !peopleCol) return gridRows;
+    return gridRows.filter((r) => {
+      const v = r.values?.[peopleCol.id];
+      if (v == null) return false;
+      try {
+        const arr = Array.isArray(v) ? v : JSON.parse(String(v));
+        return Array.isArray(arr) && arr.includes(peopleFilter);
+      } catch { return String(v).includes(peopleFilter); }
+    });
+  }, [gridRows, peopleFilter, peopleCol]);
 
   const flash = (msg: string, kind?: 'info' | 'success' | 'error') => {
     useToast.getState().toast(msg, kind ?? (msg.startsWith('已') ? 'success' : 'info'));
@@ -665,19 +684,37 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           <Icon name="plus" size={15} color="#fff" strokeWidth={2.2} />
           {creating ? '创建中…' : '新建条目'}
         </button>
-        <button onClick={deleteSelected}
+        <button onClick={() => window.dispatchEvent(new Event('manday:open-search'))}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#e2445c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="trash" size={15} />
-          删除选中
+            cursor: 'pointer', fontSize: 13, color: '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="search" size={15} />
+          快速搜索
         </button>
-        <button data-members-trigger="1" onClick={() => setMembersOpen(true)}
-          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <button onClick={() => setPeopleFilterOpen((v) => !v)}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: peopleFilter ? '#e5eaff' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: peopleFilter ? '#4f6ef7' : '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="users" size={15} />
-          成员
+          成员{peopleFilter ? `：${companyUsers.find((u) => u.id === peopleFilter)?.name ?? ''}` : ''}
         </button>
-        {membersOpen && <MembersModal boardId={boardId} onClose={() => setMembersOpen(false)} flash={flash} />}
+        {peopleFilterOpen && (
+          <div data-people-filter style={{ position: 'absolute', top: 48, left: 150, zIndex: 50, background: '#fff', borderRadius: 10,
+            boxShadow: '0 8px 28px rgba(20,30,70,.16)', padding: 6, minWidth: 150, fontSize: 13, border: '1px solid #eef0f5' }}>
+            <div onClick={() => { setPeopleFilter(''); setPeopleFilterOpen(false); }}
+              style={{ padding: '7px 10px', borderRadius: 7, cursor: 'pointer', color: peopleFilter ? '#33333f' : '#4f6ef7' }}>全部成员</div>
+            {companyUsers.map((u) => (
+              <div key={u.id} onClick={() => { setPeopleFilter(u.id); setPeopleFilterOpen(false); }}
+                style={{ padding: '7px 10px', borderRadius: 7, cursor: 'pointer', color: peopleFilter === u.id ? '#4f6ef7' : '#33333f' }}>
+                {u.name}
+              </div>
+            ))}
+          </div>
+        )}
+        <button onClick={() => window.dispatchEvent(new Event('manday:toggle-filter'))}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
+            cursor: 'pointer', fontSize: 13, color: '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="filter" size={15} />
+          筛选
+        </button>
         <button data-mgr-trigger="1" onClick={() => setMgrOpen(!mgrOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#e5eaff' : '#fff',
             cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -904,7 +941,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
             <button data-preset-views onClick={applyPresetViews} disabled={busy}
               style={{ marginTop: 8, width: '100%', padding: '8px 0', borderRadius: 8, border: '1px dashed #4f6ef7',
                 background: '#f5f7ff', color: '#4f6ef7', cursor: busy ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600 }}>
-              ✨ 一键套用预设视图集（表格/看板/日历/甘特/Workload/分析）
+              <Icon name="sparkle" size={14} color="#4f6ef7" /> 一键套用预设视图集（表格/看板/日历/甘特/Workload/分析）
             </button>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <input value={newViewName} onChange={(e) => setNewViewName(e.target.value)} placeholder="视图名"
@@ -1017,13 +1054,13 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                 <button data-quick-columns onClick={addCommonColumns}
                   style={{ marginTop: 14, padding: '8px 18px', borderRadius: 8, border: '1px dashed #4f6ef7',
                     background: '#f5f7ff', color: '#4f6ef7', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                  ✨ 一键添加常用列（负责人 / 状态 / 截止日期）
+                  <Icon name="sparkle" size={14} color="#4f6ef7" /> 一键添加常用列（负责人 / 状态 / 截止日期）
                 </button>
               )}
             </div>
           )}
           <BoardGrid
-            rows={gridRows}
+            rows={filteredRows}
             columns={gridColumns}
             groups={groups}
             editable={canEditContent}

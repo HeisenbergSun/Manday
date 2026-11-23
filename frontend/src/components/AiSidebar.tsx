@@ -27,7 +27,7 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
       reader = await aiChatStream(boardId, q);
     } catch (e) {
       setErr(`AI 请求失败：${(e as Error).message}`);
-      setMsgs((m) => [...m, { role: 'ai', content: `⚠️ ${(e as Error).message}` }]);
+      setMsgs((m) => [...m, { role: 'ai', content: `请求失败：${(e as Error).message}` }]);
       setBusy(false);
       return;
     }

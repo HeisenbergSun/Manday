@@ -62,7 +62,7 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
     setBusy(true);
     try {
       await api.autoCreate(boardId, { trigger, action, name, source: 'ui-sentence' });
-      flash('自动化已创建 ✅');
+      flash('自动化已创建');
       onDone();
     } catch (e) { flash(`创建失败：${(e as Error).message}`); }
     finally { setBusy(false); }

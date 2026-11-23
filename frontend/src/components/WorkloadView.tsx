@@ -97,7 +97,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
         <div key={s.name} style={{ marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 13, marginBottom: 4 }}>
             <b>{s.name}</b>
-            <span style={{ color: '#7a7f8c', fontSize: 12 }}>{s.total} 条 · ✅ {s.done} 完成{ s.overdue ? ` · 🔴 ${s.overdue} 逾期` : ''}</span>
+            <span style={{ color: '#7a7f8c', fontSize: 12 }}>{s.total} 条 · {s.done} 完成{ s.overdue ? ` · ${s.overdue} 逾期` : ''}</span>
           </div>
           <div style={{ height: 18, background: '#f0f1f5', borderRadius: 9, overflow: 'hidden', position: 'relative' }}>
             <div style={{ width: `${(s.total / max) * 100}%`, height: '100%', background: '#4f6ef7', borderRadius: 9,
