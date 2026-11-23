@@ -88,7 +88,7 @@ const browser = await puppeteer.launch({
   }, NAME);
   await sleep(1200);
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('⚡ 自动化'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('自动化'));
     if (b) b.click();
   });
   await sleep(600);
@@ -112,7 +112,7 @@ const browser = await puppeteer.launch({
   const ruleCount2 = await page.evaluate(() => document.querySelectorAll('[data-auto-rule]').length);
   assert(ruleCount2 === ruleCount + 1, `W3 句子创建成功（${ruleCount} → ${ruleCount2}）`);
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('⚡ 自动化'));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('自动化'));
     if (b) b.click(); // 关闭面板
   });
   await sleep(300);

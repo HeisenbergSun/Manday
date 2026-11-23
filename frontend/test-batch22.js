@@ -6,7 +6,7 @@
  * C4 月度截止柱状
  * C5 分组完成率
  * V1 一键套用预设视图集 → 6 个命名视图
- * V2 点击「⚡ 看板」命名视图 → 顶部切到看板
+ * V2 点击「看板」命名视图 → 顶部切到看板
  * V3 default_view=insights 生效
  * T1 模板建板预置 6 个预设视图
  */
@@ -154,7 +154,7 @@ const browser = await puppeteer.launch({
   assert(['gantt', 'insights', 'kanban', 'table', 'workload'].every((t) => types.includes(t)) && arr.length >= 5,
     `V1 预设视图集落库（${types.join(',')}）`);
 
-  // V2：点击「⚡ 看板」命名视图 → 顶部切到看板
+  // V2：点击「看板」命名视图 → 顶部切到看板
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(1200);
   const activeName = await page.evaluate(() => {
@@ -170,20 +170,16 @@ const browser = await puppeteer.launch({
   });
   await sleep(600);
   const found = await page.evaluate(() => {
-    const n = [...document.querySelectorAll('[data-view-item] span')].find((x) => x.textContent.includes('⚡ 看板'));
+    const n = [...document.querySelectorAll('[data-view-item] span')].find((x) => x.textContent.includes('看板'));
     if (!n) return false;
     n.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     return true;
   });
   console.log('V2 view item found:', found);
   await sleep(1200);
-  const kanbanActive = await page.evaluate(() => {
-    const btns = [...document.querySelectorAll('header button, nav button')];
-    const kb = btns.find((x) => x.textContent.includes('看板'));
-    return { active: !!kb && kb.style.background.includes('238, 241, 254'), bg: kb?.style.background, all: btns.slice(0, 8).map((b) => `${b.textContent.trim()}=${b.style.background}`).join(' | ') };
-  });
-  console.log('V2 kanban btn:', JSON.stringify(kanbanActive));
-  assert(kanbanActive.active && (await page.$('[data-kanban-mode]') || await page.$('[data-kanban-col]')), 'V2 命名视图跳转看板');
+  const kanbanActive = await page.evaluate(() => !!document.querySelector('[data-kanban-mode]') || !!document.querySelector('[data-kanban-col]'));
+  console.log('V2 kanban active:', kanbanActive);
+  assert(kanbanActive, 'V2 命名视图跳转看板');
 
   // V3：default_view = insights → reload 后自动进分析视图
   await req(auth, 'PUT', `/boards/${bid}/prefs`, { defaultView: 'insights' });

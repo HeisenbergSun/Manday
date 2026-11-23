@@ -16,17 +16,6 @@ import { NewBoardModal } from './components/NewBoardModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { Icon } from './components/Icons';
 
-/** 视图导航配置（SVG 图标 + 文案） */
-const VIEWS = [
-  { id: 'table', icon: 'table', label: '表格' },
-  { id: 'kanban', icon: 'kanban', label: '看板' },
-  { id: 'calendar', icon: 'calendar', label: '日历' },
-  { id: 'gantt', icon: 'gantt', label: '甘特' },
-  { id: 'workload', icon: 'users', label: 'Workload' },
-  { id: 'insights', icon: 'chart', label: '分析' },
-  { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
-  { id: 'trash', icon: 'trash', label: '回收站' },
-] as const;
 import { useItems, useUi } from './store';
 import { api, getToken, clearToken } from './api';
 import { joinBoard, leaveBoard } from './socket';
@@ -226,15 +215,7 @@ export function App() {
               工作台
             </button>
           ) : (
-            VIEWS.map((v) => (
-              <button key={v.id} onClick={() => setView(v.id)}
-                style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-                  background: view === v.id ? '#e5eaff' : 'transparent', color: view === v.id ? '#4f6ef7' : '#7a7f8c',
-                  fontWeight: view === v.id ? 600 : 400, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Icon name={v.icon} size={15} />
-                {v.label}
-              </button>
-            ))
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#25272c' }}>{activeBoard?.name}</span>
           )}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -268,24 +249,59 @@ export function App() {
             }}
             onNewBoard={() => setNewBoardOpen(true)} />
         </div>
-        <main style={{ flex: 1, overflow: 'auto' }}>
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {activeDashboardId ? (
             <DashboardEditor dashboardId={activeDashboardId} onBack={() => setActiveDashboardId(null)} onOpenItem={setDetailId} />
           ) : workspaceDashboard || !activeBoard ? (
-            <div style={{ padding: 16 }}>
+            <div style={{ padding: 16, overflow: 'auto' }}>
               <div style={{ fontSize: 17, fontWeight: 800, color: '#25272c', margin: '4px 4px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Icon name="workspace" size={18} color="#4f6ef7" />
                 工作台 <span style={{ fontSize: 12, fontWeight: 400, color: '#7a7f8c' }}>· 跨 {allBoards.length} 个 Board 的全局总览</span>
               </div>
               <DashboardPage boardIds={allBoards.map((b) => b.id)} onOpenItem={(id) => setDetailId(id)} />
             </div>
-          ) : view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} onSwitchView={setView as (v: string) => void } />
-            : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} boardId={activeBoard.id} />
-            : view === 'calendar' ? <CalendarView onOpenItem={setDetailId} />
-            : view === 'gantt' ? <GanttView onOpenItem={setDetailId} />
-            : view === 'workload' ? <WorkloadView onOpenItem={setDetailId} />
-            : view === 'insights' ? <InsightsView onOpenItem={setDetailId} />
-            : view === 'trash' ? <TrashView boardId={activeBoard.id} /> : <DashboardPage boardIds={[activeBoard.id]} onOpenItem={setDetailId} />}
+          ) : (
+            <>
+              {/* 视图切换栏（下移到 board 内容上方，所有视图可见） */}
+              <div style={{ display: 'flex', gap: 2, padding: '8px 16px 0', borderBottom: '1px solid #e6e8ef', background: '#fff', flexShrink: 0 }}>
+                {([
+                  ['table', 'table', '表格'],
+                  ['kanban', 'kanban', '看板'],
+                  ['calendar', 'calendar', '日历'],
+                  ['gantt', 'gantt', '甘特'],
+                  ['workload', 'users', 'Workload'],
+                  ['insights', 'chart', '分析'],
+                  ['dashboard', 'dashboard', 'Dashboard'],
+                ] as ['table' | 'kanban' | 'calendar' | 'gantt' | 'workload' | 'insights' | 'dashboard', string, string][]).map(([vid, icon, label]) => (
+                  <button key={vid} onClick={() => setView(vid)}
+                    style={{ padding: '8px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13,
+                      color: view === vid ? '#4f6ef7' : '#7a7f8c', fontWeight: view === vid ? 600 : 400,
+                      borderBottom: view === vid ? '2px solid #4f6ef7' : '2px solid transparent',
+                      display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: -1 }}>
+                    <Icon name={icon} size={15} />
+                    {label}
+                  </button>
+                ))}
+                <button onClick={() => setView('trash')}
+                  style={{ marginLeft: 'auto', padding: '8px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13,
+                    color: view === 'trash' ? '#4f6ef7' : '#7a7f8c', fontWeight: view === 'trash' ? 600 : 400,
+                    borderBottom: view === 'trash' ? '2px solid #4f6ef7' : '2px solid transparent',
+                    display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: -1 }}>
+                  <Icon name="trash" size={15} />
+                  回收站
+                </button>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                {view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} onSwitchView={setView as (v: string) => void} />
+                  : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} boardId={activeBoard.id} />
+                  : view === 'calendar' ? <CalendarView onOpenItem={setDetailId} />
+                  : view === 'gantt' ? <GanttView onOpenItem={setDetailId} />
+                  : view === 'workload' ? <WorkloadView onOpenItem={setDetailId} />
+                  : view === 'insights' ? <InsightsView onOpenItem={setDetailId} />
+                  : view === 'trash' ? <TrashView boardId={activeBoard.id} /> : <DashboardPage boardIds={[activeBoard.id]} onOpenItem={setDetailId} />}
+              </div>
+            </>
+          )}
         </main>
         {detailId && <ItemDetail itemId={detailId} onClose={() => setDetailId(null)} />}
         {aiOpen && <AiSidebar boardId={activeBoard?.id} />}
