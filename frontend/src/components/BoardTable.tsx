@@ -133,6 +133,9 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   const [peopleFilterOpen, setPeopleFilterOpen] = useState(false);
   const [companyUsers, setCompanyUsers] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.listUsers().then((u: any) => setCompanyUsers(Array.isArray(u) ? u : [])).catch(() => {}); }, []);
+  // 当前 board 内条目搜索（按名称/列值关键字过滤）
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState('text');
   const [newColFormula, setNewColFormula] = useState('');
@@ -279,19 +282,29 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
     [columns],
   );
 
-  // 成员筛选：按选中的负责人过滤条目
+  // 过滤：成员筛选 + 关键字搜索（按名称/列值匹配）
   const peopleCol = columns.find((c: any) => c.type === 'people');
   const filteredRows = useMemo(() => {
-    if (!peopleFilter || !peopleCol) return gridRows;
-    return gridRows.filter((r) => {
-      const v = r.values?.[peopleCol.id];
-      if (v == null) return false;
-      try {
-        const arr = Array.isArray(v) ? v : JSON.parse(String(v));
-        return Array.isArray(arr) && arr.includes(peopleFilter);
-      } catch { return String(v).includes(peopleFilter); }
-    });
-  }, [gridRows, peopleFilter, peopleCol]);
+    let rows = gridRows;
+    if (peopleFilter && peopleCol) {
+      rows = rows.filter((r) => {
+        const v = r.values?.[peopleCol.id];
+        if (v == null) return false;
+        try {
+          const arr = Array.isArray(v) ? v : JSON.parse(String(v));
+          return Array.isArray(arr) && arr.includes(peopleFilter);
+        } catch { return String(v).includes(peopleFilter); }
+      });
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((r) => {
+        if (r.name.toLowerCase().includes(q)) return true;
+        return Object.values(r.values).some((v) => v != null && String(v).toLowerCase().includes(q));
+      });
+    }
+    return rows;
+  }, [gridRows, peopleFilter, peopleCol, searchQuery]);
 
   const flash = (msg: string, kind?: 'info' | 'success' | 'error') => {
     useToast.getState().toast(msg, kind ?? (msg.startsWith('已') ? 'success' : 'info'));
@@ -684,12 +697,18 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           <Icon name="plus" size={15} color="#fff" strokeWidth={2.2} />
           {creating ? '创建中…' : '新建条目'}
         </button>
-        <button onClick={() => window.dispatchEvent(new Event('manday:open-search'))}
-          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <button onClick={() => { setSearchOpen((v) => !v); if (searchOpen) setSearchQuery(''); }}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: searchOpen ? '#e5eaff' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: searchOpen ? '#4f6ef7' : '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="search" size={15} />
-          搜索
+          搜索{searchQuery ? `：${searchQuery}` : ''}
         </button>
+        {searchOpen && (
+          <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索此 Board 的条目…" data-board-search
+            onKeyDown={(e) => { if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); } }}
+            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #4f6ef7', fontSize: 13, width: 220, outline: 'none' }} />
+        )}
         <button onClick={() => setPeopleFilterOpen((v) => !v)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: peopleFilter ? '#e5eaff' : '#fff',
             cursor: 'pointer', fontSize: 13, color: peopleFilter ? '#4f6ef7' : '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
