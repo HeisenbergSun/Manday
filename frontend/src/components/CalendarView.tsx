@@ -26,20 +26,42 @@ export function CalendarView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
   const [calMode, setCalMode] = useState<'month' | 'week'>('month');
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  const dateCol = useMemo(() => columns.find((c: any) => c.type === 'date'), [columns]);
+  const dateCols = useMemo(() => columns.filter((c: any) => c.type === 'date'), [columns]);
+  const dateCol = dateCols[0];
+  const endCol = dateCols[1]; // 第二个 date 列作为结束日期，用于跨度显示
 
-  /** items 按 date 分桶（YYYY-MM-DD -> 条目列表） */
+  const keyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  /** 生成 [start, end] 区间每一天的 key（跨月/跨年安全） */
+  const rangeKeys = (start: string, end: string): string[] => {
+    const s = new Date(start + 'T00:00:00'), e = new Date(end + 'T00:00:00');
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) return [start];
+    if (s > e) return [end, start];
+    const out: string[] = [];
+    const cur = new Date(s);
+    while (cur <= e) {
+      out.push(keyOf(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  };
+
+  /** items 按日期区间分桶（开始～截止的每一天都显示） */
   const buckets = useMemo(() => {
     const map: Record<string, any[]> = {};
     if (!dateCol) return map;
     for (const it of Object.values(items) as any[]) {
-      const v = it.values?.[dateCol.id];
-      if (!v) continue;
-      const day = String(v).slice(0, 10);
-      (map[day] ??= []).push(it);
+      const startV = it.values?.[dateCol.id];
+      if (!startV) continue;
+      const start = String(startV).slice(0, 10);
+      const endV = endCol ? it.values?.[endCol.id] : null;
+      const end = endV ? String(endV).slice(0, 10) : start;
+      for (const k of rangeKeys(start, end)) {
+        (map[k] ??= []).push(it);
+      }
     }
     return map;
-  }, [items, dateCol]);
+  }, [items, dateCol, endCol]);
 
   /** 月历格子（周一起始） */
   const monthCells = useMemo(() => {
@@ -163,7 +185,8 @@ export function CalendarView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
 
         {calMode === 'month' ? (
           /* ── 月视图 ── */
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, flex: 1, overflow: 'auto' }}>
+          <div onWheel={(e) => { e.deltaY < 0 ? moveMonth(-1) : moveMonth(1); }}
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, flex: 1, overflow: 'auto' }}>
             {WEEK.map((w) => <div key={w} style={{ textAlign: 'center', fontSize: 12, color: '#7a7f8c', padding: 4 }}>{w}</div>)}
             {monthCells.map((c) => {
               const list = c.day ? buckets[c.key] ?? [] : [];
@@ -205,7 +228,8 @@ export function CalendarView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
           </div>
         ) : (
           /* ── 周视图 ── */
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, flex: 1, overflow: 'hidden' }}>
+          <div onWheel={(e) => { e.deltaY < 0 ? moveWeek(-1) : moveWeek(1); }}
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, flex: 1, overflow: 'hidden' }}>
             {weekCells.map((c) => {
               const list = buckets[c.key] ?? [];
               return (
