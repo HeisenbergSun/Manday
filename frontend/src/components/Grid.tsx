@@ -41,8 +41,8 @@ const menuBtnStyle: React.CSSProperties = {
 };
 
 // ── 第二十三批：筛选 / 列状态 / 汇总 类型 ──
-export type FilterOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals' | 'gt' | 'lt' | 'gte' | 'lte' | 'empty' | 'not_empty';
-export type FilterCondition = { id: string; columnId: string; operator: FilterOperator; value: string };
+export type FilterOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals' | 'gt' | 'lt' | 'gte' | 'lte' | 'empty' | 'not_empty' | 'between' | 'is_today' | 'is_this_week' | 'is_this_month' | 'is_last_7_days' | 'is_last_30_days' | 'is_past' | 'is_future';
+export type FilterCondition = { id: string; columnId: string; operator: FilterOperator; value: string; value2?: string };
 export type ColumnState = { hidden?: boolean; frozen?: boolean; width?: number };
 export type SummaryType = 'none' | 'sum' | 'avg' | 'count' | 'min' | 'max';
 
@@ -53,6 +53,42 @@ function scalar(v: unknown): string {
   if (v == null) return '';
   if (typeof v === 'object') { const o = v as any; return String(o.label ?? o.name ?? o.id ?? ''); }
   return String(v);
+}
+
+// ── 日期筛选工具（值均为本地时区 YYYY-MM-DD，字符串可直接字典序比较）──
+function fmtDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+function localToday(): string { return fmtDate(new Date()); }
+function addDays(base: string, n: number): string {
+  const d = new Date(base + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return fmtDate(d);
+}
+/** 本周一（周一为一周起点） */
+function startOfWeek(base: string): string {
+  const d = new Date(base + 'T00:00:00');
+  const day = d.getDay(); // 0=周日 … 6=周六
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return fmtDate(d);
+}
+/** 本月首日 / 末日 */
+function startOfMonth(base: string): string { return base.slice(0, 8) + '01'; }
+function endOfMonth(base: string): string {
+  const y = Number(base.slice(0, 4));
+  const m = Number(base.slice(5, 7));
+  const d = new Date(y, m, 0); // 下月第 0 天 = 本月末日
+  return fmtDate(d);
+}
+/** 按列类型给出默认筛选操作符（与 BoardTable 的操作符集合首项保持一致） */
+function defaultFilterOpFor(colType: string): FilterOperator {
+  if (colType === 'date') return 'is_today';
+  if (colType === 'number' || colType === 'formula') return 'equals';
+  return 'contains';
 }
 
 /** 通用下拉选择器（单击编辑用）：绝对定位面板，点选项即提交，点外部关闭。
@@ -318,8 +354,11 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   // ── 筛选行 ──
   const filteredRows = useMemo(() => {
     if (filters.length === 0) return rows;
+    const today = localToday();
     return rows.filter((r) => filters.every((f) => {
+      const col = columns.find((c) => c.id === f.columnId);
       const val = f.columnId === 'name' ? r.name : scalar(r.values[f.columnId]);
+      const isDate = col?.type === 'date';
       const num = Number(val);
       switch (f.operator) {
         case 'contains': return val.toLowerCase().includes(f.value.toLowerCase());
@@ -332,10 +371,25 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         case 'lte': return val !== '' && !isNaN(num) && num <= Number(f.value);
         case 'empty': return val === '';
         case 'not_empty': return val !== '';
+        // 时间段/范围：date 按日期区间，数值列按数值区间
+        case 'between': {
+          if (val === '' || f.value === '' || f.value2 == null || f.value2 === '') return false;
+          if (isDate) return val >= f.value && val <= f.value2;
+          const n = Number(val);
+          return !isNaN(n) && n >= Number(f.value) && n <= Number(f.value2);
+        }
+        // 日期快捷操作符（val 为空或非日期一律不命中）
+        case 'is_today': return isDate && val !== '' && val === today;
+        case 'is_this_week': return isDate && val !== '' && val >= startOfWeek(today) && val <= addDays(startOfWeek(today), 6);
+        case 'is_this_month': return isDate && val !== '' && val >= startOfMonth(today) && val <= endOfMonth(today);
+        case 'is_last_7_days': return isDate && val !== '' && val >= addDays(today, -6) && val <= today;
+        case 'is_last_30_days': return isDate && val !== '' && val >= addDays(today, -29) && val <= today;
+        case 'is_past': return isDate && val !== '' && val < today;
+        case 'is_future': return isDate && val !== '' && val > today;
         default: return true;
       }
     }));
-  }, [rows, filters]);
+  }, [rows, filters, columns]);
   useEffect(() => { filteredRowsCb.current?.(filteredRows); }, [filteredRows]);
 
   // 大板性能：分块渲染（初始 150 行，滚近底部增量 +200，IntersectionObserver 触发）
@@ -935,7 +989,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                     {/* 按此列筛选（添加条件并唤起工具条筛选弹窗） */}
                     <button data-col-filter onClick={() => {
                       if (onFiltersChange && !filters.some((f) => f.columnId === c.id)) {
-                        onFiltersChange([...filters, { id: newFilterId(), columnId: c.id, operator: 'contains', value: '' }]);
+                        onFiltersChange([...filters, { id: newFilterId(), columnId: c.id, operator: defaultFilterOpFor(c.type), value: '' }]);
                       }
                       window.dispatchEvent(new Event('manday:open-filter'));
                       setColMenuFor(null);

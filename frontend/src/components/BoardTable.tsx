@@ -2,8 +2,8 @@
  * 表格视图 — 自研 React 表格（P1：替换 AG Grid）
  * 列类型渲染/编辑器统一在 Grid.tsx；LWW 保存与冲突刷新在本组件
  */
-import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
-import { BoardGrid, type GridRow, type FilterCondition } from './Grid';
+import { useMemo, useCallback, useState, useEffect, useRef, type CSSProperties } from 'react';
+import { BoardGrid, type GridRow, type FilterCondition, type FilterOperator } from './Grid';
 import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { UI, TAG, doneLabelsOf, soften } from '../theme';
@@ -15,6 +15,75 @@ import * as XLSX from 'xlsx';
 
 /** 列类型的中文展示名 */
 const typeLabel = (t: string) => ({ text: '文本', status: '状态', people: '人员', date: '日期', number: '数字', checkbox: '勾选', dropdown: '多选', formula: '公式', mirror: '镜像', dependency: '前置', attachment: '附件', rating: '星级', tags: '标签', longtext: '长文本' } as Record<string, string>)[t] ?? t;
+
+/** 按列类型给出可用操作符（细化筛选：日期快捷/时间段、数值范围、选项列预选） */
+const FILTER_OPS: Record<string, { value: FilterOperator; label: string }[]> = {
+  date: [
+    { value: 'is_today', label: '是今天' },
+    { value: 'is_this_week', label: '本周' },
+    { value: 'is_this_month', label: '本月' },
+    { value: 'is_last_7_days', label: '过去 7 天' },
+    { value: 'is_last_30_days', label: '过去 30 天' },
+    { value: 'is_past', label: '已过期' },
+    { value: 'is_future', label: '未到期' },
+    { value: 'between', label: '时间段内' },
+    { value: 'equals', label: '等于' },
+    { value: 'not_equals', label: '不等于' },
+    { value: 'empty', label: '为空' },
+    { value: 'not_empty', label: '非空' },
+  ],
+  number: [
+    { value: 'equals', label: '等于' },
+    { value: 'not_equals', label: '不等于' },
+    { value: 'gt', label: '大于' },
+    { value: 'gte', label: '≥' },
+    { value: 'lt', label: '小于' },
+    { value: 'lte', label: '≤' },
+    { value: 'between', label: '范围内' },
+    { value: 'empty', label: '为空' },
+    { value: 'not_empty', label: '非空' },
+  ],
+  status: [
+    { value: 'equals', label: '等于' },
+    { value: 'not_equals', label: '不等于' },
+    { value: 'contains', label: '包含' },
+    { value: 'not_contains', label: '不包含' },
+    { value: 'empty', label: '为空' },
+    { value: 'not_empty', label: '非空' },
+  ],
+  dropdown: [
+    { value: 'equals', label: '等于' },
+    { value: 'not_equals', label: '不等于' },
+    { value: 'contains', label: '包含' },
+    { value: 'not_contains', label: '不包含' },
+    { value: 'empty', label: '为空' },
+    { value: 'not_empty', label: '非空' },
+  ],
+  people: [
+    { value: 'equals', label: '等于' },
+    { value: 'not_equals', label: '不等于' },
+    { value: 'empty', label: '为空' },
+    { value: 'not_empty', label: '非空' },
+  ],
+};
+const TEXT_FILTER_OPS: { value: FilterOperator; label: string }[] = [
+  { value: 'contains', label: '包含' },
+  { value: 'not_contains', label: '不包含' },
+  { value: 'equals', label: '等于' },
+  { value: 'not_equals', label: '不等于' },
+  { value: 'empty', label: '为空' },
+  { value: 'not_empty', label: '非空' },
+];
+function operatorsFor(colType: string): { value: FilterOperator; label: string }[] {
+  return FILTER_OPS[colType] ?? TEXT_FILTER_OPS;
+}
+function defaultOperatorFor(colType: string): FilterOperator {
+  return FILTER_OPS[colType]?.[0]?.value ?? 'contains';
+}
+/** 值需输入的「预设值/范围」操作符（这些操作符需要一个或两个值） */
+function needsValue(op: FilterOperator): boolean {
+  return !['empty', 'not_empty', 'is_today', 'is_this_week', 'is_this_month', 'is_last_7_days', 'is_last_30_days', 'is_past', 'is_future'].includes(op);
+}
 
 /** 成员与权限管理弹窗：列表 + 改角色 + 移除 + 添加公司内用户 */
 const ROLE_LABEL: Record<string, string> = { owner: '负责人', editor: '可编辑', viewer: '只读', guest: '访客' };
@@ -748,39 +817,78 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           筛选{tableFilters.length ? ` (${tableFilters.length})` : ''}
         </button>
         {filterOpen && (
-          <div data-filter-popover style={{ position: 'absolute', top: 48, left: 300, zIndex: 50, background: '#fff', borderRadius: 10,
-            boxShadow: '0 8px 28px rgba(20,30,70,.16)', padding: 12, minWidth: 340, border: '1px solid #eef0f5' }}>
+          <div data-filter-popover style={{ position: 'absolute', top: 48, left: 230, zIndex: 50, background: '#fff', borderRadius: 10,
+            boxShadow: '0 8px 28px rgba(20,30,70,.16)', padding: 12, minWidth: 460, border: '1px solid #eef0f5' }}>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
               <b style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="filter" size={14} color="#4f6ef7" />筛选条件</b>
               <button onClick={() => setFilterOpen(false)} style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', fontSize: 15, color: '#7a7f8c', lineHeight: 1 }}>✕</button>
             </div>
-            {tableFilters.map((f) => (
-              <div key={f.id} data-filter-pop-row style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
-                <select data-filter-pop-col value={f.columnId} onChange={(e) => updateTableFilter(f.id, { columnId: e.target.value })}
-                  style={{ flex: 1, padding: '5px 6px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12, minWidth: 0 }}>
-                  <option value="name">条目</option>
-                  {columns.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <select data-filter-pop-op value={f.operator} onChange={(e) => updateTableFilter(f.id, { operator: e.target.value as any })}
-                  style={{ width: 78, padding: '5px 4px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12 }}>
-                  <option value="contains">包含</option>
-                  <option value="not_contains">不包含</option>
-                  <option value="equals">等于</option>
-                  <option value="not_equals">不等于</option>
-                  <option value="gt">大于</option>
-                  <option value="lt">小于</option>
-                  <option value="gte">≥</option>
-                  <option value="lte">≤</option>
-                  <option value="empty">为空</option>
-                  <option value="not_empty">非空</option>
-                </select>
-                {f.operator !== 'empty' && f.operator !== 'not_empty' && (
-                  <input data-filter-pop-val value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })}
-                    placeholder="值" style={{ width: 90, padding: '5px 6px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12 }} />
-                )}
-                <button data-filter-pop-remove onClick={() => removeTableFilter(f.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#e2445c', fontSize: 14, lineHeight: 1 }}>✕</button>
-              </div>
-            ))}
+            {tableFilters.map((f) => {
+              const col = f.columnId === 'name' ? null : columns.find((c: any) => c.id === f.columnId);
+              const colType: string = col?.type ?? 'text';
+              const ops = operatorsFor(colType);
+              const isDate = colType === 'date';
+              const isNum = colType === 'number' || colType === 'formula';
+              const showVal = needsValue(f.operator);
+              const isBetween = f.operator === 'between';
+              // 预选项：状态/多选/人员列用下拉选择而非手输
+              let presetOptions: { value: string; label: string }[] | null = null;
+              if (colType === 'status') {
+                presetOptions = ((col?.settings?.labels ?? []) as any[]).filter((l: any) => !((col?.settings?.inactiveLabels ?? []) as string[]).includes(l.label)).map((l: any) => ({ value: l.label, label: l.label }));
+              } else if (colType === 'dropdown') {
+                presetOptions = ((col?.settings?.options ?? []) as any[]).map((o: any) => ({ value: o.label, label: o.label }));
+              } else if (colType === 'people') {
+                presetOptions = companyUsers.map((u) => ({ value: u.id, label: u.name }));
+              }
+              const cellStyle: CSSProperties = { width: 92, padding: '5px 6px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12 };
+              return (
+                <div key={f.id} data-filter-pop-row style={{ display: 'flex', gap: 5, marginBottom: 6, alignItems: 'center' }}>
+                  <select data-filter-pop-col value={f.columnId} onChange={(e) => {
+                    const ncid = e.target.value;
+                    const nt = ncid === 'name' ? 'text' : columns.find((c: any) => c.id === ncid)?.type ?? 'text';
+                    updateTableFilter(f.id, { columnId: ncid, operator: defaultOperatorFor(nt), value: '', value2: undefined });
+                  }}
+                    style={{ flex: 1, padding: '5px 6px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12, minWidth: 0 }}>
+                    <option value="name">条目</option>
+                    {columns.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <select data-filter-pop-op value={f.operator} onChange={(e) => updateTableFilter(f.id, { operator: e.target.value as FilterOperator })}
+                    style={{ width: 86, padding: '5px 4px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12 }}>
+                    {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {!ops.some((o) => o.value === f.operator) && <option value={f.operator}>{f.operator}</option>}
+                  </select>
+                  {showVal && !isBetween && presetOptions && (
+                    <select data-filter-pop-val value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })}
+                      style={cellStyle}>
+                      <option value="">— 选择 —</option>
+                      {presetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      {f.value && !presetOptions.some((o) => o.value === f.value) && <option value={f.value}>{f.value}</option>}
+                    </select>
+                  )}
+                  {showVal && !isBetween && !presetOptions && isDate && (
+                    <input data-filter-pop-val type="date" value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })} style={cellStyle} />
+                  )}
+                  {showVal && !isBetween && !presetOptions && isNum && (
+                    <input data-filter-pop-val type="number" value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })} placeholder="数值" style={cellStyle} />
+                  )}
+                  {showVal && !isBetween && !presetOptions && !isDate && !isNum && (
+                    <input data-filter-pop-val value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })} placeholder="值" style={cellStyle} />
+                  )}
+                  {showVal && isBetween && (
+                    <>
+                      {isDate
+                        ? <input data-filter-pop-val type="date" value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })} style={{ ...cellStyle, width: 118 }} />
+                        : <input data-filter-pop-val type="number" value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })} placeholder="从" style={{ ...cellStyle, width: 78 }} />}
+                      <span style={{ fontSize: 11, color: '#a0a4b1' }}>~</span>
+                      {isDate
+                        ? <input data-filter-pop-val2 type="date" value={f.value2 ?? ''} onChange={(e) => updateTableFilter(f.id, { value2: e.target.value })} style={{ ...cellStyle, width: 118 }} />
+                        : <input data-filter-pop-val2 type="number" value={f.value2 ?? ''} onChange={(e) => updateTableFilter(f.id, { value2: e.target.value })} placeholder="到" style={{ ...cellStyle, width: 78 }} />}
+                    </>
+                  )}
+                  <button data-filter-pop-remove onClick={() => removeTableFilter(f.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#e2445c', fontSize: 14, lineHeight: 1 }}>✕</button>
+                </div>
+              );
+            })}
             {tableFilters.length === 0 && <div style={{ fontSize: 12, color: '#a0a4b1', padding: '4px 0 8px' }}>还没有筛选条件，点下方添加</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
               <button data-filter-pop-add onClick={addTableFilter} style={{ padding: '5px 12px', borderRadius: 6, border: '1px dashed #4f6ef7', background: '#f5f7ff', color: '#4f6ef7', cursor: 'pointer', fontSize: 12 }}>＋ 添加条件</button>
