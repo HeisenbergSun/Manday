@@ -226,10 +226,10 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         display: 'flex', alignItems: 'center', gap: 8, paddingLeft: indent ? 24 : 10,
       }}>
-      <span style={{
-        width: 8, height: 8, borderRadius: 3, flexShrink: 0,
-        background: b.visibility === 'company' ? '#00c875' : b.visibility === 'department' ? '#579bfc' : '#9d3dd7',
-      }} title={{ company: '全员可见', department: '部门内', shared: '指定共享', private: '私有' }[b.visibility]} />
+      <span title={{ company: '全员可见', department: '部门内', shared: '指定共享', private: '私有' }[b.visibility]}
+        style={{ display: 'inline-flex', flexShrink: 0 }}>
+        <Icon name="board" size={15} />
+      </span>
       {!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</span>}
       {!collapsed && (
         <span data-board-menu-trigger onClick={(e) => openBoardMenu(b, e)}

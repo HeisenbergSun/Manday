@@ -793,7 +793,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
         )}
         <button onClick={() => setPeopleFilterOpen((v) => !v)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: peopleFilter ? '#e5eaff' : '#fff',
-            cursor: 'pointer', fontSize: 13, color: peopleFilter ? '#4f6ef7' : '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            cursor: 'pointer', fontSize: 13, color: peopleFilter ? '#4f6ef7' : '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="users" size={15} />
           成员{peopleFilter ? `：${companyUsers.find((u) => u.id === peopleFilter)?.name ?? ''}` : ''}
         </button>
@@ -898,7 +898,7 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
         )}
         <button data-mgr-trigger="1" onClick={() => setMgrOpen(!mgrOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: mgrOpen ? '#e5eaff' : '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            cursor: 'pointer', fontSize: 13, color: mgrOpen ? '#4f6ef7' : '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="board" size={15} />
           列与分组
         </button>
@@ -1067,14 +1067,14 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
         )}
         <button data-auto-trigger="1" onClick={() => setAutoOpen(!autoOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: autoOpen ? '#e5eaff' : '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            cursor: 'pointer', fontSize: 13, color: autoOpen ? '#4f6ef7' : '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="bolt" size={14} strokeWidth={2} />
           自动化
         </button>
         {autoOpen && <div data-auto-panel="1"><AutomationPanel boardId={boardId} onClose={() => setAutoOpen(false)} flash={flash} /></div>}
         <button data-export-xlsx onClick={exportXLSX}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#00a25b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            cursor: 'pointer', fontSize: 13, color: '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="download" size={15} />
           导出 Excel{tableFilters.length ? '（筛选后）' : ''}
         </button>
@@ -1086,13 +1086,13 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
           }} />
         <button data-import-excel onClick={() => importFileRef.current?.click()} disabled={importing}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff',
-            cursor: importing ? 'wait' : 'pointer', fontSize: 13, color: '#00a25b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            cursor: importing ? 'wait' : 'pointer', fontSize: 13, color: '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Icon name="upload" size={15} />
           {importing ? '导入中…' : '导入 Excel'}
         </button>
         <button data-views-trigger="1" onClick={() => setViewsOpen(!viewsOpen)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: viewsOpen ? '#eef1fe' : '#fff',
-            cursor: 'pointer', fontSize: 13, color: '#4f6ef7' }}>
+            cursor: 'pointer', fontSize: 13, color: viewsOpen ? '#4f6ef7' : '#7a7f8c' }}>
           ⧉ 视图{activeViewId ? `：${views.find((v) => v.id === activeViewId)?.name ?? ''}${views.find((v) => v.id === activeViewId)?.locked ? ' ' : ''}` : ''}
         </button>
         {viewsOpen && (
