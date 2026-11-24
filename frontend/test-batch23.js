@@ -180,37 +180,32 @@ const browser = await puppeteer.launch({
   });
   await sleep(1000);
 
-  // ── G1: 筛选栏 ──
+  // ── G1: 筛选（工具条小弹窗） ──
   console.log('\n--- 表格 UX ---');
-  const filterToggle = await page.$('[data-filter-toggle]');
-  assert(!!filterToggle, 'G1 筛选栏切换按钮存在');
-  if (filterToggle) {
-    await page.click('[data-filter-toggle]');
+  const filterToolbar = await page.$('[data-filter-toolbar]');
+  assert(!!filterToolbar, 'G1 工具条筛选按钮存在');
+  if (filterToolbar) {
+    await page.click('[data-filter-toolbar]');
     await sleep(400);
-    const filterBar = await page.$('[data-filter-bar]');
-    assert(!!filterBar, 'G1 筛选栏展开（data-filter-bar）');
-    // 添加筛选条件
-    const addBtn = await page.$('[data-filter-add]');
+    const popover = await page.$('[data-filter-popover]');
+    assert(!!popover, 'G1 筛选弹窗出现（data-filter-popover）');
+    // 添加筛选条件（默认列=条目，操作符=包含）
+    const addBtn = await page.$('[data-filter-pop-add]');
     if (addBtn) {
-      await page.click('[data-filter-add]');
+      await page.click('[data-filter-pop-add]');
       await sleep(300);
-      // 选择按"条目"列筛选（value="name"）
-      await page.select('[data-filter-col]', 'name');
-      await sleep(200);
-      // 选择"包含"操作符
-      await page.select('[data-filter-op]', 'contains');
-      await sleep(100);
-      // 输入筛选值
-      await page.click('[data-filter-val]', { clickCount: 3 });
-      await page.type('[data-filter-val]', '条目A');
+      await page.click('[data-filter-pop-val]', { clickCount: 3 });
+      await page.type('[data-filter-pop-val]', '条目A');
       await sleep(500);
       const rowCount = await page.$$eval('[data-grid-row]', (rs) => rs.length);
       console.log('  筛选后行数:', rowCount);
       assert(rowCount <= 1, `G2 筛选过滤行数减少（${rowCount} 行）`);
       // 清除筛选
-      const clearBtn = await page.$('[data-filter-clear]');
-      if (clearBtn) { await page.click('[data-filter-clear]'); await sleep(300); }
+      const clearBtn = await page.$('[data-filter-pop-clear]');
+      if (clearBtn) { await page.click('[data-filter-pop-clear]'); await sleep(300); }
     }
+    await page.click('[data-filter-toolbar]');
+    await sleep(200);
   }
 
   // ── G3: 列汇总 ──

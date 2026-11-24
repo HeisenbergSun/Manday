@@ -78,11 +78,13 @@ const req = async (auth, method, path_, body) => {
   });
   await sleep(2500);
 
-  // S1 看板点开 item 详情（信息 tab 编辑）
-  await page.evaluate((id) => document.querySelector(`[data-kanban-card="${id}"]`)?.click(), itA.id);
+  // S1 看板点开 item 详情（信息 tab 编辑）— 用真实鼠标点击（覆盖 dnd-kit pointer 事件路径）
+  const cardEl = await page.$(`[data-kanban-card="${itA.id}"]`);
+  const cbox = await cardEl?.boundingBox();
+  if (cbox) await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2);
   await sleep(2000);
   const detailOpen = await page.$('[data-item-detail]');
-  assert(!!detailOpen, 'S1a 看板点卡片打开条目详情');
+  assert(!!detailOpen, 'S1a 看板真实鼠标点卡片打开条目详情');
   const infoTab = await page.$('[data-item-info]');
   assert(!!infoTab, 'S1b 详情默认信息 tab（可编辑字段）');
 

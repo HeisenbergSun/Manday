@@ -139,6 +139,12 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   const updateTableFilter = (id: string, patch: Partial<FilterCondition>) => setTableFilters((f) => f.map((x) => x.id === id ? { ...x, ...patch } : x));
   const removeTableFilter = (id: string) => setTableFilters((f) => f.filter((x) => x.id !== id));
   const clearTableFilters = () => setTableFilters([]);
+  // 列头「按此列筛选」→ 唤起工具条筛选弹窗
+  useEffect(() => {
+    const open = () => setFilterOpen(true);
+    window.addEventListener('manday:open-filter', open);
+    return () => window.removeEventListener('manday:open-filter', open);
+  }, []);
   // 当前 board 内条目搜索（按名称/列值关键字过滤）
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);

@@ -6,7 +6,7 @@
  *   [data-kanban-collapse] [data-kanban-people]
  */
 import { DndContext, DragEndEvent, useDraggable, useDroppable } from '@dnd-kit/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { soften } from '../theme';
@@ -53,10 +53,23 @@ function Card({ itemId, onOpenItem }: { itemId: string; onOpenItem?: (id: string
 
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: itemId });
 
+  // dnd-kit 的 activator 在 pointerdown 时 preventDefault 会抑制 click，改用 pointerup + 位移阈值判定「点击打开详情」
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+  const handlePointerDown = (e: React.PointerEvent) => {
+    downPos.current = { x: e.clientX, y: e.clientY };
+    listeners?.onPointerDown?.(e);
+  };
+  const handlePointerUp = (e: React.PointerEvent) => {
+    const d = downPos.current;
+    downPos.current = null;
+    if (d && Math.abs(e.clientX - d.x) < 6 && Math.abs(e.clientY - d.y) < 6) onOpenItem?.(itemId);
+  };
+
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes}
+    <div ref={setNodeRef} {...attributes} {...listeners}
       data-kanban-card={itemId}
-      onClick={() => onOpenItem?.(itemId)}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
       title="点击打开条目详情"
       style={{
         transform: transform ? `translate(${transform.x}px,${transform.y}px)` : undefined,

@@ -197,22 +197,8 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
   const [itemsVersion, setItemsVersion] = useState(0);
 
-  // ── 筛选栏（#61：可选受控提升到父组件，便于视图持久化）──
-  const [filterBarOpen, setFilterBarOpen] = useState(false);
-  const [internalFilters, setInternalFilters] = useState<FilterCondition[]>([]);
-  const filters = filtersProp ?? internalFilters;
-  const setFilters = (f: FilterCondition[] | ((cur: FilterCondition[]) => FilterCondition[])) => {
-    const next = typeof f === 'function' ? (f as (cur: FilterCondition[]) => FilterCondition[])(filters) : f;
-    if (onFiltersChange) onFiltersChange(next);
-    else setInternalFilters(next);
-  };
-
-  // 工具条「筛选」按钮 → 展开/收起筛选栏（事件通信，避免提升状态）
-  useEffect(() => {
-    const onToggle = () => setFilterBarOpen((v) => !v);
-    window.addEventListener('manday:toggle-filter', onToggle);
-    return () => window.removeEventListener('manday:toggle-filter', onToggle);
-  }, []);
+  // ── 筛选（#61：受控提升到父组件，筛选 UI 已移至工具条小弹窗）──
+  const filters = filtersProp ?? [];
 
   // ── 列状态（隐藏/冻结/宽度/顺序） ──
   const [columnStates, setColumnStates] = useState<Record<string, ColumnState>>({});
@@ -365,12 +351,6 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     io.observe(sentinel);
     return () => io.disconnect();
   });
-  // #61：恢复带筛选的视图时自动展开筛选栏
-  const prevFilterCount = useRef(0);
-  useEffect(() => {
-    if (filters.length > 0 && prevFilterCount.current === 0) setFilterBarOpen(true);
-    prevFilterCount.current = filters.length;
-  }, [filters.length]);
 
   const sortedRows = useMemo(() => {
     let arr = [...filteredRows];
@@ -503,19 +483,6 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
     });
     lastSelectedRef.current = id;
   };
-
-  // ── 筛选操作 ──
-  const addFilter = () => {
-    const firstCol = columns[0]?.id ?? 'name';
-    setFilters((f) => [...f, { id: newFilterId(), columnId: firstCol, operator: 'contains', value: '' }]);
-  };
-  const updateFilter = (id: string, patch: Partial<FilterCondition>) => {
-    setFilters((f) => f.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-  };
-  const removeFilter = (id: string) => {
-    setFilters((f) => f.filter((x) => x.id !== id));
-  };
-  const clearFilters = () => { setFilters([]); setFilterBarOpen(false); };
 
   // ── 列状态操作 ──
   const toggleColumnHidden = (colId: string) => {
@@ -900,52 +867,15 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
         [data-col-drag-over]{background:#eef1fe!important}
       `}</style>
 
-      {/* ── 筛选栏 ── */}
-      <div data-filter-bar style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderBottom: '1px solid #eef0f5', flexWrap: 'wrap', background: '#fafbfe' }}>
-        <button data-filter-toggle onClick={() => setFilterBarOpen((v) => !v)}
-          style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #e6e8ef', background: filterBarOpen ? '#eef1fe' : '#fff', cursor: 'pointer', fontSize: 12, color: '#4f6ef7', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Icon name="filter" size={13} />
-          筛选{filters.length ? ` (${filters.length})` : ''}
-        </button>
-        {filterBarOpen && (
-          <>
-            {filters.map((f) => (
-              <div key={f.id} data-filter-row style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <select data-filter-col value={f.columnId} onChange={(e) => updateFilter(f.id, { columnId: e.target.value })} style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid #e6e8ef' }}>
-                  <option value="name">条目</option>
-                  {columns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <select data-filter-op value={f.operator} onChange={(e) => updateFilter(f.id, { operator: e.target.value as FilterOperator })} style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid #e6e8ef' }}>
-                  <option value="contains">包含</option>
-                  <option value="not_contains">不包含</option>
-                  <option value="equals">等于</option>
-                  <option value="not_equals">不等于</option>
-                  <option value="gt">大于</option>
-                  <option value="lt">小于</option>
-                  <option value="gte">≥</option>
-                  <option value="lte">≤</option>
-                  <option value="empty">为空</option>
-                  <option value="not_empty">非空</option>
-                </select>
-                {f.operator !== 'empty' && f.operator !== 'not_empty' && (
-                  <input data-filter-val value={f.value} onChange={(e) => updateFilter(f.id, { value: e.target.value })}
-                    placeholder="值" style={{ width: 100, fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid #e6e8ef' }} />
-                )}
-                <button data-filter-remove onClick={() => removeFilter(f.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#e2445c', fontSize: 14 }}>✕</button>
-              </div>
-            ))}
-            <button data-filter-add onClick={addFilter} style={{ padding: '3px 10px', borderRadius: 6, border: '1px dashed #4f6ef7', background: '#f5f7ff', color: '#4f6ef7', cursor: 'pointer', fontSize: 12 }}>＋ 条件</button>
-            {filters.length > 0 && <button data-filter-clear onClick={clearFilters} style={{ padding: '3px 10px', borderRadius: 6, border: 'none', background: 'none', color: '#7a7f8c', cursor: 'pointer', fontSize: 12 }}>清除全部</button>}
-            <span style={{ fontSize: 11, color: '#a0a4b1' }}>匹配 {filteredRows.length}/{rows.length} 行</span>
-          </>
-        )}
-        {hiddenCount > 0 && (
+      {/* ── 隐藏列提示栏（筛选已移至工具条小弹窗） ── */}
+      {hiddenCount > 0 && (
+        <div data-filter-bar style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderBottom: '1px solid #eef0f5', flexWrap: 'wrap', background: '#fafbfe' }}>
           <button data-col-show-all onClick={showAllColumns} title={`${hiddenCount} 列已隐藏`}
             style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#b8860b' }}>
             {'\u{1F441}'} 显示隐藏列 ({hiddenCount})
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
@@ -1002,12 +932,12 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       style={menuBtnStyle}>
                       ↕ 按此列排序{sortBy === c.id ? (sortDir === 'desc' ? '（降序）' : '（升序）') : ''}
                     </button>
-                    {/* 按此列筛选 */}
+                    {/* 按此列筛选（添加条件并唤起工具条筛选弹窗） */}
                     <button data-col-filter onClick={() => {
-                      setFilterBarOpen(true);
-                      if (!filters.some((f) => f.columnId === c.id)) {
-                        setFilters((f) => [...f, { id: newFilterId(), columnId: c.id, operator: 'contains', value: '' }]);
+                      if (onFiltersChange && !filters.some((f) => f.columnId === c.id)) {
+                        onFiltersChange([...filters, { id: newFilterId(), columnId: c.id, operator: 'contains', value: '' }]);
                       }
+                      window.dispatchEvent(new Event('manday:open-filter'));
                       setColMenuFor(null);
                     }} style={menuBtnStyle}>
                       按此列筛选

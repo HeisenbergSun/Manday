@@ -199,26 +199,24 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert(JSON.stringify(aoa[1]).includes('B29-父任务'), 'S5 内容含 B29-父任务');
   }
 
-  // ── S6 #61 筛选 + 视图持久化 ──
-  await page.evaluate(() => document.querySelector('[data-filter-toggle]')?.click());
+  // ── S6 #61 筛选 + 视图持久化（工具条小弹窗） ──
+  await page.evaluate(() => document.querySelector('[data-filter-toolbar]')?.click());
   await sleep(600);
-  await page.evaluate(() => document.querySelector('[data-filter-add]')?.click());
+  await page.evaluate(() => document.querySelector('[data-filter-pop-add]')?.click());
   await sleep(600);
-  // 选「备注」列 + contains + S2
+  // 选「备注」列（默认是「条目」）+ 输入值
   await page.evaluate((col) => {
-    const row = document.querySelector('[data-filter-row]');
-    const sel = row?.querySelector('select[data-filter-col]');
-    if (sel) {
-      sel.value = col;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    const sel = document.querySelector('select[data-filter-pop-col]');
+    if (sel) { sel.value = col; sel.dispatchEvent(new Event('change', { bubbles: true })); }
   }, textCol.id);
   await sleep(400);
-  await page.type('[data-filter-val]', 'kb-行一');
+  await page.type('[data-filter-pop-val]', 'kb-行一');
   await sleep(800);
-  const matchInfo = await page.evaluate(() => document.body.innerText.match(/匹配 \d+\/\d+ 行/)?.[0] ?? '');
-  assert(matchInfo.includes('匹配 1/2'), `S6 筛选命中 1/2（实际 ${matchInfo || '无'}）`);
-  // 保存视图
+  const rowCount1 = await page.evaluate(() => document.querySelectorAll('[data-grid-row]').length);
+  assert(rowCount1 === 1, `S6 筛选命中 1 行（实际 ${rowCount1}）`);
+  // 关闭筛选弹窗，打开视图面板保存
+  await page.evaluate(() => document.querySelector('[data-filter-toolbar]')?.click());
+  await sleep(300);
   await page.evaluate(() => document.querySelector('[data-views-trigger]')?.click());
   await sleep(600);
   await page.type('input[placeholder="视图名"]', 'B29-筛选视图');
@@ -257,13 +255,17 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     el?.click();
   });
   await sleep(1500);
+  // 打开筛选弹窗检查条件还原
+  await page.evaluate(() => document.querySelector('[data-filter-toolbar]')?.click());
+  await sleep(600);
   const restored = await page.evaluate(() => ({
-    rows: document.querySelectorAll('[data-filter-row]').length,
-    val: document.querySelector('[data-filter-val]')?.value ?? '',
+    rows: document.querySelectorAll('[data-filter-pop-row]').length,
+    val: document.querySelector('[data-filter-pop-val]')?.value ?? '',
   }));
   assert(restored.rows >= 1 && restored.val === 'kb-行一', `S6 视图恢复筛选条件（rows=${restored.rows}, val=${restored.val}）`);
   // 清除筛选，避免影响后续断言
-  await page.evaluate(() => document.querySelector('[data-filter-clear]')?.click());
+  await page.evaluate(() => document.querySelector('[data-filter-pop-clear]')?.click());
+  await page.evaluate(() => document.querySelector('[data-filter-toolbar]')?.click());
   await sleep(800);
 
   // ── S7 #66 图片 lightbox ──
