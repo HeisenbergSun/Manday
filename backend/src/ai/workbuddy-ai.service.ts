@@ -4,22 +4,25 @@
  * 实现说明：
  * - 底层走腾讯云 CodeBuddy Agent SDK（@tencent-ai/agent-sdk），专享版（cloudhosted）模式。
  * - 鉴权：CODEBUDDY_API_KEY + CODEBUDDY_INTERNET_ENVIRONMENT=cloudhosted。
- *   专享版由 API Key 自动解析企业实例（scania.copilot.qq.com），无需显式 endpoint；
- *   显式传 endpoint 反而会在本环境被安全策略拦截，故不传。
- * - 看板数据接入：通过 SDK 的 createSdkMcpServer + tool() 暴露两个「只读」工具
- *   （list_boards / get_board_data），在 query() 的 options.mcpServers 注入。
- *   tools:[] 仍禁用内置文件/终端工具，AI 只能通过这些只读工具访问看板数据。
+ * - 看板数据接入：通过 SDK 的 createSdkMcpServer + tool() 暴露看板工具，在 query() 的 options.mcpServers 注入。
+ *   tools:[] 禁用内置文件/终端工具，AI 只能通过这些工具访问看板数据。
  *
- * 安全原则（对应方案 v3.0）：
- * 1. AI 身份 = 当前用户代理；只读工具复用 BoardsService 的可见性过滤 + 列权限过滤，
- *    因此 AI 只能读到「当前用户有权看到」的数据，无法越权。
- * 2. 只读工具直接执行；写工具（后续）必须走「预览→确认→执行」，全程 source:'ai' 审计。
+ * 安全三原则（对应方案 v3.0）：
+ * 1. AI 身份 = 当前用户代理；读工具复用 BoardsService 的可见性过滤 + 列权限过滤，无法越权。
+ * 2. 读工具直接执行；写工具（update_fields / create_items）在 SDK 内**只产出预览 + 登记 pending**，
+ *    绝不直接落库。真正的写入走 HTTP 端点 /ai/tool/confirm，二次 ACL 校验 + source:'ai' 审计。
+ * 3. pending 一次性、10 分钟过期、按 userId 隔离，防伪造/重放。
  */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ForbiddenException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { query, createSdkMcpServer, tool } from '@tencent-ai/agent-sdk';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { BoardsService } from '../modules/boards/boards.module';
+import { ItemsService } from '../modules/items/items.service';
+import { can, BoardRole } from '../modules/boards/acl';
 
 export interface ChatRequest {
   /** 当前用户上下文（权限边界） */
@@ -27,8 +30,22 @@ export interface ChatRequest {
   /** 当前所在 Board（侧边栏上下文感知） */
   boardId?: string;
   messages: { role: 'user' | 'assistant' | 'tool'; content: unknown }[];
-  /** 本轮是否允许写工具（纯对话阶段暂未启用） */
+  /** 本轮是否允许写工具（已启用） */
   allowWriteTools: boolean;
+}
+
+/** 流式输出事件：文本 or 待确认的写工具调用 */
+export type AiStreamEvent =
+  | { type: 'text'; text: string }
+  | { type: 'tool_call'; id: string; tool: string; summary: string; payload: unknown };
+
+/** pending 写操作记录（confirm 时消费） */
+interface PendingRecord {
+  userId: string;
+  tool: 'update_fields' | 'create_items';
+  boardId: string;
+  payload: any;
+  createdAt: number;
 }
 
 /** 把单个列值（JSON 文本形态）人性化：status → label，people → 姓名，其余原样 */
@@ -56,14 +73,32 @@ function parseValue(col: { type: string }, raw: unknown, users: { id: string; na
   return s;
 }
 
+function err(text: string): CallToolResult {
+  return { content: [{ type: 'text', text }], isError: true };
+}
+
+/** 写值归一化：status 存纯标签字符串（isItemDone 依赖 String(v) 匹配 doneLabels）；兼容 AI 传 {label,color} 对象 */
+function normalizeWriteValue(col: { type: string }, value: unknown): unknown {
+  if (col.type === 'status' && value && typeof value === 'object' && (value as any).label != null) {
+    return (value as any).label;
+  }
+  return value;
+}
+
 @Injectable()
 export class WorkBuddyAIService {
   private readonly apiKey: string;
   private readonly model: string;
+  /** 待确认写操作（一次性、按 userId 隔离、10 分钟过期） */
+  private readonly pending = new Map<string, PendingRecord>();
+  private readonly PENDING_TTL_MS = 10 * 60 * 1000;
 
-  constructor(config: ConfigService, private readonly boards: BoardsService) {
+  constructor(
+    config: ConfigService,
+    private readonly boards: BoardsService,
+    private readonly items: ItemsService,
+  ) {
     this.apiKey = config.get('WORKBUDDY_AI_API_KEY') || '';
-    // 未配置则用企业默认模型（CLI 的 auto）
     this.model = config.get('WORKBUDDY_AI_MODEL') || '';
   }
 
@@ -72,87 +107,202 @@ export class WorkBuddyAIService {
     return !!this.apiKey;
   }
 
-  /** 构建只读看板数据工具（每次 chat 按当前用户上下文创建，避免跨请求串号） */
-  private buildMandayServer(userId: string, currentBoardId?: string) {
-    return createSdkMcpServer({
-      name: 'manday',
-      version: '1.0.0',
-      tools: [
+  /** 构建看板工具（每次 chat 按当前用户上下文创建，避免跨请求串号） */
+  private buildMandayServer(
+    userId: string,
+    currentBoardId: string | undefined,
+    allowWrite: boolean,
+    onWrite: (rec: { id: string; tool: string; summary: string; payload: unknown }) => void,
+  ) {
+    const tools: any[] = [
+      tool(
+        'list_boards',
+        '列出当前用户可见的所有看板（含名称、归属部门、我的角色）。用于回答「我有哪些看板」「某个看板叫什么」等问题，或不确定看板 id 时先列出。',
+        {},
+        async () => {
+          try {
+            const list = await this.boards.listForUser(userId);
+            const slim = list.map((b: any) => ({
+              id: b.id, name: b.name, department_name: b.department_name, my_role: b.my_role,
+            }));
+            return { content: [{ type: 'text', text: JSON.stringify(slim) }] };
+          } catch (e: any) {
+            return err(`查询看板列表失败：${e?.message ?? e}`);
+          }
+        },
+      ),
+      tool(
+        'get_board_data',
+        '读取指定看板的完整数据：列定义（含 id/名称/类型/设置）、分组、条目（含 id/名称/分组/列值）。' +
+        '用于回答「哪些任务逾期」「某成员的工作负荷」等问题，也用于写操作前定位 itemId 与 columnId。' +
+        '每条 item 的 values 按列名索引（便于阅读），valuesById 按列 id 索引（便于回传写工具）。' +
+        'status 列的 settings.doneLabels 给出「完成」标签；boardId 省略时用当前上下文看板。',
+        { boardId: z.string().optional() },
+        async ({ boardId }: { boardId?: string }) => {
+          const bid = boardId || currentBoardId;
+          if (!bid) return err('未指定看板，请先用 list_boards 工具查询看板 id。');
+          try {
+            const d: any = await this.boards.detail(bid, userId);
+            const users = await this.boards.listUsers();
+            const used = new Set<string>();
+            const columns = (d.columns ?? []).map((c: any) => {
+              let label = c.name;
+              if (used.has(label)) label = `${label}(${c.type})`;
+              used.add(label);
+              return { id: c.id, name: label, type: c.type, settings: c.settings ?? {} };
+            });
+            const colById = Object.fromEntries((d.columns ?? []).map((c: any) => [c.id, c]));
+            const groupById = Object.fromEntries((d.groups ?? []).map((g: any) => [g.id, g.name]));
+            const items = (d.items ?? []).map((it: any) => {
+              const values: Record<string, unknown> = {};
+              const valuesById: Record<string, unknown> = {};
+              for (const [cid, v] of Object.entries(it.values ?? {})) {
+                const col = colById[cid];
+                if (!col) continue;
+                const colLabel = (columns.find((x: any) => x.id === cid) as any)?.name ?? col.name;
+                const parsed = parseValue(col, v, users);
+                values[colLabel] = parsed;
+                valuesById[cid] = parsed;
+              }
+              return { id: it.id, name: it.name, group: groupById[it.group_id] ?? '', values, valuesById };
+            });
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  board: d.board?.name,
+                  today: new Date().toISOString().slice(0, 10),
+                  columns: columns.map((c: any) => ({ id: c.id, name: c.name, type: c.type, settings: c.settings })),
+                  groups: (d.groups ?? []).map((g: any) => g.name),
+                  items,
+                }),
+              }],
+            };
+          } catch (e: any) {
+            return err(`读取看板失败：${e?.message ?? e}`);
+          }
+        },
+      ),
+    ];
+
+    // —— 写工具：只在 SDK 内产出预览 + 登记 pending，绝不落库 ——
+    if (allowWrite) {
+      tools.push(
         tool(
-          'list_boards',
-          '列出当前用户可见的所有看板（含名称、归属部门、我的角色）。用于回答「我有哪些看板」「某个看板叫什么」等问题，或不确定看板 id 时先列出。',
-          {},
-          async () => {
-            try {
-              const list = await this.boards.listForUser(userId);
-              const slim = list.map((b: any) => ({
-                id: b.id, name: b.name, department_name: b.department_name, my_role: b.my_role,
-              }));
-              return { content: [{ type: 'text', text: JSON.stringify(slim) }] };
-            } catch (e: any) {
-              return { content: [{ type: 'text', text: `查询看板列表失败：${e?.message ?? e}` }], isError: true };
-            }
+          'update_fields',
+          '批量修改看板条目的列值（写操作，需用户确认后才真正生效）。' +
+          '例：把若干任务的状态标记为「已完成」、修改负责人、设置截止日期。' +
+          '参数 changes 为数组，每项 { itemId, columnId, value }：itemId/columnId 取 get_board_data 返回的 id；' +
+          'status 列的 value 用标签文字（须与 settings.doneLabels 或 settings.labels 一致）；' +
+          'date 用 "YYYY-MM-DD"；number 用数字；checkbox 用 true/false；其余用文本。' +
+          '本工具只返回变更预览（diff），绝不直接写入；用户点确认后才会执行。',
+          {
+            boardId: z.string().optional(),
+            changes: z.array(z.object({ itemId: z.string(), columnId: z.string(), value: z.any() })).min(1).max(500),
           },
-        ),
-        tool(
-          'get_board_data',
-          '读取指定看板的完整数据：列定义、分组、条目及其列值（列名已映射、状态已取 label、人员已解析为姓名）。' +
-          '用于回答「哪些任务逾期」「某成员的工作负荷」「某看板进度」等需要看板数据的问题。' +
-          'boardId 省略时使用当前上下文看板。',
-          { boardId: z.string().optional() },
-          async ({ boardId }: { boardId?: string }) => {
+          async ({ boardId, changes }: { boardId?: string; changes: { itemId: string; columnId: string; value: unknown }[] }): Promise<CallToolResult> => {
             const bid = boardId || currentBoardId;
-            if (!bid) return { content: [{ type: 'text', text: '未指定看板，请先用 list_boards 工具查询看板 id。' }], isError: true };
+            if (!bid) return err('未指定看板，请先用 list_boards / get_board_data 确认看板 id。');
+            const role = await this.boards.resolveRole(bid, userId);
+            if (!can(role, 'edit')) return err('你对当前看板没有编辑权限，无法执行写操作。');
             try {
               const d: any = await this.boards.detail(bid, userId);
+              const itemMap = new Map<string, any>((d.items ?? []).map((i: any) => [i.id, i]));
+              const colMap = new Map<string, any>((d.columns ?? []).map((c: any) => [c.id, c]));
               const users = await this.boards.listUsers();
-              // 列名映射（去重：同名列加类型后缀，保证 values 键唯一）
-              const used = new Set<string>();
-              const columns = (d.columns ?? []).map((c: any) => {
-                let label = c.name;
-                if (used.has(label)) label = `${label}(${c.type})`;
-                used.add(label);
-                return { id: c.id, name: label, type: c.type };
-              });
-              const colById = Object.fromEntries((d.columns ?? []).map((c: any) => [c.id, c]));
-              const groupById = Object.fromEntries((d.groups ?? []).map((g: any) => [g.id, g.name]));
-              const items = (d.items ?? []).map((it: any) => {
-                const values: Record<string, unknown> = {};
-                for (const [cid, v] of Object.entries(it.values ?? {})) {
-                  const col = colById[cid];
-                  if (!col) continue;
-                  let label = col.name;
-                  const vals = columns.find((x: any) => x.id === cid);
-                  if (vals) label = vals.name;
-                  values[label] = parseValue(col, v, users);
+              const diff: string[] = [];
+              const valid: { itemId: string; columnId: string; value: unknown }[] = [];
+              for (const c of changes) {
+                const it = itemMap.get(c.itemId);
+                if (!it) { diff.push(`⚠️ 条目 ${c.itemId} 不存在，已跳过`); continue; }
+                const col = colMap.get(c.columnId);
+                if (!col) { diff.push(`⚠️ 「${it.name}」的列 ${c.columnId} 不存在，已跳过`); continue; }
+                if (col.type === 'formula') { diff.push(`⚠️ 「${it.name}」的「${col.name}」是公式列（只读），已跳过`); continue; }
+                if (col.type === 'attachment') { diff.push(`⚠️ 「${it.name}」的「${col.name}」是附件列（由上传维护），已跳过`); continue; }
+                if ((col.settings?.editPermission ?? col.settings?.editable) === 'owner' && role !== 'owner') {
+                  diff.push(`⚠️ 「${it.name}」的「${col.name}」仅负责人可编辑，已跳过`); continue;
                 }
-                return { name: it.name, group: groupById[it.group_id] ?? '', values };
-              });
-              return {
-                content: [{
-                  type: 'text',
-                  text: JSON.stringify({
-                    board: d.board?.name,
-                    today: new Date().toISOString().slice(0, 10),
-                    columns: columns.map((c: any) => ({ name: c.name, type: c.type })),
-                    groups: (d.groups ?? []).map((g: any) => g.name),
-                    items,
-                  }),
-                }],
-              };
+                const old = parseValue(col, it.values?.[c.columnId], users);
+                const next = normalizeWriteValue(col, c.value);
+                diff.push(`「${it.name}」的「${col.name}」：${old == null ? '（空）' : String(old)} → ${next == null ? '（空）' : String(next)}`);
+                valid.push({ itemId: c.itemId, columnId: c.columnId, value: next });
+              }
+              if (!valid.length) return err('没有可执行的变更：' + diff.join('；'));
+              const summary = `批量更新 ${valid.length} 个单元格`;
+              const id = randomUUID();
+              this.pending.set(id, { userId, tool: 'update_fields', boardId: bid, payload: { changes: valid }, createdAt: Date.now() });
+              onWrite({ id, tool: 'update_fields', summary, payload: { changes: valid } });
+              return { content: [{ type: 'text', text: `已生成变更预览（未执行，待用户确认）：\n${diff.join('\n')}` }] };
             } catch (e: any) {
-              return { content: [{ type: 'text', text: `读取看板失败：${e?.message ?? e}` }], isError: true };
+              return err(`生成预览失败：${e?.message ?? e}`);
             }
           },
         ),
-      ],
-    });
+        tool(
+          'create_items',
+          '在看板中新建条目（写操作，需用户确认后才真正创建）。参数 items 为数组，每项 { name, groupId? }；groupId 可省略（放入第一个分组）。',
+          {
+            boardId: z.string().optional(),
+            items: z.array(z.object({ name: z.string().min(1), groupId: z.string().optional() })).min(1).max(100),
+          },
+          async ({ boardId, items }: { boardId?: string; items: { name: string; groupId?: string }[] }): Promise<CallToolResult> => {
+            const bid = boardId || currentBoardId;
+            if (!bid) return err('未指定看板，请先用 list_boards / get_board_data 确认看板 id。');
+            const role = await this.boards.resolveRole(bid, userId);
+            if (!can(role, 'edit')) return err('你对当前看板没有编辑权限，无法创建条目。');
+            try {
+              const d: any = await this.boards.detail(bid, userId);
+              const groupById = Object.fromEntries((d.groups ?? []).map((g: any) => [g.id, g.name]));
+              const diff = items.map((it) => `新增「${it.name}」${it.groupId ? '→ 分组「' + (groupById[it.groupId] ?? it.groupId) + '」' : ''}`);
+              const summary = `新建 ${items.length} 个条目`;
+              const id = randomUUID();
+              this.pending.set(id, { userId, tool: 'create_items', boardId: bid, payload: { items }, createdAt: Date.now() });
+              onWrite({ id, tool: 'create_items', summary, payload: { items } });
+              return { content: [{ type: 'text', text: `已生成新建预览（未执行，待用户确认）：\n${diff.join('\n')}` }] };
+            } catch (e: any) {
+              return err(`生成预览失败：${e?.message ?? e}`);
+            }
+          },
+        ),
+      );
+    }
+
+    return createSdkMcpServer({ name: 'manday', version: '1.0.0', tools });
   }
 
-  /** 流式对话：转发到 Scania WorkBuddy 企业版（CodeBuddy 专享版），逐段 yield 文本 */
-  async *chat(req: ChatRequest): AsyncGenerator<string> {
+  /**
+   * 写工具确认执行端点：消费 pending 记录，二次 ACL 校验后真正写入。
+   * 前端只传 toolCallId；payload 以服务端登记为准（防篡改）。
+   */
+  async confirmTool(toolCallId: string, userId: string) {
+    const rec = this.pending.get(toolCallId);
+    if (!rec) throw new ForbiddenException('无效或已过期的确认请求，请重新发起');
+    if (rec.userId !== userId) throw new ForbiddenException('无权确认该操作');
+    if (Date.now() - rec.createdAt > this.PENDING_TTL_MS) {
+      this.pending.delete(toolCallId);
+      throw new ForbiddenException('确认请求已过期（超过 10 分钟），请重新发起');
+    }
+    this.pending.delete(toolCallId); // 一次性消费
+    const role = await this.boards.resolveRole(rec.boardId, userId);
+    if (!can(role, 'edit')) throw new ForbiddenException('你已失去对该看板的编辑权限');
+
+    if (rec.tool === 'update_fields') {
+      const res = await this.items.batchUpdate(rec.payload.changes, role, userId, 'ai');
+      return { applied: true, updated: res.updated };
+    }
+    // create_items
+    const created: any[] = [];
+    for (const it of rec.payload.items) {
+      created.push(await this.items.createItem(rec.boardId, it.name, it.groupId ?? null, role, userId, 'ai'));
+    }
+    return { applied: true, created: created.length };
+  }
+
+  /** 流式对话：转发到 Scania WorkBuddy 企业版（CodeBuddy 专享版），逐段 yield 文本/工具调用 */
+  async *chat(req: ChatRequest): AsyncGenerator<AiStreamEvent> {
+    const text = (t: string): AiStreamEvent => ({ type: 'text', text: t });
     if (!this.apiKey) {
-      yield '⚠️ 未配置 AI 网关（WORKBUDDY_AI_API_KEY），请联系管理员在 .env 中配置后重启后端。';
+      yield text('⚠️ 未配置 AI 网关（WORKBUDDY_AI_API_KEY），请联系管理员在 .env 中配置后重启后端。');
       return;
     }
 
@@ -165,21 +315,26 @@ export class WorkBuddyAIService {
     if (!prompt.trim()) return;
 
     const today = new Date().toISOString().slice(0, 10);
+    const pendingWrites: { id: string; tool: string; summary: string; payload: unknown }[] = [];
+    const server = this.buildMandayServer(req.userId, req.boardId, req.allowWriteTools, (rec) => pendingWrites.push(rec));
+
     let q;
     try {
       q = query({
         prompt,
         options: {
-          // 纯对话安全：禁用内置文件/终端工具；看板数据走下方只读 MCP 工具
+          // 纯对话安全：禁用内置文件/终端工具；看板数据走下方 MCP 工具
           tools: [],
-          // 只读看板工具（复用 BoardsService 的权限过滤）
-          mcpServers: { manday: this.buildMandayServer(req.userId, req.boardId) },
-          // 只允许本服务的只读工具自动执行；其余（含未来写工具）一律拒绝
+          mcpServers: { manday: server },
+          // 读工具直接执行；写工具在 SDK 内只产出预览（不落库），故可 allow，真正写入在 /ai/tool/confirm
           canUseTool: async (toolName: string) => {
-            if (toolName.includes('list_boards') || toolName.includes('get_board_data')) {
+            if (
+              toolName.includes('list_boards') || toolName.includes('get_board_data') ||
+              toolName.includes('update_fields') || toolName.includes('create_items')
+            ) {
               return { behavior: 'allow' as const };
             }
-            return { behavior: 'deny' as const, message: '当前仅支持只读看板查询工具。' };
+            return { behavior: 'deny' as const, message: '当前仅支持看板查询与写预览工具。' };
           },
           permissionMode: 'default',
           ...(this.model ? { model: this.model } : {}),
@@ -187,12 +342,18 @@ export class WorkBuddyAIService {
             append:
               '你是 Manday（企业内部轻量级 Monday.com 替代品）内置的 AI 助手。' +
               `今天是 ${today}。` +
-              '你现在拥有两个只读工具：list_boards（列出看板）和 get_board_data（读取看板数据，返回列定义、分组、条目及列值）。' +
-              '当用户问「哪些任务逾期」「某人的工作负荷」「看板进度」「我有哪些看板」等需要数据的问题时，' +
-              '务必先调用这些工具读取真实数据，再基于数据回答，不要凭空猜测或说「我无法读取数据」。' +
-              '逾期判断：日期列的值 < 今天，且该条目状态列（status，如 Done/已完成）尚未标记为完成。' +
-              '工作负荷：统计 people 列中各成员被指派的未完成条目数量。' +
-              '回答要简洁、准确、用中文；若数据不足或权限受限（某些列不可见），如实说明。',
+              '你拥有看板工具：list_boards（列看板）、get_board_data（读看板数据，返回列定义/分组/条目/列值，含 id 与 settings）。' +
+              (req.allowWriteTools
+                ? '你还拥有写工具：update_fields（批量改列值，如标记状态为已完成）、create_items（新建条目）。' +
+                  '写工具只返回变更预览、不会立即生效；调用后你会拿到一份 diff，把它如实呈现给用户，并说明「已生成预览，待你确认执行」。' +
+                  'status 列的 value 必须使用 get_board_data 返回的该列 settings.doneLabels（或 settings.labels）中的准确标签文字。'
+                : '') +
+              '当用户问「哪些任务逾期」「某人的工作负荷」「看板进度」等需要数据的问题时，务必先调用工具读真实数据再回答，不要凭空猜测。' +
+              '用户当前打开了某个看板（get_board_data 省略 boardId 即读当前看板）。当用户说「这个看板 / 这些任务 / 本看板」时，默认指当前打开的看板：' +
+              '先用 get_board_data 读当前看板数据，再基于数据判断，不要动辄反问「哪个看板」。只有当前看板数据明显对不上、或用户明确提到多个看板时，才用 list_boards 或请用户澄清。' +
+              '当用户要求「把某些任务标记为完成/修改/新增」等写操作时，调用对应写工具生成预览。' +
+              '逾期判断：日期列的值 < 今天，且状态列尚未标记为完成。工作负荷：统计 people 列各成员未完成条目数。' +
+              '回答简洁、准确、中文；数据不足或权限受限时如实说明。',
           },
           env: {
             CODEBUDDY_API_KEY: this.apiKey,
@@ -201,7 +362,7 @@ export class WorkBuddyAIService {
         },
       });
     } catch (e: any) {
-      yield `⚠️ 初始化 AI 网关失败：${e?.message ?? e}`;
+      yield text(`⚠️ 初始化 AI 网关失败：${e?.message ?? e}`);
       return;
     }
 
@@ -210,12 +371,17 @@ export class WorkBuddyAIService {
         if (message.type === 'assistant') {
           const blocks = (message as any).message?.content ?? [];
           for (const block of blocks) {
-            if (block.type === 'text' && block.text) yield block.text;
+            if (block.type === 'text' && block.text) yield text(block.text);
           }
         }
       }
     } catch (e: any) {
-      yield `\n⚠️ AI 请求出错：${e?.message ?? e}`;
+      yield text(`\n⚠️ AI 请求出错：${e?.message ?? e}`);
+    }
+
+    // 本轮产生的待确认写操作，作为结构化帧下发（前端渲染「确认执行」卡片）
+    for (const pw of pendingWrites) {
+      yield { type: 'tool_call', id: pw.id, tool: pw.tool, summary: pw.summary, payload: pw.payload };
     }
   }
 }

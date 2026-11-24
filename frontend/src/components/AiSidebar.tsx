@@ -21,7 +21,7 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
     const q = (text ?? input).trim();
     if (!q || busy) return;
     setInput(''); setBusy(true); setErr('');
-    setMsgs((m) => [...m, { role: 'user', content: q }]); scroll();
+    setMsgs((m) => [...m, { role: 'user', content: q }, { role: 'ai', content: '' }]); scroll();
 
     let reader: ReadableStreamDefaultReader<Uint8Array>;
     try {
@@ -33,36 +33,49 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
       return;
     }
     const decoder = new TextDecoder();
-    let full = '';
-    const idx = msgs.length + 1;
-    setMsgs((m) => [...m, { role: 'ai', content: '' }]); scroll();
+    let buffer = '';          // 未切分完的 SSE 字节残留
+    let full = '';            // 已累积的 AI 文本
+    let confirm: Msg['confirm'] | undefined;
 
-    // SSE 逐段渲染；特殊帧 [TOOL_CALL] {...} 转为确认卡片
+    const sync = () => {
+      setMsgs((m) => {
+        const n = [...m];
+        const last = n[n.length - 1];
+        n[n.length - 1] = {
+          role: 'ai',
+          content: full + (confirm ? '\n（写操作需要你确认）' : ''),
+          confirm: confirm ?? last.confirm,
+        };
+        return n;
+      });
+      scroll();
+    };
+
+    // 标准 SSE 解析：按 \n\n 切事件，事件内多条 data: 行用 \n 拼接（后端把文本里的 \n 编码成 \ndata: ）
     while (true) {
       const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: true });
+      if (done) buffer += decoder.decode(); // flush 剩余多字节
+      let idx: number;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const evt = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const data = evt
+          .split('\n')
+          .filter((l) => l.startsWith('data: '))
+          .map((l) => l.slice(6))
+          .join('\n');
+        if (data.startsWith('[TOOL_CALL] ')) {
+          try {
+            const call = JSON.parse(data.slice('[TOOL_CALL] '.length));
+            confirm = { toolCallId: call.id, tool: call.tool, summary: call.summary, payload: call.payload };
+          } catch { /* 忽略坏帧 */ }
+        } else if (data && data !== '[DONE]') {
+          full += data;
+        }
+      }
+      sync();
       if (done) break;
-      // 剥掉 SSE 帧前缀（后端发的是 `data: xxx\n\n`）
-      const raw = decoder.decode(value, { stream: true });
-      const chunk = raw
-        .split('\n')
-        .map((line) => (line.startsWith('data: ') ? line.slice(6) : line))
-        .filter((line) => !line.startsWith('event:') && line !== '[DONE]')
-        .join('');
-      if (!chunk.trim()) continue;
-      const toolMatch = chunk.match(/\[TOOL_CALL\] (.+)/);
-      if (toolMatch) {
-        const call = JSON.parse(toolMatch[1]);
-        setMsgs((m) => {
-          const next = [...m];
-          next[next.length - 1] = {
-            role: 'ai', content: full + '\n（写操作需要你确认）',
-            confirm: { toolCallId: call.id, tool: call.tool, summary: call.summary, payload: call.payload },
-          };
-          return next;
-        });
-      } else { full += chunk; }
-      setMsgs((m) => { const n = [...m]; n[n.length - 1] = { ...n[n.length - 1], content: full }; return n; });
-      scroll();
     }
     setBusy(false);
   }
@@ -70,9 +83,14 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
   /** 用户点"确认执行"——真正写入复用普通 API（ACL 再校验），AI 无独立写通道 */
   async function applyConfirm(mi: number) {
     const msg = msgs[mi];
-    const res = await api.aiConfirmTool(msg.confirm!.toolCallId, msg.confirm!.tool, msg.confirm!.payload);
-    setMsgs((m) => { const n = [...m]; n[mi] = { ...n[mi], applied: true, confirm: undefined }; return n; });
-    // 成功后刷新 Board 数据（WS 也会推送增量）
+    try {
+      await api.aiConfirmTool(msg.confirm!.toolCallId);
+      setMsgs((m) => { const n = [...m]; n[mi] = { ...n[mi], applied: true, confirm: undefined }; return n; });
+      // 刷新当前看板（写入已落库）
+      window.dispatchEvent(new Event('manday:refresh-board'));
+    } catch (e) {
+      setMsgs((m) => { const n = [...m]; n[mi] = { ...n[mi], content: (n[mi].content ?? '') + `\n⚠️ 执行失败：${(e as Error).message}` }; return n; });
+    }
   }
 
   return (

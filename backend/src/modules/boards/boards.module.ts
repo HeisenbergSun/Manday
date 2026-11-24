@@ -3,7 +3,7 @@
  */
 import { Injectable, Controller, Get, Post, Patch, Put, Delete, Body, Param, Req, Module, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Pool } from 'pg';
-import { can, canEditStructure } from './acl';
+import { can, canEditStructure, BoardRole } from './acl';
 import { applyViewPermission } from '../items/items.service';
 import { injectFormulaValues, validateFormula, FormulaRow } from '../formula';
 import { injectMirrorValues } from '../mirror';
@@ -38,8 +38,8 @@ export class BoardsService {
     return rows;
   }
 
-  /** Board 级角色解析（与 items.controller.resolveRoleForItem 同一规则） */
-  private async resolveRole(boardId: string, userId: string) {
+  /** Board 级角色解析（与 items.controller.resolveRoleForItem 同一规则）——公开给 AI 写工具复用 */
+  async resolveRole(boardId: string, userId: string): Promise<BoardRole | null> {
     const { rows: br } = await this.pg.query(
       `SELECT b.owner_id, b.visibility, bp.role,
               EXISTS (SELECT 1 FROM user_departments ud WHERE ud.user_id = $2
@@ -49,8 +49,8 @@ export class BoardsService {
        WHERE b.id = $1`, [boardId, userId]);
     if (!br.length) return null;
     const r = br[0];
-    return r.role ?? (r.owner_id === userId ? 'owner'
-      : (r.visibility === 'company' || (r.visibility === 'department' && r.in_dept)) ? 'editor' : 'viewer');
+    return (r.role ?? (r.owner_id === userId ? 'owner'
+      : (r.visibility === 'company' || (r.visibility === 'department' && r.in_dept)) ? 'editor' : 'viewer')) as BoardRole;
   }
 
   /** Board 详情（条目 + 动态列 + 分组，一次性返回，前端冷启动/冲突重载用） */

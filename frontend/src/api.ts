@@ -217,8 +217,8 @@ export const api = {
     request(`/templates/${key}/instantiate`, { method: 'POST', body: JSON.stringify({ name, withSamples }) }),
 
   // ---- AI（WorkBuddy 企业版网关，SSE）----
-  aiConfirmTool: (toolCallId: string, tool: string, payload: unknown) =>
-    request('/ai/tool/confirm', { method: 'POST', body: JSON.stringify({ toolCallId, tool, payload }) }),
+  aiConfirmTool: (toolCallId: string) =>
+    request('/ai/tool/confirm', { method: 'POST', body: JSON.stringify({ toolCallId }) }),
 };
 
 /** AI 流式对话：返回 SSE reader，前端逐段渲染 */

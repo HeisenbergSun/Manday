@@ -197,8 +197,8 @@ export class ItemsService {
   }
 
   /** 软删除 → 回收站（P0 刚需） */
-  /** 创建条目（P0）：默认放第一个分组，初始 version=1 */
-  async createItem(boardId: string, name: string, groupId: string | null, userRole: BoardRole | null, userId: string) {
+  /** 创建条目（P0）：默认放第一个分组，初始 version=1；source 用于区分 ui / ai 审计 */
+  async createItem(boardId: string, name: string, groupId: string | null, userRole: BoardRole | null, userId: string, source: 'ui' | 'ai' = 'ui') {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
     let gid = groupId;
     if (!gid) {
@@ -212,8 +212,8 @@ export class ItemsService {
       [boardId, gid, name || '新条目', Date.now() / 1000, userId],
     );
     await this.pg.query(
-      `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'item.create',$2,'ui')`,
-      [userId, `item:${rows[0].id}`],
+      `INSERT INTO audit_logs (user_id, action, target, source) VALUES ($1,'item.create',$2,$3)`,
+      [userId, `item:${rows[0].id}`, source],
     );
     void this.automation.emit(boardId, rows[0].id, { type: 'item_created' }, userId);
     return rows[0];
@@ -295,10 +295,10 @@ export class ItemsService {
     return newItem;
   }
 
-  /** 批量编辑（P0 刚需）：一次事务内批量 upsert 列值；P1-2 补列权限校验（原漏洞：批量绕过列限制） */
+  /** 批量编辑（P0 刚需）：一次事务内批量 upsert 列值；P1-2 补列权限校验（原漏洞：批量绕过列限制）；source 区分 ui/ai 审计 */
   async batchUpdate(
     changes: { itemId: string; columnId: string; value: unknown }[],
-    userRole: BoardRole | null, userId: string,
+    userRole: BoardRole | null, userId: string, source: 'ui' | 'ai' = 'ui',
   ) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
     if (userRole !== 'owner' && changes.length) {
@@ -324,8 +324,8 @@ export class ItemsService {
       }
       await client.query(
         `INSERT INTO audit_logs (user_id, action, target, source)
-         VALUES ($1, 'item.batch_update', $2, 'ui')`,
-        [userId, `count:${changes.length}`],
+         VALUES ($1, 'item.batch_update', $2, $3)`,
+        [userId, `count:${changes.length}`, source],
       );
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; }

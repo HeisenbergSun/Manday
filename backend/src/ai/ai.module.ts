@@ -4,13 +4,23 @@
  */
 import { Module } from '@nestjs/common';
 import { Controller, Post, Get, Body, Sse, Query, Req, Res } from '@nestjs/common';
-import { map, Observable } from 'rxjs';
-import { WorkBuddyAIService } from './workbuddy-ai.service';
+import { Observable } from 'rxjs';
+import { WorkBuddyAIService, AiStreamEvent } from './workbuddy-ai.service';
 import { BoardsModule } from '../modules/boards/boards.module';
+import { ItemsModule } from '../modules/items/items.module';
 
 @Controller('ai')
 export class AiController {
   constructor(private readonly ai: WorkBuddyAIService) {}
+
+  /** 把结构化事件序列化为 SSE 帧：文本走 data:，写工具预览走 data: [TOOL_CALL] {...} */
+  private writeEvent(res: any, ev: AiStreamEvent) {
+    if (ev.type === 'text') {
+      res.write(`data: ${String(ev.text).replace(/\n/g, '\ndata: ')}\n\n`);
+    } else {
+      res.write(`data: [TOOL_CALL] ${JSON.stringify({ id: ev.id, tool: ev.tool, summary: ev.summary, payload: ev.payload })}\n\n`);
+    }
+  }
 
   /**
    * 对话（SSE 流式，POST）——前端 AiSidebar 用 fetch POST 消费（可带 Authorization 头）
@@ -30,9 +40,7 @@ export class AiController {
       messages: [{ role: 'user', content: body.message }],
     });
     try {
-      for await (const chunk of stream) {
-        res.write(`data: ${String(chunk).replace(/\n/g, '\ndata: ')}\n\n`);
-      }
+      for await (const ev of stream) this.writeEvent(res, ev);
       res.write('event: done\ndata: [DONE]\n\n');
     } catch (e: any) {
       res.write(`data: \n\n`);
@@ -45,7 +53,6 @@ export class AiController {
   @Sse('chat/stream')
   async chat(@Req() req, @Query('message') message: string, @Query('boardId') boardId?: string) {
     const body = { boardId, message: message ?? '' };
-    // req.user 来自 SSO 守卫；AI 全程以用户身份运行，无独立权限
     const stream = this.ai.chat({
       userId: req.user.id,
       boardId: body.boardId,
@@ -53,25 +60,28 @@ export class AiController {
       messages: [{ role: 'user', content: body.message }],
     });
     return new Observable((sub) => {
-      (async () => { for await (const chunk of stream) sub.next({ data: chunk }); sub.complete(); })();
+      (async () => {
+        for await (const ev of stream) {
+          if (ev.type === 'text') sub.next({ data: ev.text });
+          else sub.next({ data: `[TOOL_CALL] ${JSON.stringify({ id: ev.id, tool: ev.tool, summary: ev.summary, payload: ev.payload })}` });
+        }
+        sub.complete();
+      })();
     });
   }
 
   /**
    * 写工具确认执行端点：AI 产出的预览卡片，用户点确认后走这里
-   * 真正的写入复用 ItemsService（ACL 再次校验），AI 无独立写通道
+   * 真正的写入复用 ItemsService（ACL 再次校验 + source:'ai'），AI 无独立写通道
    */
   @Post('tool/confirm')
-  async confirmTool(@Req() req, @Body() body: { toolCallId: string; tool: string; payload: unknown }) {
-    // 1. 校验 toolCallId 属于该用户未过期会话（防伪造/重放）
-    // 2. 按 tool 分发到对应 Service（create_board / create_items / update_fields / create_automation）
-    // 3. 落 audit_logs source='ai'，返回 diff 与回滚句柄
-    return { applied: true, rollbackToken: 'TODO' };
+  async confirmTool(@Req() req, @Body() body: { toolCallId: string }) {
+    return this.ai.confirmTool(body.toolCallId, req.user.id);
   }
 }
 
 @Module({
-  imports: [BoardsModule],
+  imports: [BoardsModule, ItemsModule],
   controllers: [AiController],
   providers: [WorkBuddyAIService],
 })

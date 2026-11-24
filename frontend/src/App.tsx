@@ -174,6 +174,18 @@ export function App() {
     return () => window.removeEventListener('manday:reconnected', onReconnected);
   }, [user?.id, activeBoard?.id]);
 
+  // AI 写工具确认执行后：重拉当前看板（写入已落库，无独立 WS 增量通道）
+  useEffect(() => {
+    const onRefresh = () => {
+      if (!user || !activeBoard?.id) return;
+      api.getBoard(activeBoard.id)
+        .then((d: any) => setBoard(d.items ?? [], d.columns ?? [], d.groups ?? [], d.myRole))
+        .catch(() => {});
+    };
+    window.addEventListener('manday:refresh-board', onRefresh);
+    return () => window.removeEventListener('manday:refresh-board', onRefresh);
+  }, [user?.id, activeBoard?.id]);
+
   if (!user) return <Login onLogin={setUser} />;
 
   return (
