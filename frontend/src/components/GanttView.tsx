@@ -317,8 +317,8 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
       </div>
       {/* 主体（今天参考线覆盖时间轴区域） */}
       <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
-        <div data-gantt-today="1" style={{ position: 'absolute', top: 0, bottom: 0, left: LABEL_W + todayLeft, width: 2,
-          background: '#ffb224', opacity: 0.6, zIndex: 5, pointerEvents: 'none' }} />
+        <div data-gantt-today="1" style={{ position: 'absolute', top: 0, left: LABEL_W + todayLeft, width: 2,
+          height: Math.max((displayIds.length + groups.length + 2) * ROW_H, 160), background: '#ffb224', opacity: 0.6, zIndex: 5, pointerEvents: 'none' }} />
         {!startCol ? (
           <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>这个 Board 还没有日期列——去表格视图添加一个「日期」列，条目就能以甘特图展示时间安排</div>
         ) : body.length ? body : <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>还没有条目设置了日期</div>}
