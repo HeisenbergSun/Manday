@@ -11,6 +11,7 @@ import { useItems, useToast } from '../store';
 import { api } from '../api';
 import { soften } from '../theme';
 import { useCompanyUsers, personNames, membersOf } from '../people';
+import { parseLocal, startOfDay } from '../dateUtils';
 
 const AVATAR_COLORS = ['#579bfc', '#e2445c', '#00a25b', '#fdab3d', '#a25ddc', '#00d6c5', '#ff8a65'];
 
@@ -32,7 +33,7 @@ function Card({ itemId, onOpenItem }: { itemId: string; onOpenItem?: (id: string
   const peopleNames: string[] = peopleCol ? personNames(people, users, membersOf(peopleCol)) : [];
 
   const dateVal = dateCol ? (item as any).values?.[dateCol.id] : null;
-  const overdue = dateVal && new Date(String(dateVal)) < new Date(new Date().toDateString());
+  const overdue = dateVal && startOfDay(parseLocal(String(dateVal))).getTime() < startOfDay(new Date()).getTime();
 
   const statusVal = statusCol ? (item as any).values?.[statusCol.id] : null;
   const statusLabel = ((statusCol?.settings?.labels as any[]) ?? []).find((l: any) => l.label === statusVal);
@@ -176,9 +177,11 @@ export function Kanban({ groups, boardId, onOpenItem }: { groups: { id: string; 
   const columns = useItems((s) => s.columns);
   const allItems = useItems((s) => s.items);
   const users = useCompanyUsers();
-  const statusCol = columns.find((c: any) => c.type === 'status');
+  const statusCols = useMemo(() => columns.filter((c: any) => c.type === 'status'), [columns]);
   const [mode, setMode] = useState<'group' | 'status' | 'column'>('group');
   const [groupByColId, setGroupByColId] = useState<string>('');
+  const [statusColId, setStatusColId] = useState<string>('');
+  const statusCol = statusCols.find((c: any) => c.id === statusColId) ?? statusCols[0];
   const [toast, setToast] = useState('');
   const [collapsedCols, setCollapsedCols] = useState<Set<string>>(new Set());
   const [wipLimits, setWipLimits] = useState<Record<string, number>>({});
@@ -188,6 +191,7 @@ export function Kanban({ groups, boardId, onOpenItem }: { groups: { id: string; 
     api.getPrefs(boardId).then((p: any) => {
       if (p?.prefs?.kanbanMode === 'status' && statusCol) setMode('status');
       if (p?.prefs?.kanbanGroupCol) { setMode('column'); setGroupByColId(p.prefs.kanbanGroupCol); }
+      if (p?.prefs?.kanbanStatusCol) setStatusColId(p.prefs.kanbanStatusCol);
       if (p?.prefs?.kanbanWip) setWipLimits(p.prefs.kanbanWip);
     }).catch(() => {});
   }, [boardId]);
@@ -202,6 +206,12 @@ export function Kanban({ groups, boardId, onOpenItem }: { groups: { id: string; 
     setGroupByColId(colId);
     setMode('column');
     if (boardId) api.putPrefs(boardId, { prefs: { kanbanMode: 'column', kanbanGroupCol: colId } }).catch(() => {});
+  };
+
+  /** P1-7：绑定「按状态」使用的状态列（多个状态列时可选，持久化） */
+  const switchStatusCol = (colId: string) => {
+    setStatusColId(colId);
+    if (boardId) api.putPrefs(boardId, { prefs: { kanbanStatusCol: colId } }).catch(() => {});
   };
 
   const toggleCollapse = (colId: string) => {
@@ -349,6 +359,13 @@ export function Kanban({ groups, boardId, onOpenItem }: { groups: { id: string; 
               background: mode === 'status' ? '#eef1fe' : '#fff', color: mode === 'status' ? '#4f6ef7' : '#7a7f8c', cursor: 'pointer' }}>
             按状态（{statusCol.name}）
           </button>
+        )}
+        {statusCols.length > 1 && (
+          <select data-kanban-status-col value={statusCol?.id ?? ''} onChange={(e) => switchStatusCol(e.target.value)}
+            title="绑定「按状态」使用的状态列"
+            style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 12, color: '#4f6ef7', background: '#fff', cursor: 'pointer' }}>
+            {statusCols.map((c: any) => <option key={c.id} value={c.id}>状态列：{c.name}</option>)}
+          </select>
         )}
         {groupableCols.length > 0 && (
           <select data-kanban-groupby value={mode === 'column' ? groupByColId : ''} onChange={(e) => switchGroupCol(e.target.value)}

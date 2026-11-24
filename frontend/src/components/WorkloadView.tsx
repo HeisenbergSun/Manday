@@ -7,6 +7,7 @@ import { useItems } from '../store';
 import { Icon } from './Icons';
 import { doneLabelsOf } from '../theme';
 import { useCompanyUsers, personNames, membersOf } from '../people';
+import { parseLocal, startOfDay, addDaysStr } from '../dateUtils';
 
 export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => void }) {
   const { items, columns } = useItems();
@@ -27,7 +28,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
     if (!peopleCol) return [];
     // 统一解析：真实用户 UUID → 姓名；回退 settings.members 假 id；最后原值
     const members = membersOf(peopleCol);
-    const today = new Date(new Date().toDateString()).getTime();
+    const today = startOfDay(new Date()).getTime();
     for (const it of Object.values(items) as any[]) {
       const raw = it.values?.[peopleCol.id];
       const names = personNames(raw, users, members);
@@ -36,7 +37,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
         const s = bump(n);
         s.total++; s.ids.push(it.id);
         if (statusCol && doneSet.has(String(it.values?.[statusCol.id] ?? ''))) s.done++;
-        if (dateCol && it.values?.[dateCol.id] && new Date(String(it.values[dateCol.id]).slice(0, 10)).getTime() < today
+        if (dateCol && it.values?.[dateCol.id] && startOfDay(parseLocal(String(it.values[dateCol.id]))).getTime() < today
           && !(statusCol && doneSet.has(String(it.values?.[statusCol.id] ?? '')))) s.overdue++;
       }
     }
@@ -47,11 +48,8 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
 
   // ---- P1-8+ 按日负载热力条：未来 14 天（含「逾期」桶）----
   const DAYS = 14;
-  const today0 = new Date(new Date().toDateString());
-  const dayList = useMemo(() => Array.from({ length: DAYS }, (_, i) => {
-    const d = new Date(today0); d.setDate(d.getDate() + i);
-    return d.toISOString().slice(0, 10);
-  }), []);
+  const today0 = startOfDay(new Date());
+  const dayList = useMemo(() => Array.from({ length: DAYS }, (_, i) => addDaysStr(today0, i)), []);
   const heat = useMemo(() => {
     // per person: { overdue: [{id,name}], days: { 'YYYY-MM-DD': [{id,name}] } }
     const res = new Map<string, { overdue: { id: string; name: string }[]; days: Record<string, { id: string; name: string }[]> }>();
@@ -69,7 +67,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
         if (due && dayList.includes(due)) {
           if (!r.days[due]) r.days[due] = [];
           r.days[due].push({ id: it.id, name: it.name });
-        } else if (due && !isDone && new Date(due).getTime() < today0.getTime()) {
+        } else if (due && !isDone && startOfDay(parseLocal(due)).getTime() < today0.getTime()) {
           r.overdue.push({ id: it.id, name: it.name });
         }
       }

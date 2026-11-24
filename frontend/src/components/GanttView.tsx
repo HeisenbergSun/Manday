@@ -9,13 +9,12 @@ import { api } from '../api';
 import { Icon } from './Icons';
 import { isItemDone } from '../theme';
 import { useCompanyUsers, personNames, membersOf } from '../people';
+import { fmtLocal, parseLocal, startOfDay } from '../dateUtils';
 
 const DAY = 24 * 3600 * 1000;
 const ROW_H = 32;
 const CELL_W = 14;   // 每天像素宽
 const LABEL_W = 180; // 左侧名称列宽
-
-function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 
 type GRow = { id: string; name: string; start: number; end: number; overdue: boolean; done: boolean; deps: string[]; blocked: boolean; peopleNames: string[] };
 
@@ -44,9 +43,9 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
     for (const it of Object.values(items) as any[]) {
       const s = it.values?.[startCol.id];
       if (!s) continue;
-      const start = startOfDay(new Date(String(s).slice(0, 10))).getTime();
+      const start = startOfDay(parseLocal(String(s))).getTime();
       const e = endCol ? it.values?.[endCol.id] : null;
-      const end = e ? startOfDay(new Date(String(e).slice(0, 10))).getTime() : start;
+      const end = e ? startOfDay(parseLocal(String(e))).getTime() : start;
       const [a, b] = start <= end ? [start, end] : [end, start];
       const names = peopleCol ? personNames(it.values?.[peopleCol.id], users, membersOf(peopleCol)) : [];
       out.push({ id: it.id, name: it.name, start: a, end: b, overdue: b < today,
@@ -165,26 +164,34 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
         if (!dg || !d || (d.dStart === 0 && d.dEnd === 0)) return;
         const it = (Object.values(items) as any[]).find((x) => x.id === dg.id);
         if (!it) return;
-        const fmt = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+        const fmt = (ms: number) => fmtLocal(new Date(ms));
         const newStart = fmt(dg.baseStart + d.dStart * DAY);
         const newEnd = fmt(Math.max(dg.baseEnd + d.dEnd * DAY, dg.baseStart + d.dStart * DAY));
         try {
           let version = it.version;
+          let label: string;
           if (endCol && dg.mode !== 'start') {
-            // 双日期列：开始/结束分别保存
-            if (fmt(dg.baseStart + d.dStart * DAY) !== String(it.values?.[startCol.id] ?? '').slice(0, 10)) {
+            // 双日期列（整体拖/右缘拖）：开始/结束分别保存
+            label = newStart + ' ~ ' + newEnd;
+            if (newStart !== String(it.values?.[startCol.id] ?? '').slice(0, 10)) {
               const r1: any = await api.updateCell(it.id, startCol.id, newStart, version);
               version = r1?.version ?? version;
             }
-            if (fmt(dg.baseEnd + d.dEnd * DAY) !== String(it.values?.[endCol.id] ?? '').slice(0, 10)) {
+            if (newEnd !== String(it.values?.[endCol.id] ?? '').slice(0, 10)) {
               const r2: any = await api.updateCell(it.id, endCol.id, newEnd, version);
               version = r2?.version ?? version;
             }
-          } else {
-            // 单日期列：整体拖/右缘拖都只改开始日期
+          } else if (endCol && dg.mode === 'start') {
+            // 双日期列（左缘拖）：仅改开始日期
+            label = newStart;
             await api.updateCell(it.id, startCol.id, newStart, version);
+          } else {
+            // 单日期列：move/start/end 都等价于把日期平移到新位置（右缘拖应存 newEnd 而非未变的 newStart）
+            const newDate = dg.mode === 'start' ? newStart : newEnd;
+            label = newDate;
+            await api.updateCell(it.id, startCol.id, newDate, version);
           }
-          setToast(`「${r.name}」已更新为 ${newStart}${endCol && dg.mode !== 'start' ? ' ~ ' + newEnd : ''}`);
+          setToast(`「${r.name}」已更新为 ${label}`);
           setTimeout(() => setToast(''), 2600);
         } catch (err: any) {
           setToast(`保存失败：${err.message ?? err}`);
