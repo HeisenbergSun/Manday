@@ -4,6 +4,7 @@
  */
 import { useMemo } from 'react';
 import { useItems } from '../store';
+import { Icon } from './Icons';
 import { doneLabelsOf } from '../theme';
 import { useCompanyUsers, personNames, membersOf } from '../people';
 
@@ -130,7 +131,7 @@ export function InsightsView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
 
   return (
     <div data-insights-view style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 980 }}>
-      <b style={{ fontSize: 15, color: '#1f2330' }}>🪭 分析</b>
+      <b style={{ fontSize: 15, color: '#1f2330', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="chart" size={16} color="#4f6ef7" />分析</b>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div style={{ background: '#fff', borderRadius: 12, padding: 18, border: '1px solid #e6e8ef' }}>
           <b style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>状态分布</b>

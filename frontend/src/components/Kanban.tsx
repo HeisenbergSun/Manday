@@ -144,7 +144,7 @@ function BucketColumn({ id, name, color, items, wipLimit, collapsed, onToggle }:
           style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#7a7f8c', padding: 0, lineHeight: 1 }}>◀</button>
       </div>
       {overWip && (
-        <div style={{ fontSize: 10, color: '#e2445c', marginBottom: 6, fontWeight: 600 }}>⚠ 超出 WIP 限制</div>
+        <div style={{ fontSize: 10, color: '#e2445c', marginBottom: 6, fontWeight: 600 }}>超出 WIP 限制</div>
       )}
       {items.length === 0 ? (
         <div style={{ textAlign: 'center', color: '#a0a4b1', fontSize: 12, padding: '20px 0', border: '2px dashed #d5d9e3', borderRadius: 8 }}>

@@ -3,6 +3,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { Icon } from './Icons';
 
 const COLORS = ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d3dd7', '#00d1d1'];
 
@@ -47,7 +48,7 @@ export function DashboardPage({ boardIds, onOpenItem }: { boardIds: string[]; on
       {loading && <div style={{ gridColumn: '1/-1', color: '#7a7f8c', fontSize: 12 }}>加载中…</div>}
       {/* Battery 进度条 */}
       <div style={{ background: '#fff', borderRadius: 12, padding: 18, border: '1px solid #e6e8ef' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>📊 各 Board 进度</div>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="dashboard" size={15} color="#4f6ef7" />各 Board 进度</div>
         {battery.map((b) => (
           <div key={b.id} style={{ marginBottom: 12, fontSize: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -64,7 +65,7 @@ export function DashboardPage({ boardIds, onOpenItem }: { boardIds: string[]; on
 
       {/* 状态分布 */}
       <div style={{ background: '#fff', borderRadius: 12, padding: 18, border: '1px solid #e6e8ef' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>🧩 状态分布</div>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="pie" size={15} color="#4f6ef7" />状态分布</div>
         {dist.map((d, i) => (
           <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12 }}>
             <span style={{ width: 10, height: 10, borderRadius: 2, background: COLORS[i % COLORS.length] }} />
@@ -80,7 +81,7 @@ export function DashboardPage({ boardIds, onOpenItem }: { boardIds: string[]; on
 
       {/* 跨板逾期任务（第十九批） */}
       <div data-dash-overdue style={{ background: '#fff', borderRadius: 12, padding: 18, border: '1px solid #e6e8ef' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>🔴 跨 Board 逾期任务</div>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="warning" size={15} color="#e2445c" />跨 Board 逾期任务</div>
         {overdue.map((o: any) => (
           <div key={o.id} data-overdue-row={o.name} onClick={() => onOpenItem?.(o.id)}
             style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 7,
@@ -90,12 +91,12 @@ export function DashboardPage({ boardIds, onOpenItem }: { boardIds: string[]; on
             <span style={{ background: '#fdeaea', color: '#e2445c', borderRadius: 8, padding: '1px 8px', fontSize: 11 }}>{String(o.due).slice(0, 10)}</span>
           </div>
         ))}
-        {overdue.length === 0 && <div style={{ color: '#00a25b', fontSize: 12 }}>🎉 没有逾期任务</div>}
+        {overdue.length === 0 && <div style={{ color: '#00a25b', fontSize: 12 }}>没有逾期任务</div>}
       </div>
 
       {/* 成员负载排行（第十九批） */}
       <div data-dash-rank style={{ background: '#fff', borderRadius: 12, padding: 18, border: '1px solid #e6e8ef' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>👥 成员负载排行（未完成条目）</div>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="users" size={15} color="#4f6ef7" />成员负载排行（未完成条目）</div>
         {(() => { const mx = Math.max(1, ...rank.map((r: any) => r.cnt)); return rank.map((r: any) => (
           <div key={r.name} style={{ marginBottom: 8, fontSize: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -112,7 +113,7 @@ export function DashboardPage({ boardIds, onOpenItem }: { boardIds: string[]; on
 
       {/* 近期动态流（第十九批） */}
       <div data-dash-activity style={{ background: '#fff', borderRadius: 12, padding: 18, border: '1px solid #e6e8ef' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>🕒 近期动态</div>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="activity" size={15} color="#4f6ef7" />近期动态</div>
         {activity.map((a: any, i: number) => (
           <div key={i} data-activity-row style={{ fontSize: 12, marginBottom: 6, display: 'flex', gap: 6 }}>
             <b>{a.actor}</b>

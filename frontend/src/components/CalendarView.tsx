@@ -108,7 +108,7 @@ export function CalendarView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
   }, [draggingId, dateCol]);
 
   if (!dateCol) {
-    return <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>📅 这个 Board 还没有日期列——去表格视图添加一个「日期」列，条目就能按截止日期显示在日历上</div>;
+    return <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>这个 Board 还没有日期列——去表格视图添加一个「日期」列，条目就能按截止日期显示在日历上</div>;
   }
 
   const selItems = selected ? buckets[selected] ?? [] : [];

@@ -688,7 +688,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
       return <span data-grid-restricted={col.id} title="该列仅负责人可见"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#a0a4b1', fontSize: 12 }}>
         <span style={{ display: 'inline-block', width: 52, height: 13, borderRadius: 7,
-          background: '#e3e6ee', filter: 'blur(1px)' }} />🔒</span>;
+          background: '#e3e6ee', filter: 'blur(1px)' }} /></span>;
     }
 
     if (isEditing) {
@@ -805,7 +805,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#eef1fe', color: '#5b6c8f',
               padding: '2px 9px', borderRadius: 14, fontSize: 12, cursor: 'pointer', maxWidth: 180,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {img ? '🖼' : '📎'} {a.name}
+            {img ? '' : ''} {a.name}
           </span>;
         })}
       </span>;
@@ -978,9 +978,9 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                 {sortBy === c.id ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
                 {columnStates[c.id]?.frozen && <span title="已冻结" style={{ marginLeft: 3 }}>{'\u{1F4CC}'}</span>}
                 {c.restricted
-                  ? <span title="仅负责人可见" style={{ marginLeft: 4 }}>{'\u{1F441}'}🔒</span>
+                  ? <span title="仅负责人可见" style={{ marginLeft: 4 }}>{'\u{1F441}'}</span>
                   : (c.settings?.editPermission ?? c.settings?.editable) === 'owner'
-                    ? <span title="仅负责人可编辑" style={{ marginLeft: 4 }}>✏️🔒</span>
+                    ? <span title="仅负责人可编辑" style={{ marginLeft: 4 }}></span>
                     : null}
                 {c.type === 'formula' && <span title={c.settings?.formula} style={{ marginLeft: 4, fontSize: 10,
                   background: '#eef1fe', color: '#5b6c8f', borderRadius: 4, padding: '1px 5px' }}>ƒx</span>}
@@ -1010,7 +1010,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       }
                       setColMenuFor(null);
                     }} style={menuBtnStyle}>
-                      🔍 按此列筛选
+                      按此列筛选
                     </button>
                     <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
                     {/* 改名 */}
@@ -1023,7 +1023,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       </div>
                     ) : (
                       <button data-col-rename onClick={() => startRenameCol(c.id, c.name)} style={menuBtnStyle}>
-                        ✏️ 重命名列
+                        重命名列
                       </button>
                     )}
                     {/* 改类型 */}
@@ -1038,17 +1038,17 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       </div>
                     ) : (
                       <button data-col-changetype onClick={() => startChangeType(c.id)} style={menuBtnStyle}>
-                        🔄 更改列类型（当前：{COL_TYPE_LABELS[c.type] ?? c.type}）
+                        更改列类型（当前：{COL_TYPE_LABELS[c.type] ?? c.type}）
                       </button>
                     )}
                     {/* 复制列 */}
                     <button data-col-duplicate onClick={() => handleDuplicateCol(c.id)} style={menuBtnStyle}>
-                      📋 复制列
+                      复制列
                     </button>
                     <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
                     {/* 冻结/隐藏 */}
                     <button data-col-freeze onClick={() => toggleColumnFrozen(c.id)} style={menuBtnStyle}>
-                      {columnStates[c.id]?.frozen ? '📌 取消冻结' : '📌 冻结列'}
+                      {columnStates[c.id]?.frozen ? '取消冻结' : '冻结列'}
                     </button>
                     <button data-col-hide onClick={() => toggleColumnHidden(c.id)}
                       style={{ ...menuBtnStyle, color: '#e2445c' }}>
@@ -1065,7 +1065,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                         <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
                         <button data-col-delete onClick={() => handleDeleteCol(c.id, c.name)}
                           style={{ ...menuBtnStyle, color: '#e2445c' }}>
-                          🗑 删除列
+                          删除列
                         </button>
                       </>
                     )}
@@ -1145,11 +1145,11 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                       <div data-group-menu style={{ position: 'absolute', top: '100%', left: 14, background: '#fff', borderRadius: 8,
                         boxShadow: '0 6px 20px rgba(0,0,0,.12)', padding: 6, zIndex: 20, minWidth: 180, fontSize: 12 }}
                         onClick={(e) => e.stopPropagation()}>
-                        <button data-group-rename onClick={() => { setRenamingGroup(gid); setGroupRenameDraft(g?.name ?? ''); setGroupMenuFor(null); }} style={menuBtnStyle}>✏️ 重命名分组</button>
-                        <button data-group-duplicate onClick={() => { if (gid && onDuplicateGroup) onDuplicateGroup(gid); setGroupMenuFor(null); }} style={menuBtnStyle}>📋 复制分组</button>
+                        <button data-group-rename onClick={() => { setRenamingGroup(gid); setGroupRenameDraft(g?.name ?? ''); setGroupMenuFor(null); }} style={menuBtnStyle}>重命名分组</button>
+                        <button data-group-duplicate onClick={() => { if (gid && onDuplicateGroup) onDuplicateGroup(gid); setGroupMenuFor(null); }} style={menuBtnStyle}>复制分组</button>
                         <div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} />
                         <button data-group-delete onClick={() => { if (gid && confirm(`删除分组「${g?.name}」？分组内条目将移至未分组。`)) { if (onDeleteGroup) onDeleteGroup(gid); } setGroupMenuFor(null); }}
-                          style={{ ...menuBtnStyle, color: '#e2445c' }}>🗑 删除分组</button>
+                          style={{ ...menuBtnStyle, color: '#e2445c' }}>删除分组</button>
                       </div>
                     )}
                   </td>
@@ -1188,7 +1188,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                   <div data-row-menu style={{ position: 'absolute', zIndex: 30, background: '#fff', borderRadius: 8,
                     boxShadow: '0 6px 20px rgba(0,0,0,.12)', padding: 6, minWidth: 170, fontSize: 12 }}
                     onClick={(e) => e.stopPropagation()}>
-                    {onDuplicateItem && <button data-row-duplicate onClick={() => { onDuplicateItem(row.id); setRowMenuFor(null); }} style={menuBtnStyle}>📋 复制行</button>}
+                    {onDuplicateItem && <button data-row-duplicate onClick={() => { onDuplicateItem(row.id); setRowMenuFor(null); }} style={menuBtnStyle}>复制行</button>}
                     {onMoveItem && groups?.length ? (
                       <>
                         <div style={{ padding: '3px 10px', color: '#a0a4b1', fontSize: 11 }}>移动到分组：</div>
@@ -1198,7 +1198,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                         <button data-row-move="" onClick={() => { onMoveItem(row.id, null); setRowMenuFor(null); }} style={menuBtnStyle}>未分组</button>
                       </>
                     ) : null}
-                    {onDeleteItem && <><div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} /><button data-row-delete onClick={() => { if (confirm(`删除「${row.name}」？可从回收站恢复。`)) onDeleteItem(row.id); setRowMenuFor(null); }} style={{ ...menuBtnStyle, color: '#e2445c' }}>🗑 删除行</button></>}
+                    {onDeleteItem && <><div style={{ borderTop: '1px solid #eef0f5', margin: '4px 0' }} /><button data-row-delete onClick={() => { if (confirm(`删除「${row.name}」？可从回收站恢复。`)) onDeleteItem(row.id); setRowMenuFor(null); }} style={{ ...menuBtnStyle, color: '#e2445c' }}>删除行</button></>}
                   </div>
                 )}
               </td>

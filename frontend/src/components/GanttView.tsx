@@ -6,6 +6,7 @@
 import { useMemo, useState, useRef } from 'react';
 import { useItems } from '../store';
 import { api } from '../api';
+import { Icon } from './Icons';
 import { isItemDone } from '../theme';
 import { useCompanyUsers, personNames, membersOf } from '../people';
 
@@ -298,7 +299,7 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
-        <b style={{ fontSize: 15 }}>📈 甘特视图</b>
+        <b style={{ fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="gantt" size={16} color="#4f6ef7" />甘特视图</b>
         <span style={{ fontSize: 12, color: '#7a7f8c' }}>
           按「{startCol?.name ?? '—'}」{endCol ? `～「${endCol.name}」` : ''}列展示 · {rows.length} 条 · 红色已逾期 · 灰色已完成 · 黄色虚线⤴被前置阻塞 · 拖条平移/边缘拉伸改日期
         </span>
@@ -319,7 +320,7 @@ export function GanttView({ onOpenItem }: { onOpenItem?: (itemId: string) => voi
         <div data-gantt-today="1" style={{ position: 'absolute', top: 0, bottom: 0, left: LABEL_W + todayLeft, width: 2,
           background: '#ffb224', opacity: 0.6, zIndex: 5, pointerEvents: 'none' }} />
         {!startCol ? (
-          <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>📈 这个 Board 还没有日期列——去表格视图添加一个「日期」列，条目就能以甘特图展示时间安排</div>
+          <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>这个 Board 还没有日期列——去表格视图添加一个「日期」列，条目就能以甘特图展示时间安排</div>
         ) : body.length ? body : <div style={{ padding: 40, color: '#7a7f8c', fontSize: 14 }}>还没有条目设置了日期</div>}
         {startCol && arrows.length > 0 && (
           <svg data-gantt-dep-arrows width={timelineWidth} height={displayIds.length * ROW_H + 40}

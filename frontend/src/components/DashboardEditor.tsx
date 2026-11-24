@@ -209,7 +209,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <b style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</b>
         <span style={{ fontSize: 11, color: '#a0a4b1', whiteSpace: 'nowrap' }}>{boardIds.length ? `${boardIds.length} 板` : ''}</span>
-        <span onClick={onEdit} title="编辑" data-widget-edit style={{ cursor: 'pointer', color: '#4f6ef7', fontSize: 13 }}>⚙</span>
+        <span onClick={onEdit} title="编辑" data-widget-edit style={{ cursor: 'pointer', color: '#4f6ef7', display: 'inline-flex' }}><Icon name="pencil" size={14} /></span>
         <span onClick={onDelete} title="删除" style={{ cursor: 'pointer', color: '#e2445c', fontSize: 13 }}>✕</span>
       </div>
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', zIndex: 0 }}>
@@ -339,7 +339,7 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
     <div style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <button onClick={onBack} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, color: '#7a7f8c' }}>←</button>
-        <b style={{ fontSize: 17 }}>📊 {dash?.name ?? '仪表盘'}</b>
+        <b style={{ fontSize: 17, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="dashboard" size={18} color="#4f6ef7" />{dash?.name ?? '仪表盘'}</b>
         <span style={{ fontSize: 12, color: '#7a7f8c' }}>{dash?.widgets.length ?? 0} 个图表 · 拖拽排序 · 右下角调整大小</span>
         <button data-add-widget onClick={() => setEditing('new')}
           style={{ marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>

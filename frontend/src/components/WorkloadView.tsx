@@ -4,6 +4,7 @@
  */
 import { useMemo, useState } from 'react';
 import { useItems } from '../store';
+import { Icon } from './Icons';
 import { doneLabelsOf } from '../theme';
 import { useCompanyUsers, personNames, membersOf } from '../people';
 
@@ -82,7 +83,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
   return (
     <div style={{ padding: 20, background: '#fff', height: '100%', overflow: 'auto' }} data-workload-root>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <b style={{ fontSize: 15 }}>🧑‍💼 Workload 工作量</b>
+        <b style={{ fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="users" size={16} color="#4f6ef7" />Workload 工作量</b>
         {peopleCols.length > 1 && (
           <select value={peopleCol?.id} onChange={(e) => setColId(e.target.value)}
             style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid #e6e8ef', fontSize: 12 }}>
@@ -144,7 +145,7 @@ export function WorkloadView({ onOpenItem }: { onOpenItem?: (itemId: string) => 
           <div data-workload-day-panel style={{ marginTop: 20, padding: 14, background: '#f7f8fb', borderRadius: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <b style={{ fontSize: 13 }}>
-                {openDay.person} · {openDay.key === 'overdue' ? '🔴 逾期' : `📅 ${openDay.key}`} · {list.length} 条
+                {openDay.person} · {openDay.key === 'overdue' ? '逾期' : `${openDay.key}`} · {list.length} 条
               </b>
               <button onClick={() => setOpenDay(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14 }}>✕</button>
             </div>

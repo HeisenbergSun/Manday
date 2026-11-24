@@ -371,7 +371,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
             <div data-board-rename onClick={() => renameBoard(b)}
               style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>✎ 重命名 Board</div>
             <div data-board-delete onClick={() => deleteBoard(b)}
-              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#e2445c' }}>🗑 删除 Board</div>
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#e2445c' }}>删除 Board</div>
           </div>
         );
       })()}
@@ -404,7 +404,7 @@ export function WorkspaceNav({ activeId, dashboardActive, activeDashboardId, onO
             <div data-dash-rename onClick={() => renameDash(d)}
               style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#33333f' }}>✎ 重命名 Dashboard</div>
             <div data-dash-delete onClick={() => deleteDash(d)}
-              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#e2445c' }}>🗑 删除 Dashboard</div>
+              style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#e2445c' }}>删除 Dashboard</div>
           </div>
         );
       })()}

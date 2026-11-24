@@ -47,7 +47,7 @@ export function OnboardingModal({ userId, onDone }: { userId: string; onDone: (b
         <div style={{ fontSize: 11, color: '#a0a4b1', marginBottom: 6 }}>第 {step + 1} / 3 步</div>
         {step === 0 && (
           <>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>👋 欢迎来到 Manday</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>欢迎来到 Manday</div>
             <div style={{ fontSize: 13, color: '#7a7f8c', marginBottom: 18 }}>3 个问题帮你搭好第一个看板（约 30 秒）</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>你们团队大概多少人？</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -77,7 +77,7 @@ export function OnboardingModal({ userId, onDone }: { userId: string; onDone: (b
           <>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>为你选好了模板</div>
             <div style={{ background: '#f6f7fb', borderRadius: 10, padding: 14, margin: '10px 0 16px', fontSize: 13, lineHeight: 1.8 }}>
-              📋 <b>{USE_CASES.find((u) => u.key === pick)?.boardName}</b>（{USE_CASES.find((u) => u.key === pick)?.label}）<br />
+              <b>{USE_CASES.find((u) => u.key === pick)?.boardName}</b>（{USE_CASES.find((u) => u.key === pick)?.label}）<br />
               <span style={{ color: '#7a7f8c' }}>内置列结构 + 分组 + 5 条示例条目——进来看一眼就懂怎么用</span>
             </div>
             {err && <div style={{ background: '#fff1f0', color: '#e2445c', borderRadius: 8, padding: '8px 12px', fontSize: 12, marginBottom: 10 }}>{err}</div>}
