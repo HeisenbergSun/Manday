@@ -84,7 +84,7 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
         <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#4f6ef7,#9d3dd7)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="sparkle" size={16} color="#fff" strokeWidth={2.2} /></div>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>AI 助手 · WorkBuddy</div>
-          <div style={{ fontSize: 11, color: '#7a7f8c' }}>已连接 Scania WorkBuddy 企业版</div>
+          <div style={{ fontSize: 11, color: '#7a7f8c' }}>可读取看板数据回答逾期 / 负荷等问题</div>
         </div>
       </header>
 
@@ -117,7 +117,7 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
 
       <div style={{ padding: 12, borderTop: '1px solid #e6e8ef' }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          {['我这周的任务和风险？', '生成本周进展周报'].map((s) => (
+          {['哪些任务逾期了？', '各成员工作负荷如何？', '生成本周进展周报'].map((s) => (
             <button key={s} onClick={() => send(s)}
               style={{ fontSize: 12, color: '#4f6ef7', background: '#eef1fe', border: 'none', borderRadius: 14, padding: '5px 11px', cursor: 'pointer' }}>{s}</button>
           ))}

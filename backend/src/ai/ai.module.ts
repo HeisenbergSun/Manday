@@ -6,6 +6,7 @@ import { Module } from '@nestjs/common';
 import { Controller, Post, Get, Body, Sse, Query, Req, Res } from '@nestjs/common';
 import { map, Observable } from 'rxjs';
 import { WorkBuddyAIService } from './workbuddy-ai.service';
+import { BoardsModule } from '../modules/boards/boards.module';
 
 @Controller('ai')
 export class AiController {
@@ -70,6 +71,7 @@ export class AiController {
 }
 
 @Module({
+  imports: [BoardsModule],
   controllers: [AiController],
   providers: [WorkBuddyAIService],
 })

@@ -780,5 +780,5 @@ export class BoardsController {
   }
 }
 
-@Module({ controllers: [BoardsController, UsersController, BoardFoldersController], providers: [BoardsService] })
+@Module({ controllers: [BoardsController, UsersController, BoardFoldersController], providers: [BoardsService], exports: [BoardsService] })
 export class BoardsModule {}
