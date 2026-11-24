@@ -154,7 +154,7 @@ export function UserMenu({ onLogout }: { onLogout: () => void }) {
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button data-user-menu-btn onClick={() => setOpen(!open)} title="个人菜单"
-        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 3, display: 'inline-flex', alignItems: 'center' }}>
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 5, display: 'inline-flex', alignItems: 'center' }}>
         <Avatar name={me?.name ?? ''} avatarUrl={me?.avatar_url} size={30} />
       </button>
 

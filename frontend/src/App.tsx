@@ -219,13 +219,13 @@ export function App() {
             <span style={{ fontSize: 14, fontWeight: 600, color: '#25272c' }}>{activeBoard?.name}</span>
           )}
         </nav>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <NotificationBell />
           <InviteButton />
           <SearchButton />
           <button data-ai-btn onClick={toggleAI} title="AI 助手"
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 5, display: 'inline-flex', alignItems: 'center' }}>
-            <Icon name="sparkle" size={19} color="#5a6072" strokeWidth={2} />
+            <Icon name="workbuddy" size={22} color="#5a6072" fill />
           </button>
           <UserMenu onLogout={logout} />
         </div>
@@ -281,14 +281,6 @@ export function App() {
                     {label}
                   </button>
                 ))}
-                <button onClick={() => setView('trash')}
-                  style={{ marginLeft: 'auto', padding: '8px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13,
-                    color: view === 'trash' ? '#4f6ef7' : '#7a7f8c', fontWeight: view === 'trash' ? 600 : 400,
-                    borderBottom: view === 'trash' ? '2px solid #4f6ef7' : '2px solid transparent',
-                    display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: -1 }}>
-                  <Icon name="trash" size={15} />
-                  回收站
-                </button>
               </div>
               <div style={{ flex: 1, overflow: 'auto' }}>
                 {view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} onSwitchView={setView as (v: string) => void} />

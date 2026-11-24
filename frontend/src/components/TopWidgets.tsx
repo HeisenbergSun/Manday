@@ -38,7 +38,7 @@ export function NotificationBell() {
   return (
     <div ref={rootRef} style={{ position: 'relative' }}>
       <button data-bell onClick={() => setOpen(!open)} style={{
-        position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'inline-flex', alignItems: 'center' }}>
+        position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 5, display: 'inline-flex', alignItems: 'center' }}>
         <Icon name="bell" size={19} color="#5a6072" />
         {count > 0 && <span style={{
           position: 'absolute', top: -4, right: -8, background: '#e2445c', color: '#fff',
