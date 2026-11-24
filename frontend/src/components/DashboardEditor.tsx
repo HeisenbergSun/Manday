@@ -10,6 +10,13 @@ import { api } from '../api';
 import { Icon } from './Icons';
 
 const COLORS = ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d3dd7', '#00d1d1', '#ff8a65', '#a25ddc'];
+
+/** 数字格式化：decimals 为空/未设走默认千分位，设 0/1/2 走固定小数位 */
+const fmtNum = (v: any, decimals?: number | '') => {
+  const n = Number(v) || 0;
+  if (decimals === '' || decimals == null) return n.toLocaleString();
+  return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+};
 const WIDGET_TYPES: { type: string; label: string; icon: string; desc: string }[] = [
   { type: 'number', label: '数字卡', icon: 'number', desc: '多 Board 多指标聚合' },
   { type: 'bar', label: '柱状图', icon: 'chart', desc: '跨 Board 分组统计' },
@@ -220,7 +227,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResi
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             {(Array.isArray(data.items) ? data.items : [{ label: '合计', value: data.value }]).map((it: any) => (
               <div key={it.label}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: COLORS[0] }}>{Number(it.value).toLocaleString()}</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: COLORS[0] }}>{fmtNum(it.value, widget.config?.decimals)}</div>
                 <div style={{ fontSize: 11, color: '#7a7f8c' }}>{it.label}</div>
               </div>
             ))}
@@ -291,6 +298,8 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
   const [editing, setEditing] = useState<Widget | null | 'new'>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [err, setErr] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [dashName, setDashName] = useState('');
 
   const load = useCallback(() => {
     api.getDashboard(dashboardId).then((d) => setDash(d)).catch((e) => setErr((e as Error).message));
@@ -341,11 +350,30 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
     await api.reorderWidgets(dashboardId, next.map((x) => x.id)).catch(() => {});
   };
 
+  const startRename = () => { setDashName(dash?.name ?? ''); setRenaming(true); };
+  const commitRename = async () => {
+    setRenaming(false);
+    const name = dashName.trim();
+    if (!name || name === dash?.name) return;
+    await api.renameDashboard(dashboardId, name).catch(() => {});
+    load();
+  };
+
   return (
     <div style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <button onClick={onBack} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, color: '#7a7f8c' }}>←</button>
-        <b style={{ fontSize: 17, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="dashboard" size={18} color="#4f6ef7" />{dash?.name ?? '仪表盘'}</b>
+        {renaming ? (
+          <input data-dash-rename-input autoFocus value={dashName} onChange={(e) => setDashName(e.target.value)} onBlur={commitRename}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false); }}
+            style={{ fontSize: 17, fontWeight: 700, padding: '3px 8px', borderRadius: 8, border: '1px solid #4f6ef7', outline: 'none', color: '#25272c' }} />
+        ) : (
+          <b data-dash-rename onClick={startRename} title="点击重命名"
+            style={{ fontSize: 17, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'text' }}>
+            <Icon name="dashboard" size={18} color="#4f6ef7" />{dash?.name ?? '仪表盘'}
+            <Icon name="pencil" size={13} color="#a0a4b1" />
+          </b>
+        )}
         <span style={{ fontSize: 12, color: '#7a7f8c' }}>{dash?.widgets.length ?? 0} 个图表 · 拖拽排序 · 右下角调整大小</span>
         <button data-add-widget onClick={() => setEditing('new')}
           style={{ marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
@@ -424,6 +452,54 @@ function TemplateModal({ boards, onClose, onCreate }: {
   );
 }
 
+/** 编辑弹窗内的实时预览：根据 type + data 渲染对应图表 */
+function PreviewPane({ type, data, loading, error, decimals }: { type: string; data: any; loading: boolean; error: string; decimals?: number | '' }) {
+  const arr = (d: any) => Array.isArray(d) ? d : [];
+  if (!type) return <div style={{ color: '#a0a4b1', fontSize: 12, textAlign: 'center', padding: 18 }}>选择图表类型后实时预览</div>;
+  if (loading) return <div style={{ color: '#a0a4b1', fontSize: 12, textAlign: 'center', padding: 18 }}>预览加载中…</div>;
+  if (error) return <div style={{ color: '#a0a4b1', fontSize: 12, textAlign: 'center', padding: 18 }}>暂无可预览数据</div>;
+  if (type === 'number') return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+      {(Array.isArray(data?.items) ? data.items : [{ label: '合计', value: data?.value }]).map((it: any) => (
+        <div key={it.label}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: COLORS[0] }}>{fmtNum(it.value, decimals)}</div>
+          <div style={{ fontSize: 11, color: '#7a7f8c' }}>{it.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+  if (type === 'battery') return <div>{arr(data).map((b: any) => (
+    <div key={b.id} style={{ marginBottom: 7 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}><b>{b.name}</b><span style={{ color: '#7a7f8c' }}>{b.percent}%</span></div>
+      <div style={{ height: 8, background: '#eef0f5', borderRadius: 4 }}><div style={{ width: `${b.percent}%`, height: '100%', borderRadius: 4, background: b.percent >= 80 ? '#00c875' : b.percent >= 40 ? '#579bfc' : '#fdab3d' }} /></div>
+    </div>
+  ))}</div>;
+  if (type === 'bar') return <BarChart data={data} />;
+  if (type === 'pie') return <PieChart data={data} />;
+  if (type === 'line') return <LineChart data={data} />;
+  if (type === 'area') return <LineChart data={data} fill />;
+  if (type === 'combo') return <ComboChart data={data} />;
+  if (type === 'gantt') return <GanttChart data={data} />;
+  if (type === 'table') return <div>{arr(data).map((r: any) => (
+    <div key={r.id} style={{ display: 'flex', gap: 8, fontSize: 12, padding: '3px 0', borderBottom: '1px solid #f5f6fa' }}>
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+      <span style={{ color: '#a0a4b1', fontSize: 11 }}>{r.board}</span>
+    </div>
+  ))}</div>;
+  if (type === 'rank') return <div>{arr(data).map((r: any, i: number) => (
+    <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 3 }}>
+      <span style={{ color: '#a0a4b1', width: 16 }}>{i + 1}</span><b style={{ flex: 1 }}>{r.name}</b><span style={{ color: '#7a7f8c' }}>{r.cnt} 条</span>
+    </div>
+  ))}</div>;
+  if (type === 'activity') return <div>{arr(data).map((a: any, i: number) => (
+    <div key={i} style={{ fontSize: 12, marginBottom: 4, display: 'flex', gap: 5 }}>
+      <b>{a.actor}</b><span style={{ color: '#7a7f8c' }}>{a.action?.replace(/item\.|board\./g, '')}</span>
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.target}</span>
+    </div>
+  ))}</div>;
+  return <div style={{ color: '#a0a4b1', fontSize: 12, textAlign: 'center', padding: 18 }}>暂无可预览数据</div>;
+}
+
 function WidgetConfigModal({ boards, initial, onClose, onSave }: {
   boards: any[]; initial: Widget | null; onClose: () => void; onSave: (type: string, title: string, config: any) => void;
 }) {
@@ -440,7 +516,11 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
   const [startColumn, setStartColumn] = useState(initial?.config?.startColumn ?? '');
   const [endColumn, setEndColumn] = useState(initial?.config?.endColumn ?? '');
   const [limit, setLimit] = useState(initial?.config?.limit ?? 20);
+  const [decimals, setDecimals] = useState<number | ''>(initial?.config?.decimals ?? '');
   const [colNames, setColNames] = useState<{ cat: string[]; num: string[]; date: string[] }>({ cat: [], num: [], date: [] });
+  const [preview, setPreview] = useState<any>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewErr, setPreviewErr] = useState('');
 
   useEffect(() => {
     if (!boardIds.length) { setColNames({ cat: [], num: [], date: [] }); return; }
@@ -469,15 +549,29 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
 
   const buildConfig = () => {
     const cfg: any = { boardIds };
-    if (type === 'number') { cfg.column = column; cfg.aggs = aggs; }
-    if (type === 'bar') { cfg.groupBy = groupBy; cfg.metric = metric; if (metric === 'sum') cfg.metricColumn = metricColumn; }
-    if (type === 'pie') { cfg.groupBy = groupBy; cfg.metric = 'count'; }
+    if (type === 'number') { cfg.column = column; cfg.aggs = aggs; cfg.decimals = decimals; }
+    if (type === 'bar') { cfg.groupBy = groupBy; cfg.metric = metric; if (metric === 'sum') cfg.metricColumn = metricColumn; cfg.limit = limit; }
+    if (type === 'pie') { cfg.groupBy = groupBy; cfg.metric = 'count'; cfg.limit = limit; }
     if (type === 'line' || type === 'area') cfg.dateColumn = dateColumn;
-    if (type === 'combo') { cfg.groupBy = groupBy; cfg.metricColumn = metricColumn; }
+    if (type === 'combo') { cfg.groupBy = groupBy; cfg.metricColumn = metricColumn; cfg.limit = limit; }
     if (type === 'gantt') { cfg.startColumn = startColumn; cfg.endColumn = endColumn; }
     if (type === 'table') cfg.limit = limit;
     return cfg;
   };
+
+  // 实时预览：配置变化后防抖取数
+  useEffect(() => {
+    setPreview(null); setPreviewErr('');
+    if (!type || !canSave) { setPreviewLoading(false); return; }
+    setPreviewLoading(true);
+    const t = setTimeout(() => {
+      api.previewWidget(type, buildConfig())
+        .then((d) => { setPreview(d); setPreviewErr(''); })
+        .catch(() => { setPreview(null); setPreviewErr('no-data'); })
+        .finally(() => setPreviewLoading(false));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [type, JSON.stringify(boardIds), groupBy, metric, metricColumn, column, JSON.stringify(aggs), dateColumn, startColumn, endColumn, limit, decimals]);
 
   const select = (v: string, onChange: (s: string) => void, opts: string[], placeholder: string) => (
     <select value={v} onChange={(e) => onChange(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
@@ -538,6 +632,7 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
                 ))}
               </div>
             ))}
+            {field('小数位', select(String(decimals), (s) => setDecimals(s === '' ? '' : Number(s)), ['0', '1', '2'], '自动'))}
           </>
         )}
 
@@ -548,10 +643,16 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
               <div style={{ flex: 1 }}>{field('指标', select(metric as string, (s) => setMetric(s as any), ['count', 'sum'], '指标'))}</div>
               {metric === 'sum' && <div style={{ flex: 1 }}>{field('数值列', select(metricColumn, setMetricColumn, colNames.num, '数值列'))}</div>}
             </div>
+            {field('显示条数（Top N）', select(String(limit), (s) => setLimit(Number(s)), ['5', '10', '20', '30', '50'], '条数'))}
           </>
         )}
 
-        {type === 'pie' && field('分组列', select(groupBy, setGroupBy, colNames.cat, '分组列'))}
+        {type === 'pie' && (
+          <>
+            {field('分组列', select(groupBy, setGroupBy, colNames.cat, '分组列'))}
+            {field('显示条数（Top N）', select(String(limit), (s) => setLimit(Number(s)), ['5', '10', '20', '30', '50'], '条数'))}
+          </>
+        )}
 
         {(type === 'line' || type === 'area') && field('日期列', select(dateColumn, setDateColumn, colNames.date, '日期列（跨板同名）'))}
 
@@ -559,6 +660,7 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
           <>
             {field('分组列（柱）', select(groupBy, setGroupBy, colNames.cat, '分组列'))}
             {field('数值列（线）', select(metricColumn, setMetricColumn, colNames.num, '数值列'))}
+            {field('显示条数（Top N）', select(String(limit), (s) => setLimit(Number(s)), ['5', '10', '20', '30', '50'], '条数'))}
           </>
         )}
 
@@ -570,6 +672,13 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
         )}
 
         {type === 'table' && field('显示条数', select(String(limit), (s) => setLimit(Number(s)), ['10', '20', '50'], '条数'))}
+
+        {type && (
+          <div data-widget-preview style={{ border: '1px solid #e6e8ef', borderRadius: 10, padding: 12, background: '#fafbfd', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: '#5a6072', marginBottom: 8, fontWeight: 600 }}>实时预览</div>
+            <PreviewPane type={type} data={preview} loading={previewLoading} error={previewErr} decimals={decimals} />
+          </div>
+        )}
 
         <button data-widget-save disabled={!canSave}
           onClick={() => onSave(type, title.trim() || WIDGET_TYPES.find((t) => t.type === type)?.label || '', buildConfig())}

@@ -298,6 +298,7 @@ export class DashboardService {
     }
 
     if (widget.type === 'bar' || widget.type === 'pie') {
+      const limitN = Math.min(Math.max(Number(cfg.limit) || 20, 1), 50);
       const metric = cfg.metric === 'sum' ? 'sum' : 'count';
       if (metric === 'sum') {
         const { rows } = await this.pg.query(
@@ -309,8 +310,8 @@ export class DashboardService {
            JOIN item_values mv ON mv.item_id = i.id
            JOIN board_columns mc ON mc.id = mv.column_id AND mc.type = 'number' AND mc.name = $4
            WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
-           GROUP BY label ORDER BY value DESC LIMIT 20`,
-          [boardIds, userId, cfg.groupBy, cfg.metricColumn]);
+           GROUP BY label ORDER BY value DESC LIMIT $5`,
+          [boardIds, userId, cfg.groupBy, cfg.metricColumn, limitN]);
         return rows.map((r) => ({ label: r.label ?? '（空）', value: Number(r.value) || 0 }));
       }
       const { rows } = await this.pg.query(
@@ -320,8 +321,8 @@ export class DashboardService {
          JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
          JOIN boards b ON b.id = i.board_id
          WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
-         GROUP BY label ORDER BY value DESC LIMIT 20`,
-        [boardIds, userId, cfg.groupBy]);
+         GROUP BY label ORDER BY value DESC LIMIT $4`,
+        [boardIds, userId, cfg.groupBy, limitN]);
       return rows.map((r) => ({ label: r.label ?? '（空）', value: Number(r.value) || 0 }));
     }
 
@@ -340,6 +341,7 @@ export class DashboardService {
 
     if (widget.type === 'combo') {
       // 双轴：柱=按 groupBy 计数，线=按 metricColumn 求和
+      const limitN = Math.min(Math.max(Number(cfg.limit) || 20, 1), 50);
       const { rows } = await this.pg.query(
         `SELECT v.value #>> '{}' AS label, count(*) AS bar,
                 COALESCE(sum((mv.value #>> '{}')::numeric), 0) AS line
@@ -350,8 +352,8 @@ export class DashboardService {
          LEFT JOIN item_values mv ON mv.item_id = i.id
          LEFT JOIN board_columns mc ON mc.id = mv.column_id AND mc.type = 'number' AND mc.name = $4
          WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
-         GROUP BY label ORDER BY bar DESC LIMIT 20`,
-        [boardIds, userId, cfg.groupBy, cfg.metricColumn]);
+         GROUP BY label ORDER BY bar DESC LIMIT $5`,
+        [boardIds, userId, cfg.groupBy, cfg.metricColumn, limitN]);
       return rows.map((r) => ({ label: r.label ?? '（空）', bar: Number(r.bar) || 0, line: Number(r.line) || 0 }));
     }
 
@@ -446,6 +448,7 @@ export class DashboardController {
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteDashboard(req.user.id, id); }
   @Post(':id/widgets') addWidget(@Req() req, @Param('id') id: string, @Body() b: { type: string; title?: string; config?: any }) { return this.svc.addWidget(req.user.id, id, b); }
   @Post(':id/widgets/:wid/duplicate') duplicateWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string) { return this.svc.duplicateWidget(req.user.id, id, wid); }
+  @Post('preview') preview(@Req() req, @Body() b: { type: string; config?: any }) { return this.svc.widgetData(req.user.id, { type: b.type, config: b.config ?? {} }); }
   @Post(':id/widgets/reorder') reorderWidgets(@Req() req, @Param('id') id: string, @Body() b: { order: string[] }) { return this.svc.reorderWidgets(req.user.id, id, b.order ?? []); }
   @Patch(':id/widgets/:wid') updateWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string, @Body() b: { title?: string; type?: string; config?: any }) { return this.svc.updateWidget(req.user.id, id, wid, b); }
   @Delete(':id/widgets/:wid') deleteWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string) { return this.svc.deleteWidget(req.user.id, id, wid); }

@@ -199,6 +199,8 @@ export const api = {
   duplicateWidget: (dashboardId: string, widgetId: string) =>
     request(`/dashboards/${dashboardId}/widgets/${widgetId}/duplicate`, { method: 'POST' }),
   widgetData: (dashboardId: string, widgetId: string) => request(`/dashboards/${dashboardId}/widgets/${widgetId}/data`),
+  previewWidget: (type: string, config: any) =>
+    request('/dashboards/preview', { method: 'POST', body: JSON.stringify({ type, config }) }),
 
   // ---- 通知 / 搜索 ----
   unread: () => request('/notifications/unread'),
