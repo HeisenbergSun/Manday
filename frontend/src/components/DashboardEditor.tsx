@@ -192,9 +192,9 @@ function GanttChart({ data, onOpenItem, colors = COLORS }: { data: { id: string;
   );
 }
 
-function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResize, onOpenItem }: {
+function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResize, onResizePreview, onOpenItem }: {
   dashboardId: string; widget: Widget; onDelete: () => void; onEdit: () => void; onDuplicate?: () => void;
-  onResize: (w: number, h: number) => void; onOpenItem?: (id: string) => void;
+  onResize: (w: number, h: number) => void; onResizePreview?: (w: number, h: number) => void; onOpenItem?: (id: string) => void;
 }) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState('');
@@ -220,6 +220,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResi
       const h = Math.max(1, Math.min(4, startH + Math.round((ev.clientY - startY) / 60)));
       latest = { w, h };
       setSize({ w, h });
+      onResizePreview?.(w, h);
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
@@ -320,6 +321,8 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
   const [err, setErr] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [dashName, setDashName] = useState('');
+  const [resizePreview, setResizePreview] = useState<{ id: string; w: number; h: number } | null>(null);
+  const slotRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const load = useCallback(() => {
     api.getDashboard(dashboardId).then((d) => setDash(d)).catch((e) => setErr((e as Error).message));
@@ -354,9 +357,30 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
   };
 
   const resizeWidget = async (w: Widget, nw: number, nh: number) => {
+    setResizePreview(null);
     await api.updateWidget(dashboardId, w.id, { config: { ...w.config, w: nw, h: nh } }).catch(() => {});
     load();
   };
+
+  // 计算调整大小预览虚线框的像素位置（锚定 widget 左上角，按格子尺寸等比换算）
+  const GAP = 14;
+  const previewBox = (() => {
+    if (!resizePreview) return null;
+    const el = slotRefs.current[resizePreview.id];
+    const wgt = dash?.widgets.find((x) => x.id === resizePreview.id);
+    const oldW = wgt?.config?.w ?? 2, oldH = wgt?.config?.h ?? 2;
+    if (!el || !el.offsetWidth || !el.offsetHeight) return null;
+    const cellW = (el.offsetWidth - (oldW - 1) * GAP) / oldW;
+    const cellH = (el.offsetHeight - (oldH - 1) * GAP) / oldH;
+    return {
+      left: el.offsetLeft,
+      top: el.offsetTop,
+      width: cellW * resizePreview.w + (resizePreview.w - 1) * GAP,
+      height: cellH * resizePreview.h + (resizePreview.h - 1) * GAP,
+      w: resizePreview.w,
+      h: resizePreview.h,
+    };
+  })();
 
   const dropWidget = async (fromId: string, toId: string) => {
     const list = dash?.widgets ?? [];
@@ -410,9 +434,9 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
           </button>
         </div>
       )}
-      <div data-dash-grid style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 104, gap: 14 }}>
+      <div data-dash-grid style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridAutoRows: 104, gap: 14, position: 'relative' }}>
         {(dash?.widgets ?? []).map((w) => (
-          <div key={w.id} data-widget-slot draggable
+          <div key={w.id} data-widget-slot draggable ref={(el) => { slotRefs.current[w.id] = el; }}
             onDragStart={(e) => {
               // 拖拽源是 resize 手柄时，取消排序拖拽，让 resize 的 mousemove 正常触发
               if ((e.target as HTMLElement).closest('[data-widget-resize]')) { e.preventDefault(); return; }
@@ -423,9 +447,24 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
             style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}`, minWidth: 0, overflow: 'hidden' }}>
             <WidgetCard dashboardId={dashboardId} widget={w}
               onDelete={() => removeWidget(w.id)} onEdit={() => setEditing(w)} onDuplicate={() => duplicateWidget(w.id)}
-              onResize={(nw, nh) => resizeWidget(w, nw, nh)} onOpenItem={onOpenItem} />
+              onResize={(nw, nh) => resizeWidget(w, nw, nh)}
+              onResizePreview={(nw, nh) => setResizePreview({ id: w.id, w: nw, h: nh })}
+              onOpenItem={onOpenItem} />
           </div>
         ))}
+        {/* 调整大小预览虚线框：锚定左上角，实时显示将要覆盖的格子范围 */}
+        {previewBox && (
+          <div data-resize-preview style={{
+            position: 'absolute', left: previewBox.left, top: previewBox.top,
+            width: previewBox.width, height: previewBox.height, boxSizing: 'border-box',
+            border: '2px dashed #4f6ef7', borderRadius: 12, background: 'rgba(79,110,247,0.06)',
+            pointerEvents: 'none', zIndex: 5, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 6,
+          }}>
+            <span style={{ background: '#4f6ef7', color: '#fff', borderRadius: 6, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>
+              {previewBox.w} × {previewBox.h}
+            </span>
+          </div>
+        )}
       </div>
       {editing && (
         <WidgetConfigModal boards={boards} initial={editing === 'new' ? null : editing}
