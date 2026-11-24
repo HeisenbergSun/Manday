@@ -115,6 +115,7 @@ async function ensureMinorSchema() {
       UPDATE dashboards d SET position = t.rn FROM (
         SELECT id, row_number() OVER (ORDER BY created_at) AS rn FROM dashboards
       ) t WHERE d.id = t.id AND d.position = 0;
+      ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS board_id UUID REFERENCES boards(id) ON DELETE CASCADE;
       CREATE TABLE IF NOT EXISTS dashboard_folder_items (
         folder_id    UUID NOT NULL REFERENCES board_folders(id) ON DELETE CASCADE,
         dashboard_id UUID NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,

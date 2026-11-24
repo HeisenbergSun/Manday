@@ -166,8 +166,8 @@ function GanttChart({ data, onOpenItem }: { data: { id: string; name: string; bo
   );
 }
 
-function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenItem }: {
-  dashboardId: string; widget: Widget; onDelete: () => void; onEdit: () => void;
+function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResize, onOpenItem }: {
+  dashboardId: string; widget: Widget; onDelete: () => void; onEdit: () => void; onDuplicate?: () => void;
   onResize: (w: number, h: number) => void; onOpenItem?: (id: string) => void;
 }) {
   const [data, setData] = useState<any>(null);
@@ -210,6 +210,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onResize, onOpenIte
         <b style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</b>
         <span style={{ fontSize: 11, color: '#a0a4b1', whiteSpace: 'nowrap' }}>{boardIds.length ? `${boardIds.length} 板` : ''}</span>
         <span onClick={onEdit} title="编辑" data-widget-edit style={{ cursor: 'pointer', color: '#4f6ef7', display: 'inline-flex' }}><Icon name="pencil" size={14} /></span>
+        {onDuplicate && <span onClick={onDuplicate} title="复制" data-widget-dup style={{ cursor: 'pointer', color: '#7a7f8c', display: 'inline-flex' }}><Icon name="copy" size={14} /></span>}
         <span onClick={onDelete} title="删除" style={{ cursor: 'pointer', color: '#e2445c', fontSize: 13 }}>✕</span>
       </div>
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', zIndex: 0 }}>
@@ -312,6 +313,11 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
     load();
   };
 
+  const duplicateWidget = async (wid: string) => {
+    await api.duplicateWidget(dashboardId, wid).catch(() => {});
+    load();
+  };
+
   const saveWidget = async (type: string, title: string, config: any) => {
     if (editing === 'new') await api.addWidget(dashboardId, { type, title, config }).catch((e) => alert(`添加失败：${(e as Error).message}`));
     else if (editing && typeof editing === 'object') await api.updateWidget(dashboardId, editing.id, { type, title, config }).catch((e) => alert(`保存失败：${(e as Error).message}`));
@@ -368,7 +374,8 @@ export function DashboardEditor({ dashboardId, onBack, onOpenItem }: { dashboard
             onDrop={(e) => { e.preventDefault(); dropWidget(e.dataTransfer.getData('text/plain'), w.id); }}
             style={{ gridColumn: `span ${w.config?.w ?? 2}`, gridRow: `span ${w.config?.h ?? 2}`, minWidth: 0, overflow: 'hidden' }}>
             <WidgetCard dashboardId={dashboardId} widget={w}
-              onDelete={() => removeWidget(w.id)} onEdit={() => setEditing(w)} onResize={(nw, nh) => resizeWidget(w, nw, nh)} onOpenItem={onOpenItem} />
+              onDelete={() => removeWidget(w.id)} onEdit={() => setEditing(w)} onDuplicate={() => duplicateWidget(w.id)}
+              onResize={(nw, nh) => resizeWidget(w, nw, nh)} onOpenItem={onOpenItem} />
           </div>
         ))}
       </div>

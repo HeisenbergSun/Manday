@@ -182,6 +182,7 @@ export const api = {
   // ---- 自定义 Dashboard（BI）----
   listDashboards: () => request('/dashboards'),
   createDashboard: (name: string, scope: 'personal' | 'team' = 'personal') => request('/dashboards', { method: 'POST', body: JSON.stringify({ name, scope }) }),
+  getOrCreateBoardDashboard: (boardId: string) => request(`/dashboards/board/${boardId}`, { method: 'POST' }),
   reorderDashboards: (order: string[]) => request('/dashboards/reorder', { method: 'POST', body: JSON.stringify({ order }) }),
   renameDashboard: (id: string, name: string) => request(`/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   duplicateDashboard: (id: string) => request(`/dashboards/${id}/duplicate`, { method: 'POST' }),
@@ -195,6 +196,8 @@ export const api = {
     request(`/dashboards/${dashboardId}/widgets/reorder`, { method: 'POST', body: JSON.stringify({ order }) }),
   deleteWidget: (dashboardId: string, widgetId: string) =>
     request(`/dashboards/${dashboardId}/widgets/${widgetId}`, { method: 'DELETE' }),
+  duplicateWidget: (dashboardId: string, widgetId: string) =>
+    request(`/dashboards/${dashboardId}/widgets/${widgetId}/duplicate`, { method: 'POST' }),
   widgetData: (dashboardId: string, widgetId: string) => request(`/dashboards/${dashboardId}/widgets/${widgetId}/data`),
 
   // ---- 通知 / 搜索 ----

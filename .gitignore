@@ -15,3 +15,5 @@ frontend/test-write.js
 frontend/test-extra.js
 frontend/probe.js
 .browsers/
+
+backend/uploads/

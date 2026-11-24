@@ -166,6 +166,16 @@ export class DashboardService {
     return { ...rows[0], is_team: scope === 'team' };
   }
 
+  /** 获取或创建 board 的分析 dashboard（board 级 widget 编辑用） */
+  async getOrCreateBoardDashboard(userId: string, boardId: string) {
+    const exist = (await this.pg.query(
+      `SELECT id, name FROM dashboards WHERE board_id = $1 AND created_by = $2 LIMIT 1`, [boardId, userId])).rows[0];
+    if (exist) return exist;
+    const { rows } = await this.pg.query(
+      `INSERT INTO dashboards (name, created_by, board_id) VALUES ($1,$2,$3) RETURNING id, name`, ['分析', userId, boardId]);
+    return rows[0];
+  }
+
   async renameDashboard(userId: string, id: string, name: string) {
     if (!(await this.canAccess(userId, id))) throw new Error('NOT_FOUND');
     await this.pg.query(`UPDATE dashboards SET name=$1 WHERE id=$2`, [name, id]);
@@ -221,6 +231,18 @@ export class DashboardService {
     const { rows } = await this.pg.query(
       `INSERT INTO widgets (dashboard_id, type, title, config, position) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING id, type, title, config, position`,
       [dashboardId, dto.type, dto.title ?? '', JSON.stringify(dto.config ?? {}), pos]);
+    return { ...rows[0], config: rows[0].config ?? {} };
+  }
+
+  /** 复制 widget */
+  async duplicateWidget(userId: string, dashboardId: string, widgetId: string) {
+    if (!(await this.canAccess(userId, dashboardId))) throw new Error('NOT_FOUND');
+    const w = (await this.pg.query(`SELECT type, title, config FROM widgets WHERE id=$1 AND dashboard_id=$2`, [widgetId, dashboardId])).rows[0];
+    if (!w) throw new Error('NOT_FOUND');
+    const pos = (await this.pg.query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM widgets WHERE dashboard_id=$1`, [dashboardId])).rows[0].p;
+    const { rows } = await this.pg.query(
+      `INSERT INTO widgets (dashboard_id, type, title, config, position) VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING id, type, title, config, position`,
+      [dashboardId, w.type, `${w.title}（副本）`, JSON.stringify(w.config ?? {}), pos]);
     return { ...rows[0], config: rows[0].config ?? {} };
   }
 
@@ -416,12 +438,14 @@ export class DashboardController {
   // ---- 自定义 Dashboard CRUD ----
   @Get() list(@Req() req) { return this.svc.listDashboards(req.user.id); }
   @Post() create(@Req() req, @Body() b: { name: string; scope?: 'personal' | 'team' }) { return this.svc.createDashboard(req.user.id, b.name, b.scope ?? 'personal'); }
+  @Post('board/:boardId') boardDashboard(@Req() req, @Param('boardId') boardId: string) { return this.svc.getOrCreateBoardDashboard(req.user.id, boardId); }
   @Post('reorder') reorder(@Req() req, @Body() b: { order: string[] }) { return this.svc.reorderDashboards(req.user.id, b.order ?? []); }
   @Get(':id') get(@Req() req, @Param('id') id: string) { return this.svc.getDashboard(req.user.id, id); }
   @Post(':id/duplicate') duplicate(@Req() req, @Param('id') id: string) { return this.svc.duplicateDashboard(req.user.id, id); }
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameDashboard(req.user.id, id, b.name); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteDashboard(req.user.id, id); }
   @Post(':id/widgets') addWidget(@Req() req, @Param('id') id: string, @Body() b: { type: string; title?: string; config?: any }) { return this.svc.addWidget(req.user.id, id, b); }
+  @Post(':id/widgets/:wid/duplicate') duplicateWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string) { return this.svc.duplicateWidget(req.user.id, id, wid); }
   @Post(':id/widgets/reorder') reorderWidgets(@Req() req, @Param('id') id: string, @Body() b: { order: string[] }) { return this.svc.reorderWidgets(req.user.id, id, b.order ?? []); }
   @Patch(':id/widgets/:wid') updateWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string, @Body() b: { title?: string; type?: string; config?: any }) { return this.svc.updateWidget(req.user.id, id, wid, b); }
   @Delete(':id/widgets/:wid') deleteWidget(@Req() req, @Param('id') id: string, @Param('wid') wid: string) { return this.svc.deleteWidget(req.user.id, id, wid); }

@@ -269,8 +269,7 @@ export function App() {
                   ['gantt', 'gantt', '甘特'],
                   ['workload', 'users', 'Workload'],
                   ['insights', 'chart', '分析'],
-                  ['dashboard', 'dashboard', 'Dashboard'],
-                ] as ['table' | 'kanban' | 'calendar' | 'gantt' | 'workload' | 'insights' | 'dashboard', string, string][]).map(([vid, icon, label]) => (
+                ] as ['table' | 'kanban' | 'calendar' | 'gantt' | 'workload' | 'insights', string, string][]).map(([vid, icon, label]) => (
                   <button key={vid} onClick={() => setView(vid)}
                     style={{ padding: '8px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13,
                       color: view === vid ? '#4f6ef7' : '#7a7f8c', fontWeight: view === vid ? 600 : 400,
@@ -295,7 +294,7 @@ export function App() {
                   : view === 'calendar' ? <CalendarView onOpenItem={setDetailId} />
                   : view === 'gantt' ? <GanttView onOpenItem={setDetailId} />
                   : view === 'workload' ? <WorkloadView onOpenItem={setDetailId} />
-                  : view === 'insights' ? <InsightsView onOpenItem={setDetailId} />
+                  : view === 'insights' ? <InsightsView boardId={activeBoard.id} onOpenItem={setDetailId} onBack={() => setView('table')} />
                   : view === 'trash' ? <TrashView boardId={activeBoard.id} /> : <DashboardPage boardIds={[activeBoard.id]} onOpenItem={setDetailId} />}
               </div>
             </>
