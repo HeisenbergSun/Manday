@@ -40,9 +40,9 @@ export function NotificationBell() {
       <button data-bell onClick={() => setOpen(!open)} style={{
         position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 5, display: 'inline-flex', alignItems: 'center' }}>
         <Icon name="bell" size={19} color="#5a6072" />
-        {count > 0 && <span style={{
-          position: 'absolute', top: -4, right: -8, background: '#e2445c', color: '#fff',
-          fontSize: 10, borderRadius: 10, padding: '1px 5px' }}>{count > 99 ? '99+' : count}</span>}
+        {count > 0 && <span data-bell-dot style={{
+          position: 'absolute', top: 3, right: 2, width: 7, height: 7, borderRadius: '50%',
+          background: '#e2445c', border: '1.5px solid #fff' }} />}
       </button>
       {open && (
         <div data-notif-popover style={{ position: 'absolute', right: 0, top: 34, width: 300, background: '#fff',
