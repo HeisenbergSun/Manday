@@ -268,7 +268,7 @@ export function App() {
                   ['calendar', 'calendar', '日历'],
                   ['gantt', 'gantt', '甘特'],
                   ['workload', 'users', 'Workload'],
-                  ['insights', 'chart', '分析'],
+                  ['insights', 'dashboard', '分析'],
                 ] as ['table' | 'kanban' | 'calendar' | 'gantt' | 'workload' | 'insights', string, string][]).map(([vid, icon, label]) => (
                   <button key={vid} onClick={() => setView(vid)}
                     style={{ padding: '8px 12px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13,

@@ -90,7 +90,7 @@ export function AiSidebar({ boardId }: { boardId?: string }) {
 
       <div ref={boxRef} style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {msgs.map((m, i) => (
-          <div key={i} style={{
+          <div key={i} data-role={m.role} style={{
             maxWidth: '88%', padding: '10px 13px', borderRadius: 12, fontSize: 13, whiteSpace: 'pre-wrap',
             alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
             background: m.role === 'user' ? '#4f6ef7' : '#f6f7fb', color: m.role === 'user' ? '#fff' : '#25272c',
