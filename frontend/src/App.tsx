@@ -9,6 +9,7 @@ import { InsightsView } from './components/InsightsView';
 import { AiSidebar } from './components/AiSidebar';
 import { ItemDetail } from './components/ItemDetail';
 import { NotificationBell, CommandPalette } from './components/TopWidgets';
+import { UserMenu, InviteButton, SearchButton, logout } from './components/UserMenu';
 import { WorkspaceNav } from './components/WorkspaceNav';
 import { DashboardPage } from './components/DashboardPage';
 import { DashboardEditor } from './components/DashboardEditor';
@@ -17,7 +18,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { Icon } from './components/Icons';
 
 import { useItems, useUi } from './store';
-import { api, getToken, clearToken } from './api';
+import { api, getToken } from './api';
 import { joinBoard, leaveBoard } from './socket';
 
 /** 回收站 — 列出已删条目，支持恢复（后端 /boards/:id/recycle-bin） */
@@ -218,14 +219,15 @@ export function App() {
             <span style={{ fontSize: 14, fontWeight: 600, color: '#25272c' }}>{activeBoard?.name}</span>
           )}
         </nav>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => { clearToken(); localStorage.removeItem('userId'); location.reload(); }}
-            style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #e6e8ef', background: '#fff', cursor: 'pointer', fontSize: 12 }}>退出</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           <NotificationBell />
-          <button onClick={toggleAI} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', cursor: 'pointer', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Icon name="sparkle" size={14} color="#fff" strokeWidth={2.2} />
-            AI 助手
+          <InviteButton />
+          <SearchButton />
+          <button data-ai-btn onClick={toggleAI} title="AI 助手"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 5, display: 'inline-flex', alignItems: 'center' }}>
+            <Icon name="sparkle" size={19} color="#5a6072" strokeWidth={2} />
           </button>
+          <UserMenu onLogout={logout} />
         </div>
       </header>
 

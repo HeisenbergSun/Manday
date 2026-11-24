@@ -75,6 +75,11 @@ export const api = {
   removeMember: (boardId: string, memberId: string) =>
     request(`/boards/${boardId}/members/${memberId}`, { method: 'DELETE' }),
   listUsers: () => request(`/users`),
+  me: () => request('/users/me'),
+  archiveBoard: (boardId: string) => request(`/boards/${boardId}/archive`, { method: 'POST' }),
+  unarchiveBoard: (boardId: string) => request(`/boards/${boardId}/unarchive`, { method: 'POST' }),
+  listArchivedBoards: () => request('/boards/archived'),
+  globalTrash: () => request('/boards/global-trash'),
   recycleBin: (boardId: string) => request(`/boards/${boardId}/recycle-bin`),
   restoreItems: (boardId: string, itemIds: string[]) =>
     request(`/boards/${boardId}/restore`, { method: 'POST', body: JSON.stringify({ itemIds }) }),

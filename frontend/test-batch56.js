@@ -59,7 +59,7 @@ const req = async (auth, method, path_, body) => {
   assert(insLineCount >= 3, `S2 分析视图按钮图标为 dashboard 柱状图（line 数量=${insLineCount}）`);
 
   // ── S1 AI 助手发消息 ──
-  await page.evaluate(() => { const btn = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('AI 助手')); if (btn) btn.click(); });
+  await page.evaluate(() => { const btn = document.querySelector('[data-ai-btn]'); if (btn) btn.click(); });
   await sleep(1000);
   const ta = await page.$('aside textarea');
   assert(!!ta, 'S1a 打开 AI 助手侧边栏（textarea 存在）');

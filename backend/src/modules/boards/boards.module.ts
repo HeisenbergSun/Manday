@@ -557,6 +557,57 @@ export class BoardsService {
     return rows;
   }
 
+  /** 当前用户档案（头像 + 主部门） */
+  async getMe(userId: string) {
+    const { rows } = await this.pg.query(
+      `SELECT u.id, u.name, u.email, u.avatar_url, d.name AS department
+       FROM users u
+       LEFT JOIN user_departments ud ON ud.user_id = u.id AND ud.is_primary = true
+       LEFT JOIN departments d ON d.id = ud.department_id
+       WHERE u.id = $1`, [userId]);
+    return rows[0] ?? null;
+  }
+
+  /** 归档 board（仅 owner） */
+  async archiveBoard(boardId: string, userId: string) {
+    const role = await this.resolveRole(boardId, userId);
+    if (role !== 'owner') throw new ForbiddenException('仅看板负责人可归档');
+    await this.pg.query(`UPDATE boards SET is_archived = true WHERE id = $1`, [boardId]);
+    return { ok: true };
+  }
+
+  /** 取消归档 board（仅 owner） */
+  async unarchiveBoard(boardId: string, userId: string) {
+    const role = await this.resolveRole(boardId, userId);
+    if (role !== 'owner') throw new ForbiddenException('仅看板负责人可取消归档');
+    await this.pg.query(`UPDATE boards SET is_archived = false WHERE id = $1`, [boardId]);
+    return { ok: true };
+  }
+
+  /** 已归档 board 列表（仅本人可见范围） */
+  async listArchived(userId: string) {
+    const { rows } = await this.pg.query(
+      `SELECT b.*, bp.role AS my_role, d.name AS department_name
+       FROM boards b
+       LEFT JOIN departments d ON d.id = b.department_id
+       LEFT JOIN board_permissions bp ON bp.board_id = b.id AND bp.subject_type = 'user' AND bp.subject_id = $1
+       WHERE b.is_archived = true AND ${VISIBLE_WHERE}
+       ORDER BY b.created_at DESC`, [userId]);
+    return rows;
+  }
+
+  /** 全局回收站：跨所有可见 board 的已删条目（供右上角人员弹窗使用） */
+  async listGlobalTrash(userId: string) {
+    const { rows } = await this.pg.query(
+      `SELECT i.id, i.name, i.board_id, i.deleted_at, b.name AS board_name
+       FROM items i
+       JOIN boards b ON b.id = i.board_id
+       WHERE i.deleted_at IS NOT NULL AND b.is_archived = false AND ${VISIBLE_WHERE}
+       ORDER BY i.deleted_at DESC
+       LIMIT 200`, [userId]);
+    return rows;
+  }
+
   // ---- 工作区自定义分组（用户级 Board 文件夹）----
 
   /** 我的分组列表（含每个分组的 board id + dashboard id） */
@@ -629,6 +680,7 @@ export class BoardsService {
 @Controller('users')
 export class UsersController {
   constructor(private svc: BoardsService) {}
+  @Get('me') me(@Req() req) { return this.svc.getMe(req.user.id); }
   @Get() list(@Req() req) { return this.svc.listUsers(); }
 }
 
@@ -656,6 +708,11 @@ export class BoardsController {
   @Patch(':id') rename(@Req() req, @Param('id') id: string, @Body() b: { name: string }) { return this.svc.renameBoard(id, req.user.id, b.name); }
   @Post(':id/duplicate') duplicate(@Req() req, @Param('id') id: string) { return this.svc.duplicateBoard(id, req.user.id); }
   @Delete(':id') remove(@Req() req, @Param('id') id: string) { return this.svc.deleteBoard(id, req.user.id); }
+  // 注意：以下静态段路由必须先于 @Get(':id') 声明，否则会被 :id 捕获
+  @Get('archived') archived(@Req() req) { return this.svc.listArchived(req.user.id); }
+  @Get('global-trash') globalTrash(@Req() req) { return this.svc.listGlobalTrash(req.user.id); }
+  @Post(':id/archive') archive(@Req() req, @Param('id') id: string) { return this.svc.archiveBoard(id, req.user.id); }
+  @Post(':id/unarchive') unarchive(@Req() req, @Param('id') id: string) { return this.svc.unarchiveBoard(id, req.user.id); }
   @Get(':id') detail(@Req() req, @Param('id') id: string) {
     return this.svc.detail(id, req.user.id);
   }
