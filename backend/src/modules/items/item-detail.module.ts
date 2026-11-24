@@ -4,10 +4,12 @@
  */
 import { Injectable, Controller, Get, Post, Param, Body, Req, Module } from '@nestjs/common';
 import { Pool } from 'pg';
+import { AutomationRunner } from '../automation/automation-runner.service';
+import { AutomationModule } from '../automation/automation.module';
 
 @Injectable()
 export class ItemDetailService {
-  constructor(private pg: Pool) {}
+  constructor(private pg: Pool, private automation: AutomationRunner) {}
 
   /** 条目本体 */
   async getDetail(itemId: string) {
@@ -36,7 +38,7 @@ export class ItemDetailService {
     return rows;
   }
 
-  /** 发评论 + @提及 → 通知（Mentions 命中即写 notifications，服务层聚合） */
+  /** 发评论 + @提及 → 通知（Mentions 命中即写 notifications，服务层聚合）+ 触发 mention 自动化 */
   async addUpdate(itemId: string, userId: string, body: string) {
     const { rows } = await this.pg.query(
       `INSERT INTO updates (item_id, user_id, body) VALUES ($1,$2,$3) RETURNING id, created_at`,
@@ -45,12 +47,24 @@ export class ItemDetailService {
     // 解析 @提及（P0 简化：全名匹配；P1 换输入联想组件直接传 userId）
     const names = [...body.matchAll(/@([\p{Script=Han}\w]+)/gu)].map((m) => m[1]);
     if (names.length) {
-      await this.pg.query(
-        `INSERT INTO notifications (user_id, type, payload)
-         SELECT us.id, 'mention', jsonb_build_object('itemId', $1::uuid, 'updateId', $2::uuid)
-         FROM users us WHERE us.name = ANY($3::text[]) AND us.id <> $4::uuid`,
-        [itemId, rows[0].id, names, userId],
+      const mentioned = await this.pg.query(
+        `SELECT id FROM users WHERE name = ANY($1::text[]) AND id <> $2::uuid`,
+        [names, userId],
       );
+      const mentionedIds: string[] = mentioned.rows.map((r: any) => r.id);
+      if (mentionedIds.length) {
+        await this.pg.query(
+          `INSERT INTO notifications (user_id, type, payload)
+           SELECT us.id, 'mention', jsonb_build_object('itemId', $1::uuid, 'updateId', $2::uuid)
+           FROM users us WHERE us.id = ANY($3::uuid[]) AND us.id <> $4::uuid`,
+          [itemId, rows[0].id, mentionedIds, userId],
+        );
+        // P1-9：@提及触发「有人在评论里 @人」自动化（mentions 为被 @ 的 userId 列表）
+        const it = (await this.pg.query(`SELECT board_id FROM items WHERE id = $1`, [itemId])).rows[0];
+        if (it?.board_id) {
+          void this.automation.emit(it.board_id, itemId, { type: 'mention', mentions: mentionedIds }, userId);
+        }
+      }
     }
     return rows[0];
   }
@@ -92,5 +106,5 @@ export class ItemDetailController {
   @Get('history') history(@Param('id') id: string) { return this.svc.getHistory(id); }
 }
 
-@Module({ controllers: [ItemDetailController], providers: [ItemDetailService] })
+@Module({ imports: [AutomationModule.register()], controllers: [ItemDetailController], providers: [ItemDetailService] })
 export class ItemDetailModule {}

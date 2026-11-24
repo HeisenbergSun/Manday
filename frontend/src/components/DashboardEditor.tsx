@@ -75,13 +75,23 @@ interface Widget { id: string; type: string; title: string; config: any; }
 function BarChart({ data, valueKey = 'value', colors = COLORS }: { data: any[]; valueKey?: string; colors?: string[] }) {
   data = Array.isArray(data) ? data : [];
   const mx = Math.max(1, ...data.map((d) => Number(d[valueKey]) || 0));
+  // 数值标签：千分位 + 数字越长字号越小 + nowrap 不换行，避免「显示不全」
+  const numLabel = (v: any) => {
+    const s = (Number(v) || 0).toLocaleString();
+    const len = s.length;
+    const fs = len > 10 ? 9 : len > 7 ? 10 : 11;
+    return <span data-bar-value style={{ fontSize: fs, color: '#5a6072', whiteSpace: 'nowrap', lineHeight: 1.2 }} title={s}>{s}</span>;
+  };
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 110, padding: '6px 0' }}>
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, height: 150, padding: '8px 0 2px' }}>
       {data.map((d, i) => (
-        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0 }}>
-          <span style={{ fontSize: 11, color: '#5a6072' }}>{d[valueKey]}</span>
-          <div style={{ width: '100%', maxWidth: 40, height: `${(Number(d[valueKey]) / mx) * 78}px`, minHeight: 3, background: colors[i % colors.length], borderRadius: '4px 4px 0 0' }} />
-          <span style={{ fontSize: 10, color: '#7a7f8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 60 }} title={d.label}>{d.label}</span>
+        <div key={i} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' }}>
+          {numLabel(d[valueKey])}
+          {/* 柱子区域 flex 填充：柱子高度按 value/mx 百分比随容器动态伸缩 */}
+          <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div data-bar-bar style={{ width: '100%', maxWidth: 52, height: `${Math.max((Number(d[valueKey]) / mx) * 100, 2)}%`, minHeight: 3, background: colors[i % colors.length], borderRadius: '4px 4px 0 0', transition: 'height .3s' }} />
+          </div>
+          <span style={{ fontSize: 10, color: '#7a7f8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', paddingTop: 4, paddingBottom: 2 }} title={d.label}>{d.label}</span>
         </div>
       ))}
       {data.length === 0 && <span style={{ color: '#a0a4b1', fontSize: 12 }}>暂无数据</span>}

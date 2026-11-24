@@ -35,6 +35,10 @@ async function loadItemValues(pg: Pool, itemId: string) {
 /** 触发匹配（扩展自 worker：支持 from / days） */
 export function matchTrigger(trigger: any, event: AutomationEvent): boolean {
   if (trigger.type !== event.type) return false;
+  // mention 触发：to='@self' 语义为「有人在评论里 @ 了人」即触发（board 级规则无单一「我」视角）
+  if (trigger.type === 'mention') {
+    return (event.mentions ?? []).length > 0;
+  }
   if (trigger.field && trigger.field !== event.field) return false;
   if (trigger.to != null && String(trigger.to) !== String(event.to)) return false;
   if (trigger.from != null && String(trigger.from) !== String(event.from ?? '')) return false;
