@@ -9,6 +9,7 @@ export function NotificationBell() {
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<any[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -23,9 +24,20 @@ export function NotificationBell() {
     return () => clearInterval(t);
   }, []);
 
+  // 点击铃铛/弹窗外部区域时自动关闭弹窗
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (rootRef.current && !rootRef.current.contains(t)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
   return (
-    <div style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(!open)} style={{
+    <div ref={rootRef} style={{ position: 'relative' }}>
+      <button data-bell onClick={() => setOpen(!open)} style={{
         position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'inline-flex', alignItems: 'center' }}>
         <Icon name="bell" size={19} color="#5a6072" />
         {count > 0 && <span style={{
@@ -33,7 +45,7 @@ export function NotificationBell() {
           fontSize: 10, borderRadius: 10, padding: '1px 5px' }}>{count > 99 ? '99+' : count}</span>}
       </button>
       {open && (
-        <div style={{ position: 'absolute', right: 0, top: 34, width: 300, background: '#fff',
+        <div data-notif-popover style={{ position: 'absolute', right: 0, top: 34, width: 300, background: '#fff',
           border: '1px solid #e6e8ef', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60,
           maxHeight: 420, overflowY: 'auto' }}>
           <div style={{ padding: '10px 14px', fontWeight: 600, fontSize: 13, borderBottom: '1px solid #e6e8ef' }}>通知</div>

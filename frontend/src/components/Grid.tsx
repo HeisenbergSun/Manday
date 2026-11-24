@@ -17,6 +17,8 @@ export type GridRow = { id: string; name: string; version: number; position: num
 export type GridColumn = { id: string; name: string; type: string; settings: any; restricted?: boolean };
 
 const LABEL_W = 260;
+/** 「条目」名称列的哨兵 key：复用 columnStates 存其宽度（避免与真实列 id 冲突） */
+const NAME_COL = '__name__';
 
 // ── 列类型定义（菜单/内联建列共用） ──
 const COL_TYPES = [
@@ -938,10 +940,18 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
               <input type="checkbox" checked={allChecked} onChange={toggleAll} data-grid-check-all />
             </th>
             <th style={{ ...thStyle, width: 28 }}></th>
-            <th style={{ ...thStyle, textAlign: 'left', width: LABEL_W, cursor: onSortChange ? 'pointer' : undefined }}
+            <th data-col="name" style={{ ...thStyle, textAlign: 'left', width: colWidth(NAME_COL) ?? LABEL_W, cursor: onSortChange ? 'pointer' : undefined }}
               onClick={() => onSortChange?.('name')}
-              title="点击排序">
+              title="点击排序 · 右边缘拖拽调宽">
               条目{sortBy === 'name' ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
+              {/* 条目列宽拖拽手柄 */}
+              <span data-col-resize
+                onMouseDown={(e) => {
+                  e.stopPropagation(); e.preventDefault();
+                  const th = (e.currentTarget.parentElement as HTMLElement);
+                  resizeColRef.current = { id: NAME_COL, startX: e.clientX, startW: th.offsetWidth || LABEL_W };
+                }}
+                style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize' }} />
             </th>
             {visibleColumns.map((c) => (
               <th key={c.id}
@@ -1186,7 +1196,7 @@ export function BoardGrid({ rows, columns, onOpenItem, onEdit, onOrderChange, on
                   </div>
                 )}
               </td>
-              <td style={{ ...tdStyle, fontWeight: 500 }} data-col="name" data-grid-cell={row.id}
+              <td style={{ ...tdStyle, fontWeight: 500, width: colWidth(NAME_COL) ?? LABEL_W }} data-col="name" data-grid-cell={row.id}
                 onClick={() => !editing && startEdit(row.id, 'name', row.name)}>
                 {editing?.rowId === row.id && editing.field === 'name'
                   ? <input data-grid-editor autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
