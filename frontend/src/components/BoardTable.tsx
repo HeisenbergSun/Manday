@@ -133,6 +133,12 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
   const [peopleFilterOpen, setPeopleFilterOpen] = useState(false);
   const [companyUsers, setCompanyUsers] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.listUsers().then((u: any) => setCompanyUsers(Array.isArray(u) ? u : [])).catch(() => {}); }, []);
+  // 筛选弹窗（工具条「筛选」按钮，操作 tableFilters）
+  const [filterOpen, setFilterOpen] = useState(false);
+  const addTableFilter = () => setTableFilters((f) => [...f, { id: `f${Date.now()}${Math.random().toString(36).slice(2, 6)}`, columnId: 'name', operator: 'contains', value: '' }]);
+  const updateTableFilter = (id: string, patch: Partial<FilterCondition>) => setTableFilters((f) => f.map((x) => x.id === id ? { ...x, ...patch } : x));
+  const removeTableFilter = (id: string) => setTableFilters((f) => f.filter((x) => x.id !== id));
+  const clearTableFilters = () => setTableFilters([]);
   // 当前 board 内条目搜索（按名称/列值关键字过滤）
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -167,19 +173,20 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
 
   /** 需求2：点击弹窗外部区域自动关闭所有上部弹窗面板 */
   useEffect(() => {
-    if (!mgrOpen && !viewsOpen && !autoOpen && !membersOpen) return;
+    if (!mgrOpen && !viewsOpen && !autoOpen && !membersOpen && !filterOpen) return;
     const handler = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      if (t.closest('[data-mgr-panel],[data-views-panel],[data-auto-panel],[data-members-panel],[data-mgr-trigger],[data-views-trigger],[data-auto-trigger],[data-members-trigger]')) return;
+      if (t.closest('[data-mgr-panel],[data-views-panel],[data-auto-panel],[data-members-panel],[data-filter-popover],[data-mgr-trigger],[data-views-trigger],[data-auto-trigger],[data-members-trigger],[data-filter-toolbar]')) return;
       setMgrOpen(false);
       setViewsOpen(false);
       setAutoOpen(false);
       setMembersOpen(false);
+      setFilterOpen(false);
     };
     // 用 setTimeout 确保当前点击事件先冒泡完再挂监听，避免打开按钮的同一个 click 触发关闭
     const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
     return () => { clearTimeout(id); document.removeEventListener('mousedown', handler); };
-  }, [mgrOpen, viewsOpen, autoOpen, membersOpen]);
+  }, [mgrOpen, viewsOpen, autoOpen, membersOpen, filterOpen]);
 
   /** 应用视图：写入本地排序态；若视图声明了非 table 类型则跳转到对应视图（第二十二批） */
   const applyView = (v: any) => {
@@ -726,6 +733,53 @@ export function BoardTable({ boardId, onOpenItem, onSwitchView }: { boardId: str
                 {u.name}
               </div>
             ))}
+          </div>
+        )}
+        <button data-filter-toolbar onClick={() => setFilterOpen(!filterOpen)}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #e6e8ef', background: filterOpen || tableFilters.length ? '#e5eaff' : '#fff',
+            cursor: 'pointer', fontSize: 13, color: tableFilters.length ? '#4f6ef7' : '#7a7f8c', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="filter" size={15} />
+          筛选{tableFilters.length ? ` (${tableFilters.length})` : ''}
+        </button>
+        {filterOpen && (
+          <div data-filter-popover style={{ position: 'absolute', top: 48, left: 300, zIndex: 50, background: '#fff', borderRadius: 10,
+            boxShadow: '0 8px 28px rgba(20,30,70,.16)', padding: 12, minWidth: 340, border: '1px solid #eef0f5' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+              <b style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Icon name="filter" size={14} color="#4f6ef7" />筛选条件</b>
+              <button onClick={() => setFilterOpen(false)} style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', fontSize: 15, color: '#7a7f8c', lineHeight: 1 }}>✕</button>
+            </div>
+            {tableFilters.map((f) => (
+              <div key={f.id} data-filter-pop-row style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
+                <select data-filter-pop-col value={f.columnId} onChange={(e) => updateTableFilter(f.id, { columnId: e.target.value })}
+                  style={{ flex: 1, padding: '5px 6px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12, minWidth: 0 }}>
+                  <option value="name">条目</option>
+                  {columns.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select data-filter-pop-op value={f.operator} onChange={(e) => updateTableFilter(f.id, { operator: e.target.value as any })}
+                  style={{ width: 78, padding: '5px 4px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12 }}>
+                  <option value="contains">包含</option>
+                  <option value="not_contains">不包含</option>
+                  <option value="equals">等于</option>
+                  <option value="not_equals">不等于</option>
+                  <option value="gt">大于</option>
+                  <option value="lt">小于</option>
+                  <option value="gte">≥</option>
+                  <option value="lte">≤</option>
+                  <option value="empty">为空</option>
+                  <option value="not_empty">非空</option>
+                </select>
+                {f.operator !== 'empty' && f.operator !== 'not_empty' && (
+                  <input data-filter-pop-val value={f.value} onChange={(e) => updateTableFilter(f.id, { value: e.target.value })}
+                    placeholder="值" style={{ width: 90, padding: '5px 6px', borderRadius: 6, border: '1px solid #e6e8ef', fontSize: 12 }} />
+                )}
+                <button data-filter-pop-remove onClick={() => removeTableFilter(f.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#e2445c', fontSize: 14, lineHeight: 1 }}>✕</button>
+              </div>
+            ))}
+            {tableFilters.length === 0 && <div style={{ fontSize: 12, color: '#a0a4b1', padding: '4px 0 8px' }}>还没有筛选条件，点下方添加</div>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+              <button data-filter-pop-add onClick={addTableFilter} style={{ padding: '5px 12px', borderRadius: 6, border: '1px dashed #4f6ef7', background: '#f5f7ff', color: '#4f6ef7', cursor: 'pointer', fontSize: 12 }}>＋ 添加条件</button>
+              {tableFilters.length > 0 && <button data-filter-pop-clear onClick={clearTableFilters} style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: 'none', color: '#7a7f8c', cursor: 'pointer', fontSize: 12 }}>清除全部</button>}
+            </div>
           </div>
         )}
         <button data-mgr-trigger="1" onClick={() => setMgrOpen(!mgrOpen)}

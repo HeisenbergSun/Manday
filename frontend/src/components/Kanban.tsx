@@ -15,7 +15,7 @@ import { useCompanyUsers, personNames, membersOf } from '../people';
 const AVATAR_COLORS = ['#579bfc', '#e2445c', '#00a25b', '#fdab3d', '#a25ddc', '#00d6c5', '#ff8a65'];
 
 /** 卡片：显示条目名 + 自动检测 people/date/rating/tags/number/status 字段 */
-function Card({ itemId }: { itemId: string }) {
+function Card({ itemId, onOpenItem }: { itemId: string; onOpenItem?: (id: string) => void }) {
   const item = useItems((s) => s.items[itemId]);
   const columns = useItems((s) => s.columns);
   const users = useCompanyUsers();
@@ -56,6 +56,8 @@ function Card({ itemId }: { itemId: string }) {
   return (
     <div ref={setNodeRef} {...listeners} {...attributes}
       data-kanban-card={itemId}
+      onClick={() => onOpenItem?.(itemId)}
+      title="点击打开条目详情"
       style={{
         transform: transform ? `translate(${transform.x}px,${transform.y}px)` : undefined,
         background: '#fff', borderRadius: 8, padding: '10px 12px', marginBottom: 8, cursor: 'grab',
@@ -107,8 +109,8 @@ function Card({ itemId }: { itemId: string }) {
 }
 
 /** 看板列：WIP 限制 + 折叠/展开 + 空列占位 */
-function BucketColumn({ id, name, color, items, wipLimit, collapsed, onToggle }: {
-  id: string; name: string; color?: string; items: any[]; wipLimit?: number; collapsed: boolean; onToggle: () => void;
+function BucketColumn({ id, name, color, items, wipLimit, collapsed, onToggle, onOpenItem }: {
+  id: string; name: string; color?: string; items: any[]; wipLimit?: number; collapsed: boolean; onToggle: () => void; onOpenItem?: (id: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const count = items.length;
@@ -151,13 +153,13 @@ function BucketColumn({ id, name, color, items, wipLimit, collapsed, onToggle }:
           拖拽条目到此处
         </div>
       ) : (
-        items.map((i) => <Card key={i.id} itemId={i.id} />)
+        items.map((i) => <Card key={i.id} itemId={i.id} onOpenItem={onOpenItem} />)
       )}
     </div>
   );
 }
 
-export function Kanban({ groups, boardId }: { groups: { id: string; name: string }[]; boardId?: string }) {
+export function Kanban({ groups, boardId, onOpenItem }: { groups: { id: string; name: string }[]; boardId?: string; onOpenItem?: (id: string) => void }) {
   const columns = useItems((s) => s.columns);
   const allItems = useItems((s) => s.items);
   const users = useCompanyUsers();
@@ -353,7 +355,7 @@ export function Kanban({ groups, boardId }: { groups: { id: string; name: string
           {buckets.map((b) => (
             <BucketColumn key={b.id} id={b.id} name={b.name} color={b.color} items={b.items}
               wipLimit={wipLimits[b.id]} collapsed={collapsedCols.has(b.id)}
-              onToggle={() => toggleCollapse(b.id)} />
+              onToggle={() => toggleCollapse(b.id)} onOpenItem={onOpenItem} />
           ))}
           {buckets.length === 0 && (
             <div style={{ color: '#7a7f8c', fontSize: 13, padding: 40 }}>

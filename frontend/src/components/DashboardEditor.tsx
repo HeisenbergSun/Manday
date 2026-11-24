@@ -11,6 +11,15 @@ import { Icon } from './Icons';
 
 const COLORS = ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d3dd7', '#00d1d1', '#ff8a65', '#a25ddc'];
 
+/** 图表颜色主题 */
+const THEMES: Record<string, string[]> = {
+  default: ['#579bfc', '#00c875', '#fdab3d', '#e2445c', '#9d3dd7', '#00d1d1', '#ff8a65', '#a25ddc'],
+  ocean: ['#0ea5e9', '#22d3ee', '#3b82f6', '#6366f1', '#06b6d4', '#0284c7', '#38bdf8', '#7dd3fc'],
+  sunset: ['#f97316', '#f43f5e', '#fb7185', '#f59e0b', '#ef4444', '#eab308', '#fdba74', '#fca5a5'],
+  forest: ['#22c55e', '#10b981', '#84cc16', '#14b8a6', '#059669', '#65a30d', '#4ade80', '#2dd4bf'],
+};
+const getColors = (theme?: string) => THEMES[theme ?? 'default'] ?? COLORS;
+
 /** 数字格式化：decimals 为空/未设走默认千分位，设 0/1/2 走固定小数位 */
 const fmtNum = (v: any, decimals?: number | '') => {
   const n = Number(v) || 0;
@@ -63,7 +72,7 @@ const TEMPLATES: { name: string; icon: string; desc: string; widgets: { type: st
 
 interface Widget { id: string; type: string; title: string; config: any; }
 
-function BarChart({ data, valueKey = 'value' }: { data: any[]; valueKey?: string }) {
+function BarChart({ data, valueKey = 'value', colors = COLORS }: { data: any[]; valueKey?: string; colors?: string[] }) {
   data = Array.isArray(data) ? data : [];
   const mx = Math.max(1, ...data.map((d) => Number(d[valueKey]) || 0));
   return (
@@ -71,8 +80,8 @@ function BarChart({ data, valueKey = 'value' }: { data: any[]; valueKey?: string
       {data.map((d, i) => (
         <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0 }}>
           <span style={{ fontSize: 11, color: '#5a6072' }}>{d[valueKey]}</span>
-          <div style={{ width: '100%', maxWidth: 40, height: `${(Number(d[valueKey]) / mx) * 78}px`, minHeight: 3, background: COLORS[i % COLORS.length], borderRadius: '4px 4px 0 0' }} />
-          <span style={{ fontSize: 10, color: '#7a7f8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 60, transform: 'rotate(-25deg)', transformOrigin: 'top' }}>{d.label}</span>
+          <div style={{ width: '100%', maxWidth: 40, height: `${(Number(d[valueKey]) / mx) * 78}px`, minHeight: 3, background: colors[i % colors.length], borderRadius: '4px 4px 0 0' }} />
+          <span style={{ fontSize: 10, color: '#7a7f8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 60 }} title={d.label}>{d.label}</span>
         </div>
       ))}
       {data.length === 0 && <span style={{ color: '#a0a4b1', fontSize: 12 }}>暂无数据</span>}
@@ -80,7 +89,7 @@ function BarChart({ data, valueKey = 'value' }: { data: any[]; valueKey?: string
   );
 }
 
-function PieChart({ data }: { data: { label: string; value: number }[] }) {
+function PieChart({ data, colors = COLORS }: { data: { label: string; value: number }[]; colors?: string[] }) {
   data = Array.isArray(data) ? data : [];
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
   const R = 42, C = 2 * Math.PI * R;
@@ -91,7 +100,7 @@ function PieChart({ data }: { data: { label: string; value: number }[] }) {
         <circle cx={55} cy={55} r={R} fill="none" stroke="#eef0f5" strokeWidth={16} />
         {data.map((d, i) => {
           const frac = d.value / total;
-          const seg = <circle key={i} cx={55} cy={55} r={R} fill="none" stroke={COLORS[i % COLORS.length]} strokeWidth={16} strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-acc * C} transform="rotate(-90 55 55)" />;
+          const seg = <circle key={i} cx={55} cy={55} r={R} fill="none" stroke={colors[i % colors.length]} strokeWidth={16} strokeDasharray={`${frac * C} ${C}`} strokeDashoffset={-acc * C} transform="rotate(-90 55 55)" />;
           acc += frac; return seg;
         })}
         <text x={55} y={59} textAnchor="middle" fontSize={16} fontWeight={700} fill="#25272c">{total}</text>
@@ -99,7 +108,7 @@ function PieChart({ data }: { data: { label: string; value: number }[] }) {
       <div style={{ flex: 1 }}>
         {data.map((d, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 4 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: COLORS[i % COLORS.length], flexShrink: 0 }} />
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: colors[i % colors.length], flexShrink: 0 }} />
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
             <b>{d.value}</b>
             <span style={{ color: '#a0a4b1', width: 40, textAlign: 'right' }}>{Math.round((d.value / total) * 100)}%</span>
@@ -110,7 +119,7 @@ function PieChart({ data }: { data: { label: string; value: number }[] }) {
   );
 }
 
-function LineChart({ data, fill = false }: { data: { date: string; value: number }[]; fill?: boolean }) {
+function LineChart({ data, fill = false, colors = COLORS }: { data: { date: string; value: number }[]; fill?: boolean; colors?: string[] }) {
   data = Array.isArray(data) ? data : [];
   const W = 300, H = 110, P = 22;
   const mx = Math.max(1, ...data.map((d) => d.value));
@@ -120,14 +129,14 @@ function LineChart({ data, fill = false }: { data: { date: string; value: number
   return (
     <svg width="100%" height={130} viewBox={`0 0 ${W} ${H + 10}`} preserveAspectRatio="none">
       {[0.25, 0.5, 0.75, 1].map((f) => <line key={f} x1={P} x2={W - P} y1={H - P - f * (H - P * 2)} y2={H - P - f * (H - P * 2)} stroke="#eef0f5" strokeWidth={1} />)}
-      {data.length > 1 && fill && <polygon points={`${P},${H - P} ${pts} ${W - P},${H - P}`} fill={`${COLORS[0]}22`} />}
-      {data.length > 1 && <polyline points={pts} fill="none" stroke={COLORS[0]} strokeWidth={2} />}
-      {data.map((d, i) => <circle key={i} cx={xy(i).x} cy={xy(i).y} r={3} fill={COLORS[0]} />)}
+      {data.length > 1 && fill && <polygon points={`${P},${H - P} ${pts} ${W - P},${H - P}`} fill={`${colors[0]}22`} />}
+      {data.length > 1 && <polyline points={pts} fill="none" stroke={colors[0]} strokeWidth={2} />}
+      {data.map((d, i) => <circle key={i} cx={xy(i).x} cy={xy(i).y} r={3} fill={colors[0]} />)}
     </svg>
   );
 }
 
-function ComboChart({ data }: { data: { label: string; bar: number; line: number }[] }) {
+function ComboChart({ data, colors = COLORS }: { data: { label: string; bar: number; line: number }[]; colors?: string[] }) {
   data = Array.isArray(data) ? data : [];
   const W = 300, H = 110, P = 22;
   const mxB = Math.max(1, ...data.map((d) => d.bar));
@@ -141,15 +150,15 @@ function ComboChart({ data }: { data: { label: string; bar: number; line: number
       {data.map((d, i) => {
         const bx = P + step * i + (step - bw) / 2;
         const bh = (d.bar / mxB) * (H - P * 2);
-        return <rect key={i} x={bx} y={H - P - bh} width={bw} height={bh} rx={2} fill={COLORS[0]} />;
+        return <rect key={i} x={bx} y={H - P - bh} width={bw} height={bh} rx={2} fill={colors[0]} />;
       })}
-      {data.length > 1 && <polyline points={pts} fill="none" stroke={COLORS[3]} strokeWidth={2} />}
-      {data.map((d, i) => <circle key={i} cx={xy(i).x} cy={xy(i).y} r={3} fill={COLORS[3]} />)}
+      {data.length > 1 && <polyline points={pts} fill="none" stroke={colors[3] ?? colors[0]} strokeWidth={2} />}
+      {data.map((d, i) => <circle key={i} cx={xy(i).x} cy={xy(i).y} r={3} fill={colors[3] ?? colors[0]} />)}
     </svg>
   );
 }
 
-function GanttChart({ data, onOpenItem }: { data: { id: string; name: string; board: string; start: string; end: string }[]; onOpenItem?: (id: string) => void }) {
+function GanttChart({ data, onOpenItem, colors = COLORS }: { data: { id: string; name: string; board: string; start: string; end: string }[]; onOpenItem?: (id: string) => void; colors?: string[] }) {
   data = Array.isArray(data) ? data : [];
   const days = data.map((d) => ({ s: new Date(d.start).getTime(), e: new Date(d.end).getTime() }));
   const min = Math.min(...days.map((d) => d.s), Date.now() - 7 * 86400000);
@@ -163,7 +172,7 @@ function GanttChart({ data, onOpenItem }: { data: { id: string; name: string; bo
           style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, cursor: 'pointer' }}>
           <span style={{ width: 90, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
           <div style={{ flex: 1, height: 12, background: '#f0f1f5', borderRadius: 6, position: 'relative' }}>
-            <div style={{ position: 'absolute', left: `${((days[i].s - min) / span) * 100}%`, width: `${Math.max(((days[i].e - days[i].s) / span) * 100, 3)}%`, height: '100%', background: COLORS[i % COLORS.length], borderRadius: 6 }} />
+            <div style={{ position: 'absolute', left: `${((days[i].s - min) / span) * 100}%`, width: `${Math.max(((days[i].e - days[i].s) / span) * 100, 3)}%`, height: '100%', background: colors[i % colors.length], borderRadius: 6 }} />
           </div>
           <span style={{ fontSize: 10, color: '#a0a4b1', width: 60, textAlign: 'right' }}>{d.start?.slice(5)}</span>
         </div>
@@ -189,6 +198,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResi
 
   const title = widget.title || WIDGET_TYPES.find((t) => t.type === widget.type)?.label || widget.type;
   const boardIds = widget.config?.boardIds ?? [];
+  const colors = getColors(widget.config?.theme);
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -227,7 +237,7 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResi
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             {(Array.isArray(data.items) ? data.items : [{ label: '合计', value: data.value }]).map((it: any) => (
               <div key={it.label}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: COLORS[0] }}>{fmtNum(it.value, widget.config?.decimals)}</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: colors[0] }}>{fmtNum(it.value, widget.config?.decimals)}</div>
                 <div style={{ fontSize: 11, color: '#7a7f8c' }}>{it.label}</div>
               </div>
             ))}
@@ -241,12 +251,12 @@ function WidgetCard({ dashboardId, widget, onDelete, onEdit, onDuplicate, onResi
             </div>
           ))}</div>
         )}
-        {data && widget.type === 'bar' && <BarChart data={data} />}
-        {data && widget.type === 'pie' && <PieChart data={data} />}
-        {data && widget.type === 'line' && <LineChart data={data} />}
-        {data && widget.type === 'area' && <LineChart data={data} fill />}
-        {data && widget.type === 'combo' && <ComboChart data={data} />}
-        {data && widget.type === 'gantt' && <GanttChart data={data} onOpenItem={onOpenItem} />}
+        {data && widget.type === 'bar' && <BarChart data={data} colors={colors} />}
+        {data && widget.type === 'pie' && <PieChart data={data} colors={colors} />}
+        {data && widget.type === 'line' && <LineChart data={data} colors={colors} />}
+        {data && widget.type === 'area' && <LineChart data={data} fill colors={colors} />}
+        {data && widget.type === 'combo' && <ComboChart data={data} colors={colors} />}
+        {data && widget.type === 'gantt' && <GanttChart data={data} onOpenItem={onOpenItem} colors={colors} />}
         {data && widget.type === 'table' && (
           <div>{data.map((r: any) => (
             <div key={r.id} onClick={() => onOpenItem?.(r.id)} title="点击打开条目详情"
@@ -453,8 +463,9 @@ function TemplateModal({ boards, onClose, onCreate }: {
 }
 
 /** 编辑弹窗内的实时预览：根据 type + data 渲染对应图表 */
-function PreviewPane({ type, data, loading, error, decimals }: { type: string; data: any; loading: boolean; error: string; decimals?: number | '' }) {
+function PreviewPane({ type, data, loading, error, decimals, theme }: { type: string; data: any; loading: boolean; error: string; decimals?: number | ''; theme?: string }) {
   const arr = (d: any) => Array.isArray(d) ? d : [];
+  const colors = getColors(theme);
   if (!type) return <div style={{ color: '#a0a4b1', fontSize: 12, textAlign: 'center', padding: 18 }}>选择图表类型后实时预览</div>;
   if (loading) return <div style={{ color: '#a0a4b1', fontSize: 12, textAlign: 'center', padding: 18 }}>预览加载中…</div>;
   if (error) return <div style={{ color: '#a0a4b1', fontSize: 12, textAlign: 'center', padding: 18 }}>暂无可预览数据</div>;
@@ -462,7 +473,7 @@ function PreviewPane({ type, data, loading, error, decimals }: { type: string; d
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
       {(Array.isArray(data?.items) ? data.items : [{ label: '合计', value: data?.value }]).map((it: any) => (
         <div key={it.label}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: COLORS[0] }}>{fmtNum(it.value, decimals)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: colors[0] }}>{fmtNum(it.value, decimals)}</div>
           <div style={{ fontSize: 11, color: '#7a7f8c' }}>{it.label}</div>
         </div>
       ))}
@@ -474,12 +485,12 @@ function PreviewPane({ type, data, loading, error, decimals }: { type: string; d
       <div style={{ height: 8, background: '#eef0f5', borderRadius: 4 }}><div style={{ width: `${b.percent}%`, height: '100%', borderRadius: 4, background: b.percent >= 80 ? '#00c875' : b.percent >= 40 ? '#579bfc' : '#fdab3d' }} /></div>
     </div>
   ))}</div>;
-  if (type === 'bar') return <BarChart data={data} />;
-  if (type === 'pie') return <PieChart data={data} />;
-  if (type === 'line') return <LineChart data={data} />;
-  if (type === 'area') return <LineChart data={data} fill />;
-  if (type === 'combo') return <ComboChart data={data} />;
-  if (type === 'gantt') return <GanttChart data={data} />;
+  if (type === 'bar') return <BarChart data={data} colors={colors} />;
+  if (type === 'pie') return <PieChart data={data} colors={colors} />;
+  if (type === 'line') return <LineChart data={data} colors={colors} />;
+  if (type === 'area') return <LineChart data={data} fill colors={colors} />;
+  if (type === 'combo') return <ComboChart data={data} colors={colors} />;
+  if (type === 'gantt') return <GanttChart data={data} colors={colors} />;
   if (type === 'table') return <div>{arr(data).map((r: any) => (
     <div key={r.id} style={{ display: 'flex', gap: 8, fontSize: 12, padding: '3px 0', borderBottom: '1px solid #f5f6fa' }}>
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
@@ -508,7 +519,7 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [boardIds, setBoardIds] = useState<string[]>(initial?.config?.boardIds ?? []);
   const [groupBy, setGroupBy] = useState(initial?.config?.groupBy ?? '');
-  const [metric, setMetric] = useState<'count' | 'sum'>(initial?.config?.metric ?? 'count');
+  const [metric, setMetric] = useState<'count' | 'sum' | 'avg'>(initial?.config?.metric ?? 'count');
   const [metricColumn, setMetricColumn] = useState(initial?.config?.metricColumn ?? '');
   const [column, setColumn] = useState(initial?.config?.column ?? '');
   const [aggs, setAggs] = useState<string[]>(initial?.config?.aggs ?? ['sum']);
@@ -517,6 +528,7 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
   const [endColumn, setEndColumn] = useState(initial?.config?.endColumn ?? '');
   const [limit, setLimit] = useState(initial?.config?.limit ?? 20);
   const [decimals, setDecimals] = useState<number | ''>(initial?.config?.decimals ?? '');
+  const [theme, setTheme] = useState<string>(initial?.config?.theme ?? 'default');
   const [colNames, setColNames] = useState<{ cat: string[]; num: string[]; date: string[] }>({ cat: [], num: [], date: [] });
   const [preview, setPreview] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -543,19 +555,24 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
 
   const needsBoard = ['number', 'battery', 'bar', 'pie', 'line', 'area', 'combo', 'gantt', 'table'].includes(type);
   const canSave = type && (['rank', 'activity'].includes(type) || boardIds.length)
-    && (type !== 'number' || column) && (type !== 'bar' || groupBy) && (type !== 'pie' || groupBy)
-    && (type !== 'combo' || (groupBy && metricColumn)) && (type !== 'line' && type !== 'area' || dateColumn)
+    && (type !== 'number' || column)
+    && (type !== 'bar' || groupBy) && (type !== 'bar' || metric !== 'sum' || metricColumn)
+    && (type !== 'pie' || groupBy) && (type !== 'pie' || metric !== 'sum' || metricColumn)
+    && (type !== 'combo' || (groupBy && metricColumn))
+    && (type !== 'line' && type !== 'area' || dateColumn)
+    && (type !== 'line' && type !== 'area' || metric === 'count' || metricColumn)
     && (type !== 'gantt' || startColumn);
 
   const buildConfig = () => {
     const cfg: any = { boardIds };
     if (type === 'number') { cfg.column = column; cfg.aggs = aggs; cfg.decimals = decimals; }
     if (type === 'bar') { cfg.groupBy = groupBy; cfg.metric = metric; if (metric === 'sum') cfg.metricColumn = metricColumn; cfg.limit = limit; }
-    if (type === 'pie') { cfg.groupBy = groupBy; cfg.metric = 'count'; cfg.limit = limit; }
-    if (type === 'line' || type === 'area') cfg.dateColumn = dateColumn;
+    if (type === 'pie') { cfg.groupBy = groupBy; cfg.metric = metric; if (metric === 'sum') cfg.metricColumn = metricColumn; cfg.limit = limit; }
+    if (type === 'line' || type === 'area') { cfg.dateColumn = dateColumn; cfg.metric = metric; if (metric !== 'count') cfg.metricColumn = metricColumn; }
     if (type === 'combo') { cfg.groupBy = groupBy; cfg.metricColumn = metricColumn; cfg.limit = limit; }
     if (type === 'gantt') { cfg.startColumn = startColumn; cfg.endColumn = endColumn; }
     if (type === 'table') cfg.limit = limit;
+    if (['number', 'bar', 'pie', 'line', 'area', 'combo', 'gantt'].includes(type)) cfg.theme = theme;
     return cfg;
   };
 
@@ -571,7 +588,7 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
         .finally(() => setPreviewLoading(false));
     }, 350);
     return () => clearTimeout(t);
-  }, [type, JSON.stringify(boardIds), groupBy, metric, metricColumn, column, JSON.stringify(aggs), dateColumn, startColumn, endColumn, limit, decimals]);
+  }, [type, JSON.stringify(boardIds), groupBy, metric, metricColumn, column, JSON.stringify(aggs), dateColumn, startColumn, endColumn, limit, decimals, theme]);
 
   const select = (v: string, onChange: (s: string) => void, opts: string[], placeholder: string) => (
     <select value={v} onChange={(e) => onChange(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
@@ -650,11 +667,23 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
         {type === 'pie' && (
           <>
             {field('分组列', select(groupBy, setGroupBy, colNames.cat, '分组列'))}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>{field('指标', select(metric, (s) => setMetric(s as any), ['count', 'sum'], '指标'))}</div>
+              {metric === 'sum' && <div style={{ flex: 1 }}>{field('数值列', select(metricColumn, setMetricColumn, colNames.num, '数值列'))}</div>}
+            </div>
             {field('显示条数（Top N）', select(String(limit), (s) => setLimit(Number(s)), ['5', '10', '20', '30', '50'], '条数'))}
           </>
         )}
 
-        {(type === 'line' || type === 'area') && field('日期列', select(dateColumn, setDateColumn, colNames.date, '日期列（跨板同名）'))}
+        {(type === 'line' || type === 'area') && (
+          <>
+            {field('日期列', select(dateColumn, setDateColumn, colNames.date, '日期列（跨板同名）'))}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>{field('聚合方式', select(metric, (s) => setMetric(s as any), ['count', 'sum', 'avg'], '聚合方式'))}</div>
+              {metric !== 'count' && <div style={{ flex: 1 }}>{field('数值列', select(metricColumn, setMetricColumn, colNames.num, '数值列'))}</div>}
+            </div>
+          </>
+        )}
 
         {type === 'combo' && (
           <>
@@ -673,10 +702,19 @@ function WidgetConfigModal({ boards, initial, onClose, onSave }: {
 
         {type === 'table' && field('显示条数', select(String(limit), (s) => setLimit(Number(s)), ['10', '20', '50'], '条数'))}
 
+        {['number', 'bar', 'pie', 'line', 'area', 'combo', 'gantt'].includes(type) && field('颜色主题', (
+          <select data-widget-theme value={theme} onChange={(e) => setTheme(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+            <option value="default">默认蓝</option>
+            <option value="ocean">海洋蓝</option>
+            <option value="sunset">日落橙</option>
+            <option value="forest">森林绿</option>
+          </select>
+        ))}
+
         {type && (
           <div data-widget-preview style={{ border: '1px solid #e6e8ef', borderRadius: 10, padding: 12, background: '#fafbfd', marginTop: 4 }}>
             <div style={{ fontSize: 12, color: '#5a6072', marginBottom: 8, fontWeight: 600 }}>实时预览</div>
-            <PreviewPane type={type} data={preview} loading={previewLoading} error={previewErr} decimals={decimals} />
+            <PreviewPane type={type} data={preview} loading={previewLoading} error={previewErr} decimals={decimals} theme={theme} />
           </div>
         )}
 

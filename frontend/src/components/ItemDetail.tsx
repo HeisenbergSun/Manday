@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 
-type Tab = 'updates' | 'subitems' | 'history';
+type Tab = 'info' | 'updates' | 'subitems' | 'history';
 
 const arr = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 
@@ -39,7 +39,7 @@ function historyActionText(h: any): string {
 }
 
 export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () => void }) {
-  const [tab, setTab] = useState<Tab>('updates');
+  const [tab, setTab] = useState<Tab>('info');
   const [data, setData] = useState<{ updates: any[]; subitems: any[]; history: any[] }>({
     updates: [], subitems: [], history: [],
   });
@@ -51,6 +51,16 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
   const [draftRef] = useState<{ el: HTMLTextAreaElement | null }>({ el: null });
   const [subDraft, setSubDraft] = useState('');
   const [item, setItem] = useState<any>(null);
+  // 信息 tab：列定义 + 公司成员（people 列用）
+  const [columns, setColumns] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+
+  const refreshItem = async () => {
+    const fresh = await api.item(itemId).catch(() => null);
+    if (fresh) setItem(fresh);
+  };
 
   const load = async () => {
     setErr('');
@@ -68,8 +78,34 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
 
   useEffect(() => {
     load();
-    api.item(itemId).then(setItem).catch(() => setItem(null));
+    api.item(itemId).then((it) => {
+      setItem(it);
+      setNameDraft(it?.name ?? '');
+      if (it?.board_id) {
+        api.getBoard(it.board_id).then((b: any) => setColumns(Array.isArray(b?.columns) ? b.columns : [])).catch(() => {});
+      }
+    }).catch(() => setItem(null));
+    api.listUsers().then((us: any) => setUsers(Array.isArray(us) ? us : [])).catch(() => {});
   }, [itemId]);
+
+  /** 保存条目名 */
+  const saveName = async () => {
+    setNameEditing(false);
+    const name = nameDraft.trim();
+    if (!name || name === item?.name) return;
+    try {
+      await api.updateItem(itemId, { name });
+      await refreshItem();
+    } catch (e) { setErr(`改名失败：${(e as Error).message}`); }
+  };
+
+  /** 保存字段值（LWW），成功后刷新拿最新 version */
+  const saveField = async (colId: string, value: unknown) => {
+    try {
+      await api.updateCell(itemId, colId, value, item?.version ?? 1);
+      await refreshItem();
+    } catch (e) { setErr(`保存失败：${(e as Error).message}`); }
+  };
 
   /** P3-3：光标前解析 @xxx（未闭合），拉全员名单供补全 */
   const onDraftChange = (e: any) => {
@@ -136,16 +172,34 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
     }
   }
 
+  // 信息 tab：可编辑列（排除只读/系统维护列）
+  const editableCols = columns.filter((c: any) => !['formula', 'mirror', 'dependency', 'attachment'].includes(c.type));
+  /** people/tags 值可能是 JSON 数组字符串或数组，统一解析为 string[] */
+  const cellArr = (colId: string): string[] => {
+    const v = item?.values?.[colId];
+    if (v == null) return [];
+    if (Array.isArray(v)) return v.map(String);
+    try { const j = JSON.parse(String(v)); return Array.isArray(j) ? j.map(String) : [String(v)]; } catch { return [String(v)]; }
+  };
+  const cellStr = (colId: string): string => {
+    const v = item?.values?.[colId];
+    return v == null ? '' : String(v);
+  };
+  const cellBool = (colId: string): boolean => {
+    const v = item?.values?.[colId];
+    return v === true || v === 'true' || v === 1 || v === '1';
+  };
+
   return (
     <aside data-item-detail="1" style={{ width: 420, background: '#fff', borderLeft: '1px solid #e6e8ef', display: 'flex', flexDirection: 'column' }}>
       <header style={{ padding: '12px 16px', borderBottom: '1px solid #e6e8ef' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {(['updates', 'subitems', 'history'] as Tab[]).map((t) => (
+          {(['info', 'updates', 'subitems', 'history'] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)} style={{
               padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 13,
               background: tab === t ? '#eef1fe' : 'transparent', color: tab === t ? '#4f6ef7' : '#7a7f8c',
             }}>
-              {{ updates: '动态', subitems: '子任务', history: '历史' }[t]}
+              {{ info: '信息', updates: '动态', subitems: '子任务', history: '历史' }[t]}
             </button>
           ))}
           <button onClick={onClose} title="关闭" style={{
@@ -159,6 +213,76 @@ export function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () =>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
         {err && <div style={{ color: '#e2445c', fontSize: 12, marginBottom: 10 }}>{err}</div>}
+
+        {tab === 'info' && (
+          <div data-item-info="1">
+            <div style={{ fontSize: 12, color: '#5a6072', marginBottom: 4 }}>条目名称</div>
+            {nameEditing ? (
+              <input data-item-name-input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={saveName} onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setNameEditing(false); }}
+                style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #4f6ef7', fontSize: 14, fontWeight: 600, outline: 'none', marginBottom: 14, boxSizing: 'border-box' }} />
+            ) : (
+              <div data-item-name onClick={() => setNameEditing(true)} title="点击重命名"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 14, fontWeight: 600, cursor: 'text', marginBottom: 14 }}>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item?.name ?? '（无名称）'}</span>
+                <span style={{ color: '#a0a4b1', fontSize: 12 }}>✎</span>
+              </div>
+            )}
+
+            {editableCols.map((c: any) => (
+              <div key={c.id} data-item-field={c.id} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: '#5a6072', marginBottom: 4 }}>{c.name}</div>
+                {c.type === 'checkbox' ? (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={cellBool(c.id)} onChange={(e) => saveField(c.id, e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: '#00c875', cursor: 'pointer' }} />
+                    <span style={{ color: '#7a7f8c' }}>{cellBool(c.id) ? '是' : '否'}</span>
+                  </label>
+                ) : c.type === 'status' ? (
+                  <select data-item-field-select value={cellStr(c.id)} onChange={(e) => saveField(c.id, e.target.value)}
+                    style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+                    <option value="">— 未设置 —</option>
+                    {((c.settings?.labels ?? []) as any[]).filter((l: any) => !((c.settings?.inactiveLabels ?? []) as string[]).includes(l.label))
+                      .map((l: any) => <option key={l.label} value={l.label}>{l.label}</option>)}
+                  </select>
+                ) : c.type === 'dropdown' ? (
+                  <select value={cellStr(c.id)} onChange={(e) => saveField(c.id, e.target.value)}
+                    style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+                    <option value="">— 未设置 —</option>
+                    {((c.settings?.options ?? []) as any[]).map((o: any) => <option key={o.label} value={o.label}>{o.label}</option>)}
+                  </select>
+                ) : c.type === 'people' ? (
+                  <select value={cellArr(c.id)[0] ?? ''} onChange={(e) => saveField(c.id, e.target.value ? [e.target.value] : [])}
+                    style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+                    <option value="">— 未分配 —</option>
+                    {users.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                ) : c.type === 'date' ? (
+                  <input type="date" value={cellStr(c.id).slice(0, 10)} onChange={(e) => saveField(c.id, e.target.value)}
+                    style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+                ) : c.type === 'rating' ? (
+                  <select value={cellStr(c.id)} onChange={(e) => saveField(c.id, Number(e.target.value))}
+                    style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }}>
+                    <option value="">— 未评分 —</option>
+                    {Array.from({ length: Number(c.settings?.max ?? 5) }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{'\u2605'.repeat(n)}</option>)}
+                  </select>
+                ) : c.type === 'tags' ? (
+                  <input defaultValue={cellArr(c.id).join(', ')} onBlur={(e) => saveField(c.id, e.target.value.split(/[,，;；]/).map((s: string) => s.trim()).filter(Boolean))}
+                    placeholder="逗号分隔多个标签" style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+                ) : c.type === 'number' ? (
+                  <input type="number" defaultValue={cellStr(c.id)} onBlur={(e) => saveField(c.id, e.target.value)}
+                    style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+                ) : (
+                  <input defaultValue={cellStr(c.id)} onBlur={(e) => saveField(c.id, e.target.value)}
+                    placeholder="未设置" style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid #e6e8ef', fontSize: 13 }} />
+                )}
+              </div>
+            ))}
+            {editableCols.length === 0 && (
+              <div style={{ color: '#a0a4b1', fontSize: 12 }}>这个 Board 还没有可编辑的列</div>
+            )}
+          </div>
+        )}
 
         {tab === 'updates' && data.updates.map((u: any, i: number) => (
           <div key={u.id ?? i} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>

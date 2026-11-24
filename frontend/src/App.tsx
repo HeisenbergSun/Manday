@@ -290,7 +290,7 @@ export function App() {
               </div>
               <div style={{ flex: 1, overflow: 'auto' }}>
                 {view === 'table' ? <BoardTable boardId={activeBoard.id} onOpenItem={setDetailId} onSwitchView={setView as (v: string) => void} />
-                  : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} boardId={activeBoard.id} />
+                  : view === 'kanban' ? <Kanban groups={groups.length ? groups.map((g) => ({ id: g.id, name: g.name })) : [{ id: 'default', name: '全部条目' }]} boardId={activeBoard.id} onOpenItem={setDetailId} />
                   : view === 'calendar' ? <CalendarView onOpenItem={setDetailId} />
                   : view === 'gantt' ? <GanttView onOpenItem={setDetailId} />
                   : view === 'workload' ? <WorkloadView onOpenItem={setDetailId} />

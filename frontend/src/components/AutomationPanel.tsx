@@ -31,7 +31,14 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
   const [days, setDays] = useState('1');
   const [then, setThen] = useState('notify');
   const [group, setGroup] = useState(groupNames[0] ?? '');
+  // 修改字段动作：目标列 + 值
+  const [fieldColId, setFieldColId] = useState('');
+  const [fieldValue, setFieldValue] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const editableCols = columns.filter((c: any) => !['name', 'formula', 'mirror', 'dependency', 'attachment'].includes(c.type));
+  const fieldCol = editableCols.find((c: any) => c.id === fieldColId);
+  const fieldLabels = fieldCol ? ((fieldCol.settings?.labels ?? fieldCol.settings?.options ?? []) as any[]).map((o: any) => o?.label ?? o) : [];
 
   const whenOptions = [
     { v: 'status_changed', label: '条目状态变为' },
@@ -42,7 +49,7 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
   const thenOptions = [
     { v: 'notify', label: '通知相关负责人' },
     { v: 'move_group', label: '移动到分组' },
-    { v: 'update_field', label: '把优先级改为「逾期」' },
+    { v: 'update_field', label: '修改字段' },
   ];
 
   const create = async () => {
@@ -58,7 +65,15 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
       const g = groups.find((x: any) => x.name === group);
       if (!g) { flash('请选择目标分组'); return; }
       action = { type: 'move_group', groupId: g.id }; name += `移动到「${group}」`;
-    } else { action = { type: 'update_field', columnId: 'prio', value: '逾期' }; name += '优先级标逾期'; }
+    } else {
+      if (!fieldColId) { flash('请选择要修改的列'); return; }
+      let v: unknown = fieldValue;
+      if (fieldCol?.type === 'number') v = fieldValue === '' ? '' : Number(fieldValue);
+      else if (fieldCol?.type === 'checkbox') v = fieldValue === 'true';
+      else if (fieldCol?.type === 'people') v = fieldValue ? [fieldValue] : [];
+      else if (fieldCol?.type === 'tags') v = fieldValue ? fieldValue.split(/[,，;；]/).map((s: string) => s.trim()).filter(Boolean) : [];
+      action = { type: 'update_field', columnId: fieldColId, value: v }; name += `修改「${fieldCol?.name ?? '字段'}」`;
+    }
     setBusy(true);
     try {
       await api.autoCreate(boardId, { trigger, action, name, source: 'ui-sentence' });
@@ -97,7 +112,21 @@ function SentenceRule({ boardId, onDone, flash }: { boardId: string; onDone: () 
         {then === 'move_group' && <>
           {select(groupNames.map((g) => ({ v: g, label: g })), group, setGroup, 'group')}
         </>}
-        <button onClick={create} disabled={busy || (when === 'status_changed' && !statusLabels.length)}
+        {then === 'update_field' && <>
+          {select([{ v: '', label: '选择列…' }, ...editableCols.map((c: any) => ({ v: c.id, label: c.name }))], fieldColId, (v) => { setFieldColId(v); setFieldValue(''); }, 'fieldcol')}
+          {fieldCol && (fieldCol.type === 'status' || fieldCol.type === 'dropdown') && (
+            select([{ v: '', label: '选择值…' }, ...fieldLabels.map((l: any) => ({ v: l, label: l }))], fieldValue, setFieldValue, 'fieldval')
+          )}
+          {fieldCol && fieldCol.type === 'checkbox' && (
+            select([{ v: 'true', label: '是' }, { v: 'false', label: '否' }], fieldValue, setFieldValue, 'fieldval')
+          )}
+          {fieldCol && !['status', 'dropdown', 'checkbox'].includes(fieldCol.type) && (
+            <input data-sentence-fieldval type={fieldCol.type === 'number' ? 'number' : 'text'} value={fieldValue} onChange={(e) => setFieldValue(e.target.value)}
+              placeholder={fieldCol.type === 'tags' ? '逗号分隔多个标签' : '值'}
+              style={{ width: 110, padding: '3px 6px', borderRadius: 7, border: '1px solid #4f6ef7', fontSize: 13 }} />
+          )}
+        </>}
+        <button onClick={create} disabled={busy || (when === 'status_changed' && !statusLabels.length) || (then === 'update_field' && !fieldColId)}
           style={{ marginLeft: 'auto', padding: '6px 16px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff',
             cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
           {busy ? '创建中…' : '创建自动化'}
@@ -134,7 +163,7 @@ export function AutomationPanel({ boardId, onClose, flash }: { boardId: string; 
       : t.type ?? '—';
     const act = a.type === 'notify' ? '通知负责人'
       : a.type === 'move_group' ? '移动分组'
-      : a.type === 'update_field' ? '改字段'
+      : a.type === 'update_field' ? '修改字段'
       : a.type ?? '—';
     return `${r.name || `${when} → ${act}`}（${when} → ${act}）`;
   };

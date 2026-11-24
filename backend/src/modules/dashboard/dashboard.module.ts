@@ -327,15 +327,30 @@ export class DashboardService {
     }
 
     if (widget.type === 'line' || widget.type === 'area') {
+      const metric = cfg.metric === 'sum' ? 'sum' : cfg.metric === 'avg' ? 'avg' : 'count';
+      if (metric === 'count') {
+        const { rows } = await this.pg.query(
+          `SELECT v.value #>> '{}' AS date, count(*) AS value
+           FROM item_values v
+           JOIN board_columns c ON c.id = v.column_id AND c.type = 'date' AND c.name = $3
+           JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
+           JOIN boards b ON b.id = i.board_id
+           WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
+           GROUP BY date ORDER BY date`,
+          [boardIds, userId, cfg.dateColumn]);
+        return rows.map((r) => ({ date: String(r.date).slice(0, 10), value: Number(r.value) || 0 }));
+      }
       const { rows } = await this.pg.query(
-        `SELECT v.value #>> '{}' AS date, count(*) AS value
+        `SELECT v.value #>> '{}' AS date, ${metric}((mv.value #>> '{}')::numeric) AS value
          FROM item_values v
          JOIN board_columns c ON c.id = v.column_id AND c.type = 'date' AND c.name = $3
          JOIN items i ON i.id = v.item_id AND i.deleted_at IS NULL
          JOIN boards b ON b.id = i.board_id
+         JOIN item_values mv ON mv.item_id = i.id
+         JOIN board_columns mc ON mc.id = mv.column_id AND mc.type = 'number' AND mc.name = $4
          WHERE i.board_id = ANY($1::uuid[]) AND ${VISIBLE_SQL}
          GROUP BY date ORDER BY date`,
-        [boardIds, userId, cfg.dateColumn]);
+        [boardIds, userId, cfg.dateColumn, cfg.metricColumn]);
       return rows.map((r) => ({ date: String(r.date).slice(0, 10), value: Number(r.value) || 0 }));
     }
 
