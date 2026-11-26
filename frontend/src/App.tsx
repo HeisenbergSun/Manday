@@ -186,6 +186,21 @@ export function App() {
     return () => window.removeEventListener('manday:refresh-board', onRefresh);
   }, [user?.id, activeBoard?.id]);
 
+  // 全局搜索定位：Cmd+K 选中结果 → 切到对应看板 + 打开条目详情
+  useEffect(() => {
+    const onOpenItem = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (!d?.itemId) return;
+      setActiveBoard({ id: d.boardId, name: d.boardName });
+      setWorkspaceDashboard(false);
+      setActiveDashboardId(null);
+      setMobileNavOpen(false);
+      setDetailId(d.itemId);
+    };
+    window.addEventListener('manday:open-item', onOpenItem);
+    return () => window.removeEventListener('manday:open-item', onOpenItem);
+  }, []);
+
   if (!user) return <Login onLogin={setUser} />;
 
   return (

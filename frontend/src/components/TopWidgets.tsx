@@ -81,6 +81,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<any[]>([]);
+  const [selected, setSelected] = useState(0);
   const timer = useRef<any>();
 
   useEffect(() => {
@@ -99,14 +100,25 @@ export function CommandPalette() {
 
   useEffect(() => {
     clearTimeout(timer.current);
-    if (!q) { setResults([]); return; }
+    if (!q) { setResults([]); setSelected(0); return; }
     timer.current = setTimeout(async () => {
       try {
         const r: any = await api.search(q);
         setResults(Array.isArray(r) ? r : Array.isArray(r?.items) ? r.items : []);
+        setSelected(0);
       } catch { setResults([]); }
     }, 200);   // 200ms debounce
   }, [q]);
+
+  /** 选中某条结果 → 定位：切换到该看板 + 打开条目详情 */
+  const openItem = (r: any) => {
+    setOpen(false);
+    setQ('');
+    setResults([]);
+    window.dispatchEvent(new CustomEvent('manday:open-item', {
+      detail: { boardId: r.board_id, boardName: r.board_name, itemId: r.id, itemName: r.name },
+    }));
+  };
 
   if (!open) return null;
   return (
@@ -117,10 +129,18 @@ export function CommandPalette() {
         width: 520, background: '#fff', borderRadius: 12, boxShadow: '0 16px 48px rgba(0,0,0,.2)',
         overflow: 'hidden', height: 'fit-content' }}>
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索条目、Board…（⌘K）"
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setSelected((s) => Math.min(s + 1, results.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setSelected((s) => Math.max(s - 1, 0)); }
+            else if (e.key === 'Enter') { e.preventDefault(); const r = results[selected]; if (r) openItem(r); }
+          }}
+          placeholder="搜索条目、Board…（⌘K，↑↓ 选择，回车定位）"
           style={{ width: '100%', border: 'none', outline: 'none', padding: '16px 18px', fontSize: 15 }} />
-        {results.map((r) => (
-          <div key={r.id} style={{ padding: '10px 18px', fontSize: 13, borderTop: '1px solid #f0f2f7', cursor: 'pointer' }}>
+        {results.map((r, i) => (
+          <div key={r.id} onClick={() => openItem(r)} onMouseEnter={() => setSelected(i)}
+            data-search-result={r.name}
+            style={{ padding: '10px 18px', fontSize: 13, borderTop: '1px solid #f0f2f7', cursor: 'pointer',
+              background: i === selected ? '#eef1fe' : 'transparent' }}>
             <b>{r.name}</b>
             <span style={{ color: '#7a7f8c', marginLeft: 8, fontSize: 12 }}>{r.board_name}</span>
           </div>
