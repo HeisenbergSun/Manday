@@ -22,6 +22,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { BoardsService } from '../modules/boards/boards.module';
 import { ItemsService } from '../modules/items/items.service';
+import { DashboardService } from '../modules/dashboard/dashboard.module';
 import { can, BoardRole } from '../modules/boards/acl';
 
 export interface ChatRequest {
@@ -97,6 +98,7 @@ export class WorkBuddyAIService {
     config: ConfigService,
     private readonly boards: BoardsService,
     private readonly items: ItemsService,
+    private readonly dashboards: DashboardService,
   ) {
     this.apiKey = config.get('WORKBUDDY_AI_API_KEY') || '';
     this.model = config.get('WORKBUDDY_AI_MODEL') || '';
@@ -180,6 +182,42 @@ export class WorkBuddyAIService {
             };
           } catch (e: any) {
             return err(`读取看板失败：${e?.message ?? e}`);
+          }
+        },
+      ),
+      tool(
+        'get_workspace_overview',
+        '生成跨看板的工作台总览，用于回答「本周进展周报」「各项目进度汇总」「团队整体情况」等问题。' +
+        '一次性返回：每个可见看板的进度（总条目/已完成/完成率）、整体状态分布、逾期任务 Top 20、成员负载 Top 10、近期动态 Top 15。' +
+        '数据已按当前用户可见性过滤，无越权。回答周报类问题时，先调用本工具取数据，再组织成结构化中文周报。',
+        {},
+        async () => {
+          try {
+            const list = await this.boards.listForUser(userId);
+            const boardIds = (list ?? []).map((b: any) => b.id);
+            const overview: any = {
+              generated_at: new Date().toISOString(),
+              boards: [], status_distribution: [], overdue: [], workload_top: [], recent_activity: [],
+            };
+            if (!boardIds.length) {
+              overview.note = '当前用户没有可见看板';
+              return { content: [{ type: 'text', text: JSON.stringify(overview) }] };
+            }
+            const [battery, statusDist, overdue, workload, activity] = await Promise.all([
+              this.dashboards.battery(userId, boardIds),
+              this.dashboards.statusDist(userId, boardIds),
+              this.dashboards.overdue(userId),
+              this.dashboards.workloadRank(userId),
+              this.dashboards.activity(userId),
+            ]);
+            overview.boards = battery;
+            overview.status_distribution = statusDist;
+            overview.overdue = overdue;
+            overview.workload_top = workload;
+            overview.recent_activity = activity;
+            return { content: [{ type: 'text', text: JSON.stringify(overview) }] };
+          } catch (e: any) {
+            return err(`读取工作台总览失败：${e?.message ?? e}`);
           }
         },
       ),
@@ -330,11 +368,12 @@ export class WorkBuddyAIService {
           canUseTool: async (toolName: string) => {
             if (
               toolName.includes('list_boards') || toolName.includes('get_board_data') ||
+              toolName.includes('get_workspace_overview') ||
               toolName.includes('update_fields') || toolName.includes('create_items')
             ) {
               return { behavior: 'allow' as const };
             }
-            return { behavior: 'deny' as const, message: '当前仅支持看板查询与写预览工具。' };
+            return { behavior: 'deny' as const, message: '当前仅支持看板查询、工作台总览与写预览工具。' };
           },
           permissionMode: 'default',
           ...(this.model ? { model: this.model } : {}),
@@ -342,7 +381,7 @@ export class WorkBuddyAIService {
             append:
               '你是 Manday（企业内部轻量级 Monday.com 替代品）内置的 AI 助手。' +
               `今天是 ${today}。` +
-              '你拥有看板工具：list_boards（列看板）、get_board_data（读看板数据，返回列定义/分组/条目/列值，含 id 与 settings）。' +
+              '你拥有看板工具：list_boards（列看板）、get_board_data（读看板数据，返回列定义/分组/条目/列值，含 id 与 settings）、get_workspace_overview（跨看板总览：各板进度/状态分布/逾期/负载/动态，用于周报）。' +
               (req.allowWriteTools
                 ? '你还拥有写工具：update_fields（批量改列值，如标记状态为已完成）、create_items（新建条目）。' +
                   '写工具只返回变更预览、不会立即生效；调用后你会拿到一份 diff，把它如实呈现给用户，并说明「已生成预览，待你确认执行」。' +
@@ -353,6 +392,7 @@ export class WorkBuddyAIService {
               '先用 get_board_data 读当前看板数据，再基于数据判断，不要动辄反问「哪个看板」。只有当前看板数据明显对不上、或用户明确提到多个看板时，才用 list_boards 或请用户澄清。' +
               '当用户要求「把某些任务标记为完成/修改/新增」等写操作时，调用对应写工具生成预览。' +
               '逾期判断：日期列的值 < 今天，且状态列尚未标记为完成。工作负荷：统计 people 列各成员未完成条目数。' +
+              '当用户要求「周报」「进展总结」「项目进度」等跨看板汇总时，用 get_workspace_overview 一次性取数据，组织成结构化中文周报（各项目进度 + 逾期风险 + 团队负载 + 近期动态）。' +
               '回答简洁、准确、中文；数据不足或权限受限时如实说明。',
           },
           env: {

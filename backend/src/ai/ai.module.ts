@@ -8,6 +8,7 @@ import { Observable } from 'rxjs';
 import { WorkBuddyAIService, AiStreamEvent } from './workbuddy-ai.service';
 import { BoardsModule } from '../modules/boards/boards.module';
 import { ItemsModule } from '../modules/items/items.module';
+import { DashboardModule } from '../modules/dashboard/dashboard.module';
 
 @Controller('ai')
 export class AiController {
@@ -81,7 +82,7 @@ export class AiController {
 }
 
 @Module({
-  imports: [BoardsModule, ItemsModule],
+  imports: [BoardsModule, ItemsModule, DashboardModule],
   controllers: [AiController],
   providers: [WorkBuddyAIService],
 })

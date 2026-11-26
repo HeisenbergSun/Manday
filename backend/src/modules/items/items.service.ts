@@ -11,6 +11,7 @@ import { can, canEditStructure, BoardRole } from '../boards/acl';
 import { injectFormulaValues, FormulaRow } from '../formula';
 import { AutomationRunner } from '../automation/automation-runner.service';
 import { injectMirrorValues } from '../mirror';
+import { RealtimeGateway } from '../../realtime/realtime.gateway';
 
 /**
  * P1-2 受限列读取过滤：viewPermission='owner' 的列对非 owner 只给元数据（restricted:true），值被剔除
@@ -34,7 +35,11 @@ export function applyViewPermission(columns: any[], items: any[], userRole: Boar
 
 @Injectable()
 export class ItemsService {
-  constructor(private readonly pg: Pool, private readonly automation: AutomationRunner) {}
+  constructor(
+    private readonly pg: Pool,
+    private readonly automation: AutomationRunner,
+    private readonly ws: RealtimeGateway,
+  ) {}
 
   /** 读取整个 Board（含动态列值）——一次查询拉平，免 N+1 */
   async getBoardItems(boardId: string, userRole: BoardRole | null, userId?: string) {
@@ -216,6 +221,10 @@ export class ItemsService {
       [userId, `item:${rows[0].id}`, source],
     );
     void this.automation.emit(boardId, rows[0].id, { type: 'item_created' }, userId);
+    this.ws.broadcastItemChange(boardId, {
+      type: 'item.create', itemId: rows[0].id, userId,
+      item: { id: rows[0].id, group_id: rows[0].group_id, name: rows[0].name, version: rows[0].version, values: {} },
+    });
     return rows[0];
   }
 
@@ -295,32 +304,47 @@ export class ItemsService {
     return newItem;
   }
 
-  /** 批量编辑（P0 刚需）：一次事务内批量 upsert 列值；P1-2 补列权限校验（原漏洞：批量绕过列限制）；source 区分 ui/ai 审计 */
+  /** 批量编辑（P0 刚需）：一次事务内批量 upsert 列值；P1-2 补列权限校验；source 区分 ui/ai 审计
+   *  AI 写工具（update_fields）确认后也走这里，故补齐 automation 触发 + WS 增量（与单格 updateCell 对齐） */
   async batchUpdate(
     changes: { itemId: string; columnId: string; value: unknown }[],
     userRole: BoardRole | null, userId: string, source: 'ui' | 'ai' = 'ui',
   ) {
     if (!can(userRole, 'edit')) throw new Error('FORBIDDEN');
-    if (userRole !== 'owner' && changes.length) {
-      const colIds = [...new Set(changes.map((c) => c.columnId))];
-      const { rows: cols } = await this.pg.query(
-        `SELECT id, settings FROM board_columns WHERE id = ANY($1::uuid[])`, [colIds]);
-      const locked = new Set(cols
-        .filter((c) => (c.settings?.editPermission ?? c.settings?.editable) === 'owner')
-        .map((c) => c.id));
-      if (changes.some((c) => locked.has(c.columnId))) throw new Error('FORBIDDEN_COLUMN');
+    if (!changes.length) return { updated: 0 };
+    const colIds = [...new Set(changes.map((c) => c.columnId))];
+    const itemIds = [...new Set(changes.map((c) => c.itemId))];
+
+    // 预查列元信息（含 type/name/board_id，供权限校验 + automation 事件 + WS 广播）与旧值（automation from）
+    const { rows: cols } = await this.pg.query(
+      `SELECT id, type, name, board_id, settings FROM board_columns WHERE id = ANY($1::uuid[])`, [colIds]);
+    const colMap = new Map<string, any>(cols.map((c) => [c.id, c]));
+    if (userRole !== 'owner') {
+      const locked = cols.filter((c) => (c.settings?.editPermission ?? c.settings?.editable) === 'owner').map((c) => c.id);
+      if (changes.some((c) => locked.includes(c.columnId))) throw new Error('FORBIDDEN_COLUMN');
     }
+    const { rows: prevs } = await this.pg.query(
+      `SELECT item_id, column_id, value FROM item_values WHERE item_id = ANY($1::uuid[]) AND column_id = ANY($2::uuid[])`,
+      [itemIds, colIds]);
+    const prevMap = new Map<string, unknown>(prevs.map((p) => [`${p.item_id}:${p.column_id}`, p.value]));
+
     const client = await this.pg.connect();
+    const newVersions: number[] = [];
     try {
       await client.query('BEGIN');
-      for (const c of changes) {
+      for (let idx = 0; idx < changes.length; idx++) {
+        const c = changes[idx];
         await client.query(
           `INSERT INTO item_values (item_id, column_id, board_id, value)
            SELECT $1, $2, board_id, $3::jsonb FROM items WHERE id = $1
            ON CONFLICT (item_id, column_id) DO UPDATE SET value = EXCLUDED.value`,
           [c.itemId, c.columnId, JSON.stringify(c.value ?? null)],
         );
-        await client.query(`UPDATE items SET version = version + 1 WHERE id = $1`, [c.itemId]);
+        const { rows } = await client.query(
+          `UPDATE items SET version = version + 1 WHERE id = $1 AND deleted_at IS NULL RETURNING version`,
+          [c.itemId],
+        );
+        newVersions[idx] = rows[0]?.version ?? 0;
       }
       await client.query(
         `INSERT INTO audit_logs (user_id, action, target, source)
@@ -330,6 +354,26 @@ export class ItemsService {
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; }
     finally { client.release(); }
+
+    // commit 成功后：触发 automation + WS 增量广播（与 updateCell 语义一致，fire-and-forget）
+    changes.forEach((c, idx) => {
+      const col = colMap.get(c.columnId);
+      if (!col) return;
+      const boardId = col.board_id;
+      const prev = prevMap.get(`${c.itemId}:${c.columnId}`) ?? null;
+      if (col.type === 'status') {
+        void this.automation.emit(boardId, c.itemId, { type: 'status_changed', field: col.name, to: c.value, from: prev }, userId);
+      } else if (col.type === 'people') {
+        void this.notifyAssignees(boardId, c.itemId, col.name, prev, c.value, userId);
+        void this.automation.emit(boardId, c.itemId, { type: 'assignee_changed', field: col.name, to: c.value, from: prev }, userId);
+      } else {
+        void this.automation.emit(boardId, c.itemId, { type: 'field_changed', field: col.name, to: c.value, from: prev }, userId);
+      }
+      this.ws.broadcastItemChange(boardId, {
+        type: 'item.update', itemId: c.itemId, field: c.columnId, value: c.value,
+        version: newVersions[idx], userId,
+      });
+    });
     return { updated: changes.length };
   }
 }

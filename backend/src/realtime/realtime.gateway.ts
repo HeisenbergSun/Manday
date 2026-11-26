@@ -43,6 +43,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   broadcastItemChange(boardId: string, payload: {
     type: 'item.update' | 'item.create' | 'item.delete';
     itemId: string; field?: string; value?: unknown; version?: number; userId: string;
+    /** item.create 时携带新条目完整数据（供前端 store.addItem 增量添加） */
+    item?: { id: string; group_id?: string; name: string; version: number; values?: Record<string, unknown> };
   }) {
     this.server.to(`board:${boardId}`).emit('item:changed', payload);
   }

@@ -15,13 +15,17 @@ export function joinBoard(boardId: string) {
   socket.emit('board:join', boardId);
   socket.on('item:changed', (p: {
     type: string; itemId: string; field?: string; value?: unknown; version?: number;
+    item?: { id: string; group_id?: string; name: string; version: number; values?: Record<string, unknown> };
   }) => {
     const store = useItems.getState();
     switch (p.type) {
       case 'item.update':
         store.applyPatch(p.itemId, p.field!, p.value, p.version!);
         break;
-      // item.create / item.delete 在此增量处理，不整表刷新
+      case 'item.create':
+        if (p.item) store.addItem({ ...p.item, values: p.item.values ?? {} });
+        break;
+      // item.delete 增量处理后续补
     }
   });
 

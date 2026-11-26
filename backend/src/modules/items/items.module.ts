@@ -5,9 +5,10 @@ import { Module } from '@nestjs/common';
 import { ItemsService } from './items.service';
 import { BoardsItemsController, ItemsController } from './items.controller';
 import { AutomationModule } from '../automation/automation.module';
+import { RealtimeModule } from '../../realtime/realtime.module';
 
 @Module({
-  imports: [AutomationModule.register()],
+  imports: [AutomationModule.register(), RealtimeModule],
   controllers: [BoardsItemsController, ItemsController],
   providers: [ItemsService],
   exports: [ItemsService],
